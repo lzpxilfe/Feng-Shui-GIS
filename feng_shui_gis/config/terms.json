@@ -1,0 +1,70 @@
+{
+  "term_labels": {
+    "hyeol": { "en": "Hyeol", "ko": "혈" },
+    "myeongdang": { "en": "Myeongdang", "ko": "명당" },
+    "jusan": { "en": "Jusan", "ko": "주산" },
+    "jojongsan": { "en": "Jojongsan", "ko": "조종산" },
+    "dunoe": { "en": "Dunoe", "ko": "두뇌" },
+    "naecheongnyong": { "en": "InnerCheongnyong", "ko": "내청룡" },
+    "oecheongnyong": { "en": "OuterCheongnyong", "ko": "외청룡" },
+    "naebaekho": { "en": "InnerBaekho", "ko": "내백호" },
+    "oebaekho": { "en": "OuterBaekho", "ko": "외백호" },
+    "ansan": { "en": "Ansan", "ko": "안산" },
+    "josan": { "en": "Josan", "ko": "조산" },
+    "naesugu": { "en": "InnerSugu", "ko": "내수구" },
+    "oesugu": { "en": "OuterSugu", "ko": "외수구" },
+    "ipsu": { "en": "Ipsu", "ko": "입수" },
+    "misa": { "en": "Misa", "ko": "미사" }
+  },
+  "radius_scales": {
+    "inner": 18.0,
+    "outer": 38.0,
+    "far": 65.0
+  },
+  "term_specs": [
+    { "term_id": "jusan", "radius": "inner", "direction": "back", "mode": "max", "target": 0.33, "sigma": 0.33 },
+    { "term_id": "jojongsan", "radius": "far", "direction": "back", "mode": "max", "target": 0.42, "sigma": 0.35 },
+    { "term_id": "dunoe", "radius": "outer", "direction": "back", "mode": "max", "target": 0.36, "sigma": 0.28 },
+    { "term_id": "naecheongnyong", "radius": "inner", "direction": "left", "mode": "max", "target": 0.25, "sigma": 0.30 },
+    { "term_id": "oecheongnyong", "radius": "outer", "direction": "left", "mode": "max", "target": 0.30, "sigma": 0.35 },
+    { "term_id": "naebaekho", "radius": "inner", "direction": "right", "mode": "max", "target": 0.25, "sigma": 0.30 },
+    { "term_id": "oebaekho", "radius": "outer", "direction": "right", "mode": "max", "target": 0.30, "sigma": 0.35 },
+    { "term_id": "ansan", "radius": "inner", "direction": "front", "mode": "max", "target": 0.12, "sigma": 0.30 },
+    { "term_id": "josan", "radius": "outer", "direction": "front", "mode": "max", "target": 0.20, "sigma": 0.33 },
+    { "term_id": "naesugu", "radius": "inner", "direction": "front", "mode": "min", "target": -0.15, "sigma": 0.30 },
+    { "term_id": "oesugu", "radius": "outer", "direction": "front", "mode": "min", "target": -0.25, "sigma": 0.35 }
+  ],
+  "point_styles": {
+    "hyeol": ["#d62828", 4.8, "#240202", 0.9],
+    "myeongdang": ["#ffbf00", 4.0, "#3a2f00", 0.8],
+    "jusan": ["#2a9d8f", 3.6, "#083630", 0.7],
+    "jojongsan": ["#1b7f75", 3.8, "#06312c", 0.8],
+    "dunoe": ["#2f8f46", 3.4, "#14381d", 0.7],
+    "naecheongnyong": ["#1f6feb", 3.5, "#0a2f6e", 0.7],
+    "oecheongnyong": ["#5ea3ff", 3.3, "#103a6c", 0.7],
+    "naebaekho": ["#f3f3f3", 3.5, "#545454", 0.7],
+    "oebaekho": ["#e1e1e1", 3.3, "#5a5a5a", 0.7],
+    "ansan": ["#6aa84f", 3.3, "#245016", 0.7],
+    "josan": ["#84bf65", 3.2, "#29541c", 0.7],
+    "naesugu": ["#118ab2", 3.4, "#064d63", 0.7],
+    "oesugu": ["#20b4d8", 3.2, "#066078", 0.7],
+    "ipsu": ["#0096c7", 3.8, "#024e67", 0.8],
+    "misa": ["#fb8500", 3.2, "#6a3300", 0.7]
+  },
+  "line_styles": {
+    "jusan": ["#0f766e", 1.8],
+    "jojongsan": ["#065f46", 2.4],
+    "dunoe": ["#15803d", 2.0],
+    "naecheongnyong": ["#1d4ed8", 2.2],
+    "oecheongnyong": ["#3b82f6", 1.8],
+    "naebaekho": ["#6b7280", 2.2],
+    "oebaekho": ["#9ca3af", 1.8],
+    "ansan": ["#65a30d", 1.8],
+    "josan": ["#84cc16", 2.0],
+    "naesugu": ["#0ea5e9", 2.0],
+    "oesugu": ["#22d3ee", 1.8],
+    "ipsu": ["#0284c7", 2.6],
+    "myeongdang": ["#f59e0b", 1.6],
+    "misa": ["#f97316", 1.8]
+  }
+}

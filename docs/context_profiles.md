@@ -1,43 +1,67 @@
-# Context Profiles (Editable Rules)
+# Context Profiles (Config-Driven)
 
-파일: `feng_shui_gis/cultural_context.py`
+파일:
 
-이 플러그인은 국가/시대 차이를 고정 코드가 아니라 프로파일 파라미터로 분리합니다.
+- `feng_shui_gis/config/contexts.json`
+- `feng_shui_gis/config/profiles.json`
+- `feng_shui_gis/config/terms.json`
+- `feng_shui_gis/config/analysis_rules.json`
 
-## 문화권 프로파일
+핵심: 파라미터를 코드에서 분리해 하드코딩을 줄이고, 연구자가 설정 파일만 바꿔 실험할 수 있게 구성했습니다.
 
-| key | 의미 |
-|---|---|
-| `east_asia` | 동아시아 공통 기본값 |
-| `korea` | 한국 풍수/비보풍수 맥락 |
-| `china` | 중국 장묘·형세 중심 맥락 |
-| `japan` | 일본 수용형 풍수(방위/형세 혼합) |
-| `ryukyu` | 류큐/오키나와 지역 변형 |
+## 1) 지역/시대 컨텍스트
+
+`contexts.json` 항목:
+
+- 지역: `east_asia`, `korea`, `china`, `japan`, `ryukyu`, `southeast_asia`, `global_apm`
+- 시대: `ancient`, `medieval`, `early_modern`, `modern`
 
 주요 파라미터:
 
-- `aspect_targets`: 반구별 목표 사면 방향
-- `aspect_sharpness`: 방향 엄격도
-- `water_distance_target`, `water_distance_sigma`: 수계 거리 선호 분포
-- `macro_radius_multiplier`, `micro_radius_multiplier`: 지형 탐색 스케일
-- `hyeol_threshold`: 혈 후보 임계치
-- `weight_bias`: 점수 항목 가중치 편향
-- `term_bias`: 용어별 점수 보정
-- `term_target_shift`: 용어 고도차 목표 이동량
+- `aspect_targets`, `aspect_sharpness`
+- `water_distance_target`, `water_distance_sigma`
+- `macro_radius_multiplier`, `micro_radius_multiplier`
+- `hyeol_threshold`
+- `weight_bias`, `term_bias`, `term_target_shift`
 
-## 시대 프로파일
+## 2) 분석 프로파일
 
-| key | 의미 |
-|---|---|
-| `ancient` | 고대 |
-| `medieval` | 중세 |
-| `early_modern` | 근세 |
-| `modern` | 근현대 |
+`profiles.json` 항목:
 
-시대 프로파일은 문화권 프로파일 위에 가산/배율로 적용됩니다.
+- 기존: `general`, `tomb`, `house`, `village`, `well`, `temple`
+- 확장: `urban_real_estate`, `global_apm`
 
-## 튜닝 방법
+각 프로파일은:
 
-1. `cultural_context.py`에서 문화권/시대 파라미터 수정
-2. 동일 DEM에서 프로파일만 바꿔 결과 비교
-3. 실제 유적 포인트의 회수율/정밀도 기준으로 재조정
+- `weights`
+- `slope_target`, `slope_sigma`
+- `tpi_target`, `tpi_sigma`
+- 다국어 `label`
+
+## 3) 풍수 용어/시각화
+
+`terms.json` 항목:
+
+- `term_labels`
+- `radius_scales`
+- `term_specs`
+- `point_styles`, `line_styles`
+
+즉, 용어 후보 추출 규칙과 두꺼운 선/점 심볼도 설정 파일에서 관리합니다.
+
+## 4) 분석 규칙 상수
+
+`analysis_rules.json` 항목:
+
+- 샘플링 스케일/방위 간격
+- 형세/혈/수렴도 점수의 목표값과 시그마
+- 혈 후보 TPI 범위
+
+이 파일로 DEM 연산 내부의 매직넘버를 별도 관리합니다.
+
+## 5) 튜닝 절차
+
+1. 설정 파일 복사본을 만들어 실험 세트 생성
+2. 동일 DEM/유적 데이터에서 세트별 결과 산출
+3. 회수율/정밀도 지표로 성능 비교
+4. 최종 세트를 기준 브랜치에 반영

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from collections import defaultdict, deque
 import math
 
 from qgis import processing
@@ -22,6 +23,16 @@ from qgis.core import (
 )
 
 from .cultural_context import build_context
+from .profile_catalog import (
+    analysis_rules,
+    line_styles,
+    point_styles,
+    profile_spec,
+    term_label,
+    term_label_ko,
+    term_radius_scales,
+    term_specs,
+)
 
 
 class FengShuiAnalyzer:
@@ -30,108 +41,6 @@ class FengShuiAnalyzer:
     CARDINALS = {
         "north": {"front": 180.0, "back": 0.0, "left": 90.0, "right": 270.0},
         "south": {"front": 0.0, "back": 180.0, "left": 270.0, "right": 90.0},
-    }
-    TERM_KO = {
-        "hyeol": "혈",
-        "myeongdang": "명당",
-        "jusan": "주산",
-        "jojongsan": "조종산",
-        "dunoe": "두뇌",
-        "naecheongnyong": "내청룡",
-        "oecheongnyong": "외청룡",
-        "naebaekho": "내백호",
-        "oebaekho": "외백호",
-        "ansan": "안산",
-        "josan": "조산",
-        "naesugu": "내수구",
-        "oesugu": "외수구",
-        "ipsu": "입수",
-        "misa": "미사",
-    }
-
-    PROFILE_SPECS = {
-        "general": {
-            "weights": {
-                "slope": 0.20,
-                "aspect": 0.15,
-                "form": 0.25,
-                "long": 0.20,
-                "water": 0.20,
-            },
-            "slope_target": 8.0,
-            "slope_sigma": 10.0,
-            "tpi_target": -0.05,
-            "tpi_sigma": 0.40,
-        },
-        "tomb": {
-            "weights": {
-                "long": 0.32,
-                "form": 0.24,
-                "water": 0.18,
-                "aspect": 0.14,
-                "slope": 0.08,
-                "tpi": 0.04,
-            },
-            "slope_target": 10.0,
-            "slope_sigma": 8.0,
-            "tpi_target": 0.05,
-            "tpi_sigma": 0.25,
-        },
-        "house": {
-            "weights": {
-                "slope": 0.20,
-                "aspect": 0.24,
-                "form": 0.20,
-                "water": 0.18,
-                "long": 0.10,
-                "tpi": 0.08,
-            },
-            "slope_target": 5.0,
-            "slope_sigma": 6.0,
-            "tpi_target": -0.05,
-            "tpi_sigma": 0.25,
-        },
-        "village": {
-            "weights": {
-                "slope": 0.20,
-                "water": 0.22,
-                "form": 0.20,
-                "long": 0.14,
-                "aspect": 0.08,
-                "tpi": 0.16,
-            },
-            "slope_target": 4.0,
-            "slope_sigma": 7.0,
-            "tpi_target": -0.10,
-            "tpi_sigma": 0.25,
-        },
-        "well": {
-            "weights": {
-                "conv": 0.38,
-                "water": 0.20,
-                "slope": 0.16,
-                "tpi": 0.20,
-                "form": 0.06,
-            },
-            "slope_target": 3.0,
-            "slope_sigma": 5.0,
-            "tpi_target": -0.22,
-            "tpi_sigma": 0.22,
-        },
-        "temple": {
-            "weights": {
-                "long": 0.26,
-                "form": 0.25,
-                "aspect": 0.15,
-                "slope": 0.10,
-                "tpi": 0.16,
-                "water": 0.08,
-            },
-            "slope_target": 9.0,
-            "slope_sigma": 10.0,
-            "tpi_target": 0.18,
-            "tpi_sigma": 0.25,
-        },
     }
 
     def __init__(self, context=None, feedback=None):
@@ -375,7 +284,7 @@ class FengShuiAnalyzer:
 
     @classmethod
     def _profile_spec(cls, profile_key):
-        return cls.PROFILE_SPECS.get(profile_key, cls.PROFILE_SPECS["general"])
+        return profile_spec(profile_key)
 
     @staticmethod
     def _contextualize_profile(profile, context):
@@ -531,16 +440,22 @@ class FengShuiAnalyzer:
         if center is None:
             return null_metrics
 
+        rules = analysis_rules()
+        sampling_rules = rules.get("sampling", {})
+        dem_rules = rules.get("dem_metrics", {})
+
         micro_mult = 1.0
         macro_mult = 1.0
         if context:
             micro_mult = context.get("micro_radius_multiplier", 1.0)
             macro_mult = context.get("macro_radius_multiplier", 1.0)
-        micro_radius = dem_step * 2.0 * micro_mult
-        macro_radius = dem_step * 12.0 * macro_mult
+        micro_radius = dem_step * float(sampling_rules.get("micro_radius_factor", 2.0)) * micro_mult
+        macro_radius = dem_step * float(sampling_rules.get("macro_radius_factor", 12.0)) * macro_mult
 
-        macro_bearings = list(range(0, 360, 22))
-        micro_bearings = list(range(0, 360, 45))
+        macro_bearing_step = int(sampling_rules.get("macro_bearing_step", 22))
+        micro_bearing_step = int(sampling_rules.get("micro_bearing_step", 45))
+        macro_bearings = list(range(0, 360, max(1, macro_bearing_step)))
+        micro_bearings = list(range(0, 360, max(1, micro_bearing_step)))
 
         macro_values = self._sample_ring(provider, site_point, macro_radius, macro_bearings)
         micro_values = self._sample_ring(provider, site_point, micro_radius, micro_bearings)
@@ -575,9 +490,18 @@ class FengShuiAnalyzer:
             front_norm = (center - front_mean) / relief
             side_norm = (left_mean - right_mean) / relief
 
-            back_score = self._score_gaussian(back_norm, 0.20, 0.35)
-            front_score = self._score_gaussian(front_norm, 0.15, 0.35)
-            side_score = self._score_gaussian(side_norm, 0.05, 0.25)
+            back_spec = dem_rules.get("form_back", {"target": 0.20, "sigma": 0.35})
+            front_spec = dem_rules.get("form_front", {"target": 0.15, "sigma": 0.35})
+            side_spec = dem_rules.get("form_side", {"target": 0.05, "sigma": 0.25})
+            back_score = self._score_gaussian(
+                back_norm, float(back_spec["target"]), float(back_spec["sigma"])
+            )
+            front_score = self._score_gaussian(
+                front_norm, float(front_spec["target"]), float(front_spec["sigma"])
+            )
+            side_score = self._score_gaussian(
+                side_norm, float(side_spec["target"]), float(side_spec["sigma"])
+            )
             form_score = self._mean_scores(back_score, front_score, side_score)
 
         long_score = None
@@ -585,11 +509,21 @@ class FengShuiAnalyzer:
         if relief is not None and relief > 0 and mean_macro is not None:
             tpi = center - mean_macro
             tpi_norm = tpi / relief
-            xue_score = self._score_gaussian(tpi_norm, -0.10, 0.30)
+            xue_spec = dem_rules.get("xue", {"target": -0.10, "sigma": 0.30})
+            xue_score = self._score_gaussian(
+                tpi_norm, float(xue_spec["target"]), float(xue_spec["sigma"])
+            )
             hierarchy_ratio = None
             if std_micro is not None and std_macro is not None and std_macro > 0:
                 hierarchy_ratio = std_micro / std_macro
-            hierarchy_score = self._score_gaussian(hierarchy_ratio, 0.55, 0.30)
+            hierarchy_spec = dem_rules.get(
+                "hierarchy", {"target": 0.55, "sigma": 0.30}
+            )
+            hierarchy_score = self._score_gaussian(
+                hierarchy_ratio,
+                float(hierarchy_spec["target"]),
+                float(hierarchy_spec["sigma"]),
+            )
             long_score = self._mean_scores(xue_score, hierarchy_score)
 
         dem_water_score = None
@@ -602,9 +536,15 @@ class FengShuiAnalyzer:
             if slope_deg is None:
                 slope_factor = 0.75
             else:
-                slope_factor = max(0.25, 1.0 - min(1.0, slope_deg / 35.0))
+                slope_denominator = float(dem_rules.get("slope_denominator", 35.0))
+                slope_factor = max(0.25, 1.0 - min(1.0, slope_deg / slope_denominator))
 
-            wetness_shape = self._score_gaussian(convergence, 0.60, 0.28)
+            wetness_spec = dem_rules.get("wetness", {"target": 0.60, "sigma": 0.28})
+            wetness_shape = self._score_gaussian(
+                convergence,
+                float(wetness_spec["target"]),
+                float(wetness_spec["sigma"]),
+            )
             dem_water_score = max(
                 0.0, min(1.0, wetness_shape * (0.6 + 0.4 * slope_factor))
             )
@@ -714,6 +654,11 @@ class FengShuiAnalyzer:
     def _collect_hyeol_candidates(
         self, provider, dem_layer, hemisphere, dem_step, spacing, context
     ):
+        rules = analysis_rules().get("hyeol_candidate", {})
+        tpi_min = float(rules.get("tpi_min", -0.45))
+        tpi_max = float(rules.get("tpi_max", 0.35))
+        tpi_target = float(rules.get("tpi_target", -0.08))
+        tpi_sigma = float(rules.get("tpi_sigma", 0.30))
         candidates = []
         for point in self._grid_points(dem_layer, spacing):
             center = self._sample_dem(provider, point)
@@ -729,7 +674,7 @@ class FengShuiAnalyzer:
                 context=context,
             )
             tpi_norm = metrics["tpi_norm"]
-            if tpi_norm is not None and (tpi_norm < -0.45 or tpi_norm > 0.35):
+            if tpi_norm is not None and (tpi_norm < tpi_min or tpi_norm > tpi_max):
                 continue
 
             hyeol_shape = self._mean_scores(
@@ -737,7 +682,7 @@ class FengShuiAnalyzer:
                 metrics["long_score"],
                 metrics["dem_water_score"],
             )
-            tpi_score = self._score_gaussian(tpi_norm, -0.08, 0.30)
+            tpi_score = self._score_gaussian(tpi_norm, tpi_target, tpi_sigma)
             hyeol_score = self._mean_scores(hyeol_shape, tpi_score)
             if hyeol_score is None or hyeol_score < context["hyeol_threshold"]:
                 continue
@@ -799,9 +744,22 @@ class FengShuiAnalyzer:
         term_layer.updateFields()
 
         card = self.CARDINALS.get(hemisphere, self.CARDINALS["north"])
-        inner_radius = dem_step * 18.0 * context.get("micro_radius_multiplier", 1.0)
-        outer_radius = dem_step * 38.0 * context.get("macro_radius_multiplier", 1.0)
-        far_radius = dem_step * 65.0 * context.get("macro_radius_multiplier", 1.0)
+        scales = term_radius_scales()
+        inner_radius = (
+            dem_step
+            * float(scales.get("inner", 18.0))
+            * context.get("micro_radius_multiplier", 1.0)
+        )
+        outer_radius = (
+            dem_step
+            * float(scales.get("outer", 38.0))
+            * context.get("macro_radius_multiplier", 1.0)
+        )
+        far_radius = (
+            dem_step
+            * float(scales.get("far", 65.0))
+            * context.get("macro_radius_multiplier", 1.0)
+        )
         culture_id = context.get("culture_key", "east_asia")
         period_id = context.get("period_key", "early_modern")
         term_bias = context.get("term_bias", {})
@@ -818,7 +776,7 @@ class FengShuiAnalyzer:
                 layer=term_layer,
                 term_id=term_id,
                 term_name=term_name,
-                term_ko=self.TERM_KO.get(term_id, term_id),
+                term_ko=term_label_ko(term_id),
                 culture=culture_id,
                 period=period_id,
                 parent_id=parent_id,
@@ -847,7 +805,7 @@ class FengShuiAnalyzer:
             parent_id = rank
             add_term(
                 term_id="hyeol",
-                term_name="Hyeol",
+                term_name=term_label("hyeol", "en"),
                 parent_id=parent_id,
                 rank=rank,
                 point=center_point,
@@ -855,64 +813,34 @@ class FengShuiAnalyzer:
                 elev=center_elev,
                 note="core candidate",
             )
+
+            myeongdang_point = self._offset_point(
+                center_point, inner_radius * 0.35, card["front"]
+            )
+            myeongdang_elev = self._sample_dem(provider, myeongdang_point)
+            if myeongdang_elev is None:
+                myeongdang_point = center_point
+                myeongdang_elev = center_elev
             add_term(
                 term_id="myeongdang",
-                term_name="Myeongdang",
+                term_name=term_label("myeongdang", "en"),
                 parent_id=parent_id,
                 rank=rank,
-                point=center_point,
+                point=myeongdang_point,
                 score=min(1.0, base_score * 0.98),
-                elev=center_elev,
+                elev=myeongdang_elev,
                 note="open core basin",
             )
 
-            term_specs = [
-                ("jusan", "Jusan", inner_radius, card["back"], "max", 0.33, 0.33),
-                ("jojongsan", "Jojongsan", far_radius, card["back"], "max", 0.42, 0.35),
-                ("dunoe", "Dunoe", outer_radius, card["back"], "max", 0.36, 0.28),
-                (
-                    "naecheongnyong",
-                    "InnerCheongnyong",
-                    inner_radius,
-                    card["left"],
-                    "max",
-                    0.25,
-                    0.30,
-                ),
-                (
-                    "oecheongnyong",
-                    "OuterCheongnyong",
-                    outer_radius,
-                    card["left"],
-                    "max",
-                    0.30,
-                    0.35,
-                ),
-                (
-                    "naebaekho",
-                    "InnerBaekho",
-                    inner_radius,
-                    card["right"],
-                    "max",
-                    0.25,
-                    0.30,
-                ),
-                (
-                    "oebaekho",
-                    "OuterBaekho",
-                    outer_radius,
-                    card["right"],
-                    "max",
-                    0.30,
-                    0.35,
-                ),
-                ("ansan", "Ansan", inner_radius, card["front"], "max", 0.12, 0.30),
-                ("josan", "Josan", outer_radius, card["front"], "max", 0.20, 0.33),
-                ("naesugu", "InnerSugu", inner_radius, card["front"], "min", -0.15, 0.30),
-                ("oesugu", "OuterSugu", outer_radius, card["front"], "min", -0.25, 0.35),
-            ]
-
-            for term_id, term_name, radius, azimuth, mode, target, sigma in term_specs:
+            radius_map = {"inner": inner_radius, "outer": outer_radius, "far": far_radius}
+            for spec in term_specs():
+                term_id = spec["term_id"]
+                term_name = term_label(term_id, "en")
+                radius = radius_map.get(spec.get("radius", "inner"), inner_radius)
+                azimuth = card.get(spec.get("direction", "front"), card["front"])
+                mode = spec.get("mode", "max")
+                target = float(spec.get("target", 0.0))
+                sigma = float(spec.get("sigma", 0.3))
                 point, elev, _ = self._sector_extreme(
                     provider=provider,
                     center_point=center_point,
@@ -952,7 +880,7 @@ class FengShuiAnalyzer:
                 )
                 add_term(
                     term_id="ipsu",
-                    term_name="Ipsu",
+                    term_name=term_label("ipsu", "en"),
                     parent_id=parent_id,
                     rank=rank,
                     point=ipsu_point,
@@ -976,7 +904,7 @@ class FengShuiAnalyzer:
                 )
                 add_term(
                     term_id="misa",
-                    term_name="Misa",
+                    term_name=term_label("misa", "en"),
                     parent_id=parent_id,
                     rank=rank,
                     point=misa_point,
@@ -1035,69 +963,112 @@ class FengShuiAnalyzer:
         data.addAttributes(fields)
         link_layer.updateFields()
 
-        hyeol_map = {}
-        all_features = list(term_layer.getFeatures())
-        for feature in all_features:
-            if feature["term_id"] == "hyeol" and feature.hasGeometry():
-                hyeol_map[feature["parent_id"]] = feature.geometry().asPoint()
+        link_plan = [
+            ("hyeol", "jusan", "jusan"),
+            ("jusan", "dunoe", "dunoe"),
+            ("dunoe", "jojongsan", "jojongsan"),
+            ("hyeol", "naecheongnyong", "naecheongnyong"),
+            ("naecheongnyong", "oecheongnyong", "oecheongnyong"),
+            ("hyeol", "naebaekho", "naebaekho"),
+            ("naebaekho", "oebaekho", "oebaekho"),
+            ("hyeol", "ansan", "ansan"),
+            ("ansan", "josan", "josan"),
+            ("hyeol", "myeongdang", "myeongdang"),
+            ("myeongdang", "misa", "misa"),
+            ("hyeol", "naesugu", "naesugu"),
+            ("naesugu", "oesugu", "oesugu"),
+            ("naesugu", "ipsu", "ipsu"),
+            ("naecheongnyong", "ansan", "ansan"),
+            ("ansan", "naebaekho", "ansan"),
+            ("oecheongnyong", "josan", "josan"),
+            ("josan", "oebaekho", "josan"),
+        ]
 
-        link_features = []
-        for feature in all_features:
+        grouped = defaultdict(dict)
+        for feature in term_layer.getFeatures():
             term_id = feature["term_id"]
             parent_id = feature["parent_id"]
-            if term_id in ("hyeol", None):
-                continue
-            if parent_id not in hyeol_map:
+            if not term_id or parent_id is None:
                 continue
             if not feature.hasGeometry():
                 continue
+            grouped[parent_id][term_id] = feature
 
-            origin = hyeol_map[parent_id]
-            target = feature.geometry().asPoint()
-            line_feature = QgsFeature(link_layer.fields())
-            line_feature.setGeometry(
-                QgsGeometry.fromPolylineXY(
-                    [
-                        QgsPointXY(origin.x(), origin.y()),
-                        QgsPointXY(target.x(), target.y()),
-                    ]
+        link_features = []
+        seen_edges = set()
+        for parent_id, terms in grouped.items():
+            hyeol_feature = terms.get("hyeol")
+            hyeol_point = None
+            if hyeol_feature is not None and hyeol_feature.hasGeometry():
+                hyeol_point = hyeol_feature.geometry().asPoint()
+            for source_id, target_id, style_term in link_plan:
+                source = terms.get(source_id)
+                target = terms.get(target_id)
+                if source is None or target is None:
+                    continue
+
+                pair_key = tuple(sorted((source_id, target_id)))
+                edge_key = (parent_id, pair_key, style_term)
+                if edge_key in seen_edges:
+                    continue
+                seen_edges.add(edge_key)
+
+                origin = source.geometry().asPoint()
+                destination = target.geometry().asPoint()
+                if origin.x() == destination.x() and origin.y() == destination.y():
+                    continue
+
+                path_points = self._link_path_points(
+                    origin=origin,
+                    destination=destination,
+                    center=hyeol_point,
+                    use_bend=(source_id != "hyeol" and target_id != "hyeol"),
                 )
-            )
-            line_feature["term_id"] = term_id
-            line_feature["term_ko"] = feature["term_ko"]
-            line_feature["parent_id"] = parent_id
-            line_feature["rank"] = feature["rank"]
-            line_feature["score"] = feature["score"]
-            line_feature["culture"] = feature["culture"]
-            line_feature["period"] = feature["period"]
-            link_features.append(line_feature)
+                score = self._mean_scores(
+                    self._to_float(source["score"]),
+                    self._to_float(target["score"]),
+                )
+                rank_value = (
+                    source["rank"] if source["rank"] is not None else target["rank"]
+                )
+
+                line_feature = QgsFeature(link_layer.fields())
+                line_feature.setGeometry(
+                    QgsGeometry.fromPolylineXY(path_points)
+                )
+                line_feature["term_id"] = style_term
+                line_feature["term_ko"] = term_label_ko(style_term)
+                line_feature["parent_id"] = parent_id
+                line_feature["rank"] = rank_value
+                line_feature["score"] = score
+                line_feature["culture"] = source["culture"] or target["culture"]
+                line_feature["period"] = source["period"] or target["period"]
+                link_features.append(line_feature)
 
         if link_features:
             data.addFeatures(link_features)
         link_layer.updateExtents()
         return link_layer
 
-    def style_term_points(self, term_layer):
-        style_map = {
-            "hyeol": ("#d62828", 4.8, "#240202", 0.9),
-            "myeongdang": ("#ffbf00", 4.0, "#3a2f00", 0.8),
-            "jusan": ("#2a9d8f", 3.6, "#083630", 0.7),
-            "jojongsan": ("#1b7f75", 3.8, "#06312c", 0.8),
-            "dunoe": ("#2f8f46", 3.4, "#14381d", 0.7),
-            "naecheongnyong": ("#1f6feb", 3.5, "#0a2f6e", 0.7),
-            "oecheongnyong": ("#5ea3ff", 3.3, "#103a6c", 0.7),
-            "naebaekho": ("#f3f3f3", 3.5, "#545454", 0.7),
-            "oebaekho": ("#e1e1e1", 3.3, "#5a5a5a", 0.7),
-            "ansan": ("#6aa84f", 3.3, "#245016", 0.7),
-            "josan": ("#84bf65", 3.2, "#29541c", 0.7),
-            "naesugu": ("#118ab2", 3.4, "#064d63", 0.7),
-            "oesugu": ("#20b4d8", 3.2, "#066078", 0.7),
-            "ipsu": ("#0096c7", 3.8, "#024e67", 0.8),
-            "misa": ("#fb8500", 3.2, "#6a3300", 0.7),
-        }
+    @staticmethod
+    def _link_path_points(origin, destination, center=None, use_bend=False):
+        origin_xy = QgsPointXY(origin.x(), origin.y())
+        dest_xy = QgsPointXY(destination.x(), destination.y())
+        if not use_bend or center is None:
+            return [origin_xy, dest_xy]
 
+        mid_x = (origin.x() + destination.x()) / 2.0
+        mid_y = (origin.y() + destination.y()) / 2.0
+        ctrl_x = mid_x + ((center.x() - mid_x) * 0.35)
+        ctrl_y = mid_y + ((center.y() - mid_y) * 0.35)
+        control_xy = QgsPointXY(ctrl_x, ctrl_y)
+        return [origin_xy, control_xy, dest_xy]
+
+    def style_term_points(self, term_layer):
+        style_map = point_styles()
         categories = []
-        for term_id, (fill_color, size, stroke_color, stroke_width) in style_map.items():
+        for term_id, style in style_map.items():
+            fill_color, size, stroke_color, stroke_width = style
             symbol = QgsMarkerSymbol.createSimple(
                 {
                     "name": "circle",
@@ -1124,25 +1095,10 @@ class FengShuiAnalyzer:
         term_layer.triggerRepaint()
 
     def style_term_links(self, link_layer):
-        line_styles = {
-            "jusan": ("#0f766e", 1.8),
-            "jojongsan": ("#065f46", 2.4),
-            "dunoe": ("#15803d", 2.0),
-            "naecheongnyong": ("#1d4ed8", 2.2),
-            "oecheongnyong": ("#3b82f6", 1.8),
-            "naebaekho": ("#6b7280", 2.2),
-            "oebaekho": ("#9ca3af", 1.8),
-            "ansan": ("#65a30d", 1.8),
-            "josan": ("#84cc16", 2.0),
-            "naesugu": ("#0ea5e9", 2.0),
-            "oesugu": ("#22d3ee", 1.8),
-            "ipsu": ("#0284c7", 2.6),
-            "myeongdang": ("#f59e0b", 1.6),
-            "misa": ("#f97316", 1.8),
-        }
-
+        style_map = line_styles()
         categories = []
-        for term_id, (color, width) in line_styles.items():
+        for term_id, style in style_map.items():
+            color, width = style
             symbol = QgsLineSymbol.createSimple(
                 {
                     "line_color": color,
@@ -1163,6 +1119,692 @@ class FengShuiAnalyzer:
         renderer.setSourceSymbol(default_symbol)
         link_layer.setRenderer(renderer)
         link_layer.triggerRepaint()
+
+    def build_hydro_network(self, dem_layer):
+        provider = dem_layer.dataProvider()
+        dem_step = self._dem_step(dem_layer)
+        spacing = self._hydro_spacing(dem_layer, dem_step)
+
+        hydro_layer = QgsVectorLayer(
+            f"LineString?crs={dem_layer.crs().authid()}",
+            f"{dem_layer.name()}_fengshui_hydro",
+            "memory",
+        )
+        data = hydro_layer.dataProvider()
+        fields = QgsFields()
+        fields.append(QgsField("stream_id", QVariant.Int))
+        fields.append(QgsField("flow_acc", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("order", QVariant.Int))
+        fields.append(QgsField("stream_class", QVariant.String, "string", 16))
+        fields.append(QgsField("len", QVariant.Double, "double", 12, 3))
+        data.addAttributes(fields)
+        hydro_layer.updateFields()
+
+        extent = dem_layer.extent()
+        x_values = []
+        y_values = []
+        x = extent.xMinimum() + (spacing * 0.5)
+        y = extent.yMinimum() + (spacing * 0.5)
+        while x < extent.xMaximum():
+            x_values.append(x)
+            x += spacing
+        while y < extent.yMaximum():
+            y_values.append(y)
+            y += spacing
+
+        if len(x_values) < 2 or len(y_values) < 2:
+            return hydro_layer
+
+        nodes = {}
+        for ix, x_value in enumerate(x_values):
+            for iy, y_value in enumerate(y_values):
+                point = QgsPointXY(x_value, y_value)
+                elev = self._sample_dem(provider, point)
+                if elev is None:
+                    continue
+                nodes[(ix, iy)] = {"point": point, "elev": elev}
+        if len(nodes) < 9:
+            return hydro_layer
+
+        elevations = [node["elev"] for node in nodes.values()]
+        elev_min = min(elevations)
+        elev_max = max(elevations)
+        elev_range = max(1e-6, elev_max - elev_min)
+        min_drop = max(0.15, elev_range * 0.0012)
+        neighbor_offsets = [
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, -1),
+            (0, 1),
+            (1, -1),
+            (1, 0),
+            (1, 1),
+        ]
+
+        downstream = {}
+        upstream = defaultdict(list)
+        for key, node in nodes.items():
+            ix, iy = key
+            source_elev = node["elev"]
+            best_key = None
+            best_elev = None
+            for dx, dy in neighbor_offsets:
+                near_key = (ix + dx, iy + dy)
+                near_node = nodes.get(near_key)
+                if near_node is None:
+                    continue
+                near_elev = near_node["elev"]
+                if near_elev >= (source_elev - min_drop):
+                    continue
+                if best_elev is None or near_elev < best_elev:
+                    best_key = near_key
+                    best_elev = near_elev
+            if best_key is None:
+                continue
+            downstream[key] = best_key
+            upstream[best_key].append(key)
+
+        if not downstream:
+            return hydro_layer
+
+        contrib = {key: 1.0 for key in nodes.keys()}
+        keys_by_elev = sorted(nodes.keys(), key=lambda k: nodes[k]["elev"], reverse=True)
+        for key in keys_by_elev:
+            target = downstream.get(key)
+            if target is None:
+                continue
+            contrib[target] = contrib.get(target, 1.0) + contrib.get(key, 1.0)
+
+        stream_order = self._compute_stream_order(nodes, downstream, upstream)
+        accumulation_values = [contrib[k] for k in downstream.keys()]
+        accumulation_values.sort()
+        cut_index = int(len(accumulation_values) * 0.82)
+        cut_index = max(0, min(len(accumulation_values) - 1, cut_index))
+        accumulation_threshold = max(6.0, accumulation_values[cut_index])
+
+        selected_downstream = {}
+        for key, target in downstream.items():
+            order_value = stream_order.get(key, 1)
+            if contrib.get(key, 1.0) >= accumulation_threshold or order_value >= 2:
+                selected_downstream[key] = target
+
+        if not selected_downstream:
+            return hydro_layer
+
+        upstream_selected = defaultdict(int)
+        for source, target in selected_downstream.items():
+            _ = source
+            upstream_selected[target] += 1
+
+        def node_order_value(node_key):
+            return stream_order.get(node_key, 1)
+
+        heads = [
+            key
+            for key in selected_downstream.keys()
+            if upstream_selected.get(key, 0) != 1
+        ]
+        heads.sort(key=lambda k: (node_order_value(k), contrib.get(k, 1.0)), reverse=True)
+
+        visited_edges = set()
+        stream_paths = []
+        for start in heads:
+            path = self._trace_downstream_path(
+                start=start,
+                selected_downstream=selected_downstream,
+                upstream_selected=upstream_selected,
+                visited_edges=visited_edges,
+            )
+            if path and len(path) > 1:
+                stream_paths.append(path)
+
+        for start in selected_downstream.keys():
+            path = self._trace_downstream_path(
+                start=start,
+                selected_downstream=selected_downstream,
+                upstream_selected=upstream_selected,
+                visited_edges=visited_edges,
+            )
+            if path and len(path) > 1:
+                stream_paths.append(path)
+
+        if not stream_paths:
+            return hydro_layer
+
+        features = []
+        stream_id = 1
+        for path in stream_paths:
+            points = [nodes[key]["point"] for key in path if key in nodes]
+            if len(points) < 2:
+                continue
+
+            length = 0.0
+            for idx in range(1, len(path)):
+                key_a = path[idx - 1]
+                key_b = path[idx]
+                point_a = nodes[key_a]["point"]
+                point_b = nodes[key_b]["point"]
+                length += math.hypot(
+                    point_b.x() - point_a.x(),
+                    point_b.y() - point_a.y(),
+                )
+            if length <= 0:
+                continue
+
+            max_acc = max(contrib.get(key, 1.0) for key in path)
+            max_order = max(stream_order.get(key, 1) for key in path)
+            stream_class = self._stream_class(max_order)
+
+            feature = QgsFeature(hydro_layer.fields())
+            feature.setGeometry(QgsGeometry.fromPolylineXY(points))
+            feature["stream_id"] = stream_id
+            feature["flow_acc"] = max_acc
+            feature["order"] = int(max_order)
+            feature["stream_class"] = stream_class
+            feature["len"] = length
+            features.append(feature)
+            stream_id += 1
+
+        if features:
+            data.addFeatures(features)
+        hydro_layer.updateExtents()
+        return hydro_layer
+
+    @staticmethod
+    def style_hydro_network(hydro_layer):
+        class_styles = {
+            "main": ("#0b3d91", 2.8, 0.78),
+            "secondary": ("#1456b8", 2.2, 0.70),
+            "branch": ("#2b7bd8", 1.7, 0.62),
+            "minor": ("#63a5ff", 1.2, 0.52),
+        }
+        categories = []
+        for class_id, (color, width, opacity) in class_styles.items():
+            symbol = QgsLineSymbol.createSimple(
+                {
+                    "line_color": color,
+                    "line_width": str(width),
+                    "line_style": "solid",
+                    "capstyle": "round",
+                    "joinstyle": "round",
+                }
+            )
+            symbol.setOpacity(opacity)
+            categories.append(QgsRendererCategory(class_id, symbol, class_id))
+
+        renderer = QgsCategorizedSymbolRenderer("stream_class", categories)
+        fallback = QgsLineSymbol.createSimple(
+            {
+                "line_color": "#5f93d2",
+                "line_width": "1.0",
+                "line_style": "solid",
+            }
+        )
+        fallback.setOpacity(0.45)
+        renderer.setSourceSymbol(fallback)
+        hydro_layer.setRenderer(renderer)
+        hydro_layer.triggerRepaint()
+
+    def build_ridge_network(self, dem_layer):
+        provider = dem_layer.dataProvider()
+        dem_step = self._dem_step(dem_layer)
+        spacing = self._ridge_spacing(dem_layer, dem_step)
+
+        ridge_layer = QgsVectorLayer(
+            f"LineString?crs={dem_layer.crs().authid()}",
+            f"{dem_layer.name()}_fengshui_ridges",
+            "memory",
+        )
+        data = ridge_layer.dataProvider()
+        fields = QgsFields()
+        fields.append(QgsField("ridge_id", QVariant.Int))
+        fields.append(QgsField("strength", QVariant.Double, "double", 7, 3))
+        fields.append(QgsField("ridge_rank", QVariant.Int))
+        fields.append(QgsField("ridge_class", QVariant.String, "string", 16))
+        fields.append(QgsField("elev_a", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("elev_b", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("len", QVariant.Double, "double", 12, 3))
+        data.addAttributes(fields)
+        ridge_layer.updateFields()
+
+        extent = dem_layer.extent()
+        x_values = []
+        y_values = []
+        x = extent.xMinimum() + (spacing * 0.5)
+        y = extent.yMinimum() + (spacing * 0.5)
+        while x < extent.xMaximum():
+            x_values.append(x)
+            x += spacing
+        while y < extent.yMaximum():
+            y_values.append(y)
+            y += spacing
+
+        if len(x_values) < 2 or len(y_values) < 2:
+            return ridge_layer
+
+        nodes = {}
+        for ix, x_value in enumerate(x_values):
+            for iy, y_value in enumerate(y_values):
+                point = QgsPointXY(x_value, y_value)
+                elev = self._sample_dem(provider, point)
+                if elev is None:
+                    continue
+                nodes[(ix, iy)] = {"point": point, "elev": elev}
+
+        if len(nodes) < 9:
+            return ridge_layer
+
+        elevations = [node["elev"] for node in nodes.values()]
+        elev_min = min(elevations)
+        elev_max = max(elevations)
+        elev_range = max(1e-6, elev_max - elev_min)
+        prominence_min = max(0.8, elev_range * 0.015)
+        neighbor_delta = max(0.1, elev_range * 0.003)
+
+        neighborhood = [
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, -1),
+            (0, 1),
+            (1, -1),
+            (1, 0),
+            (1, 1),
+        ]
+        ridge_nodes = {}
+        for key, node in nodes.items():
+            ix, iy = key
+            elev = node["elev"]
+            neighbors = []
+            for dx, dy in neighborhood:
+                near = nodes.get((ix + dx, iy + dy))
+                if near is not None:
+                    neighbors.append(near)
+            if len(neighbors) < 4:
+                continue
+
+            mean_neighbor = sum(item["elev"] for item in neighbors) / len(neighbors)
+            higher_count = sum(
+                1 for item in neighbors if elev >= (item["elev"] + neighbor_delta)
+            )
+            prominence = elev - mean_neighbor
+            required = max(3, int(len(neighbors) * 0.62))
+            if higher_count < required or prominence < prominence_min:
+                continue
+
+            prominence_norm = min(1.0, prominence / (prominence_min * 2.0))
+            local_ratio = higher_count / len(neighbors)
+            strength = (0.45 * local_ratio) + (0.55 * prominence_norm)
+            ridge_nodes[key] = {"point": node["point"], "elev": elev, "strength": strength}
+
+        if len(ridge_nodes) < 2:
+            return ridge_layer
+
+        filtered = {}
+        ridge_keys = set(ridge_nodes.keys())
+        for key, node in ridge_nodes.items():
+            ix, iy = key
+            linked = 0
+            for dx, dy in neighborhood:
+                if (ix + dx, iy + dy) in ridge_keys:
+                    linked += 1
+            if linked > 0:
+                filtered[key] = node
+        ridge_nodes = filtered
+        if len(ridge_nodes) < 2:
+            return ridge_layer
+
+        segment_offsets = [(1, 0), (0, 1), (1, 1), (1, -1)]
+        adjacency = {key: set() for key in ridge_nodes.keys()}
+        for key_a in ridge_nodes.keys():
+            ix, iy = key_a
+            for dx, dy in segment_offsets:
+                key_b = (ix + dx, iy + dy)
+                if key_b not in ridge_nodes:
+                    continue
+                adjacency[key_a].add(key_b)
+                adjacency[key_b].add(key_a)
+
+        if not any(adjacency.values()):
+            return ridge_layer
+
+        self._bridge_ridge_endpoints(
+            adjacency=adjacency,
+            ridge_nodes=ridge_nodes,
+            spacing=spacing,
+            elev_range=elev_range,
+        )
+
+        ridge_paths = self._ridge_paths_from_graph(adjacency)
+        raw_paths = []
+        for path in ridge_paths:
+            if len(path) < 2:
+                continue
+            points = [ridge_nodes[key]["point"] for key in path if key in ridge_nodes]
+            if len(points) < 2:
+                continue
+
+            length = 0.0
+            strengths = []
+            for idx in range(len(path)):
+                key = path[idx]
+                node = ridge_nodes.get(key)
+                if node is not None:
+                    strengths.append(node["strength"])
+                if idx == 0:
+                    continue
+                prev_key = path[idx - 1]
+                point_a = ridge_nodes[prev_key]["point"]
+                point_b = ridge_nodes[key]["point"]
+                length += math.hypot(
+                    point_b.x() - point_a.x(),
+                    point_b.y() - point_a.y(),
+                )
+            if length <= 0:
+                continue
+
+            raw_paths.append(
+                {
+                    "path": path,
+                    "points": points,
+                    "len": length,
+                    "strength": sum(strengths) / len(strengths) if strengths else 0.0,
+                    "elev_a": ridge_nodes[path[0]]["elev"],
+                    "elev_b": ridge_nodes[path[-1]]["elev"],
+                }
+            )
+
+        if not raw_paths:
+            return ridge_layer
+
+        ranked_paths = self._rank_ridge_paths(raw_paths)
+        features = []
+        for item in ranked_paths:
+            feature = QgsFeature(ridge_layer.fields())
+            feature.setGeometry(QgsGeometry.fromPolylineXY(item["points"]))
+            feature["ridge_id"] = item["ridge_id"]
+            feature["strength"] = item["strength"]
+            feature["ridge_rank"] = item["ridge_rank"]
+            feature["ridge_class"] = item["ridge_class"]
+            feature["elev_a"] = item["elev_a"]
+            feature["elev_b"] = item["elev_b"]
+            feature["len"] = item["len"]
+            features.append(feature)
+
+        if features:
+            data.addFeatures(features)
+        ridge_layer.updateExtents()
+        return ridge_layer
+
+    @staticmethod
+    def style_ridge_network(ridge_layer):
+        class_styles = {
+            "daegan": ("#000000", 3.8, 0.55),
+            "jeongmaek": ("#171717", 3.0, 0.45),
+            "gimaek": ("#292929", 2.2, 0.36),
+            "jimaek": ("#404040", 1.5, 0.28),
+        }
+        categories = []
+        for class_id, (color, width, opacity) in class_styles.items():
+            symbol = QgsLineSymbol.createSimple(
+                {
+                    "line_color": color,
+                    "line_width": str(width),
+                    "line_style": "solid",
+                    "capstyle": "round",
+                    "joinstyle": "round",
+                }
+            )
+            symbol.setOpacity(opacity)
+            categories.append(QgsRendererCategory(class_id, symbol, class_id))
+
+        renderer = QgsCategorizedSymbolRenderer("ridge_class", categories)
+        fallback = QgsLineSymbol.createSimple(
+            {
+                "line_color": "#3d3d3d",
+                "line_width": "1.3",
+                "line_style": "solid",
+            }
+        )
+        fallback.setOpacity(0.24)
+        renderer.setSourceSymbol(fallback)
+        ridge_layer.setRenderer(renderer)
+        ridge_layer.triggerRepaint()
+
+    def _ridge_spacing(self, dem_layer, dem_step):
+        coarse = self._adaptive_spacing(dem_layer, dem_step)
+        spacing = max(dem_step * 4.0, coarse * 0.70)
+        if spacing <= 0:
+            spacing = max(dem_step * 4.0, 1.0)
+
+        extent = dem_layer.extent()
+        cols = max(1, int(extent.width() / spacing) + 1)
+        rows = max(1, int(extent.height() / spacing) + 1)
+        total = cols * rows
+        max_points = 22000
+        if total > max_points:
+            spacing *= math.sqrt(total / max_points)
+        return spacing
+
+    @staticmethod
+    def _ridge_edge_key(key_a, key_b):
+        return (key_a, key_b) if key_a <= key_b else (key_b, key_a)
+
+    def _bridge_ridge_endpoints(self, adjacency, ridge_nodes, spacing, elev_range):
+        endpoints = [key for key, neighbors in adjacency.items() if len(neighbors) == 1]
+        if len(endpoints) < 2:
+            return
+        if len(endpoints) > 1800:
+            return
+
+        max_distance = spacing * 2.6
+        max_distance_sq = max_distance * max_distance
+        elev_tolerance = max(1.0, elev_range * 0.04)
+        used = set()
+
+        for key in endpoints:
+            if key in used:
+                continue
+
+            point = ridge_nodes[key]["point"]
+            elev = ridge_nodes[key]["elev"]
+            best = None
+            best_dist = None
+            for other in endpoints:
+                if other == key or other in used:
+                    continue
+                if other in adjacency[key]:
+                    continue
+
+                other_elev = ridge_nodes[other]["elev"]
+                if abs(elev - other_elev) > elev_tolerance:
+                    continue
+
+                other_point = ridge_nodes[other]["point"]
+                dx = point.x() - other_point.x()
+                dy = point.y() - other_point.y()
+                distance_sq = (dx * dx) + (dy * dy)
+                if distance_sq > max_distance_sq:
+                    continue
+                if best is None or distance_sq < best_dist:
+                    best = other
+                    best_dist = distance_sq
+
+            if best is None:
+                continue
+            adjacency[key].add(best)
+            adjacency[best].add(key)
+            used.add(key)
+            used.add(best)
+
+    def _ridge_paths_from_graph(self, adjacency):
+        visited_edges = set()
+        paths = []
+
+        def trace_path(start, neighbor):
+            edge = self._ridge_edge_key(start, neighbor)
+            if edge in visited_edges:
+                return None
+            visited_edges.add(edge)
+
+            path = [start, neighbor]
+            prev = start
+            current = neighbor
+            while True:
+                candidates = sorted(
+                    n for n in adjacency[current] if n != prev
+                )
+                if len(candidates) != 1:
+                    break
+                nxt = candidates[0]
+                next_edge = self._ridge_edge_key(current, nxt)
+                if next_edge in visited_edges:
+                    break
+                visited_edges.add(next_edge)
+                path.append(nxt)
+                prev, current = current, nxt
+            return path
+
+        branch_nodes = sorted(
+            key for key, neighbors in adjacency.items() if len(neighbors) != 2 and neighbors
+        )
+        for start in branch_nodes:
+            for neighbor in sorted(adjacency[start]):
+                path = trace_path(start, neighbor)
+                if path and len(path) > 1:
+                    paths.append(path)
+
+        for key in sorted(adjacency.keys()):
+            for neighbor in sorted(adjacency[key]):
+                path = trace_path(key, neighbor)
+                if path and len(path) > 1:
+                    paths.append(path)
+
+        return paths
+
+    @staticmethod
+    def _rank_ridge_paths(raw_paths):
+        if not raw_paths:
+            return []
+
+        max_len = max(item["len"] for item in raw_paths)
+        max_len = max(max_len, 1e-6)
+        scored = []
+        for item in raw_paths:
+            length_norm = item["len"] / max_len
+            score = (0.62 * length_norm) + (0.38 * item["strength"])
+            scored.append((score, item))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+
+        ranked = []
+        total = len(scored)
+        for index, (_, item) in enumerate(scored, start=1):
+            percentile = index / total
+            if percentile <= 0.05:
+                ridge_class = "daegan"
+            elif percentile <= 0.22:
+                ridge_class = "jeongmaek"
+            elif percentile <= 0.52:
+                ridge_class = "gimaek"
+            else:
+                ridge_class = "jimaek"
+            ranked.append(
+                {
+                    "ridge_id": index,
+                    "ridge_rank": index,
+                    "ridge_class": ridge_class,
+                    "points": item["points"],
+                    "len": item["len"],
+                    "strength": item["strength"],
+                    "elev_a": item["elev_a"],
+                    "elev_b": item["elev_b"],
+                }
+            )
+        return ranked
+
+    def _hydro_spacing(self, dem_layer, dem_step):
+        coarse = self._adaptive_spacing(dem_layer, dem_step)
+        spacing = max(dem_step * 3.2, coarse * 0.58)
+        if spacing <= 0:
+            spacing = max(dem_step * 3.2, 1.0)
+
+        extent = dem_layer.extent()
+        cols = max(1, int(extent.width() / spacing) + 1)
+        rows = max(1, int(extent.height() / spacing) + 1)
+        total = cols * rows
+        max_points = 26000
+        if total > max_points:
+            spacing *= math.sqrt(total / max_points)
+        return spacing
+
+    @staticmethod
+    def _compute_stream_order(nodes, downstream, upstream):
+        pending = {key: len(upstream.get(key, [])) for key in nodes.keys()}
+        seeds = [key for key, cnt in pending.items() if cnt == 0]
+        seeds.sort(key=lambda k: nodes[k]["elev"], reverse=True)
+        queue = deque(seeds)
+        order = {}
+        collected = defaultdict(list)
+
+        while queue:
+            key = queue.popleft()
+            incoming = collected.get(key, [])
+            if not incoming:
+                order[key] = 1
+            else:
+                max_value = max(incoming)
+                if incoming.count(max_value) >= 2:
+                    order[key] = max_value + 1
+                else:
+                    order[key] = max_value
+
+            target = downstream.get(key)
+            if target is None:
+                continue
+            collected[target].append(order[key])
+            pending[target] -= 1
+            if pending[target] == 0:
+                queue.append(target)
+
+        return order
+
+    @staticmethod
+    def _trace_downstream_path(
+        start,
+        selected_downstream,
+        upstream_selected,
+        visited_edges,
+    ):
+        if start not in selected_downstream:
+            return None
+
+        path = [start]
+        current = start
+        while current in selected_downstream:
+            target = selected_downstream[current]
+            edge_key = (current, target)
+            if edge_key in visited_edges:
+                break
+            visited_edges.add(edge_key)
+            path.append(target)
+            if upstream_selected.get(target, 0) != 1:
+                break
+            current = target
+
+        if len(path) < 2:
+            return None
+        return path
+
+    @staticmethod
+    def _stream_class(order):
+        if order >= 5:
+            return "main"
+        if order >= 4:
+            return "secondary"
+        if order >= 3:
+            return "branch"
+        return "minor"
 
     def _sector_extreme(
         self, provider, center_point, radius, center_azimuth, mode, span=80.0, samples=17
