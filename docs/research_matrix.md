@@ -14,6 +14,8 @@
 | 일본 | 수용사(에도까지) | Watanabe 2015, Estudos Japoneses `35` https://revistas.usp.br/ej/article/view/108036 | 중국 전래 풍수가 일본에서 과학/점술 체계와 융합 |
 | 일본 | 중세 맥락 | Atsuko Koma 2014, Kyoto University Repository `史林 97(5)` https://repository.kulib.kyoto-u.ac.jp/dspace/handle/2433/193589 | 중세 일본 풍수 지리서의 전개와 문헌 수용 양상 |
 | 일본(류큐/오키나와) | 근세~근현대 묘제 | Kinjo et al. 2024, Religions `15(2):203` https://www.mdpi.com/2077-1444/15/2/203 | 음양·풍수·현지 장묘 관행이 결합된 지역 변형 |
+| 동남아(말레이시아) | 현대 부동산 | Hassan et al. 2020, Property Management `38(4)` https://www.emerald.com/insight/content/doi/10.1108/PM-01-2020-0001/full/html | 풍수 요소가 주택가격·선호에 미치는 영향 실증 |
+| 중국(도시) | 현대 주거시장 | Chia et al. 2020, Habitat International DOI `10.1016/j.habitatint.2019.102068` https://doi.org/10.1016/j.habitatint.2019.102068 | 산수(Shan-Shui) 가치와 주거 가격의 정량 연계 |
 | 동아시아 공통 | 현대 경관학 관점 | Yue & Wang 2024, JoLA https://www.sciencedirect.com/science/article/pii/S1617138124000036 | 산수/보호-개방/방향 원리를 현대 공간분석으로 재해석 |
 | 사찰 입지 | 근세/근대 사례 다수 | Bae et al. 2025, Land `14(5):1124` https://www.mdpi.com/2073-445X/14/5/1124 | 고도/경사/수계/접근성/가시성 복합 요인 |
 
@@ -23,18 +25,26 @@
 |---|---|---|
 | 예측모델 체계 리뷰 | IJGI 2025 https://www.mdpi.com/2220-9964/14/4/133 | 변수의 문화권 의존성이 커서 지역 프리셋 필요 |
 | 모델 검증 방법 | IJGI 2023 https://www.mdpi.com/2220-9964/12/6/228 | 전이 성능(지역/시대 이동) 검증이 필수 |
+| 동아시아 APM 실증 | IJGI 2023 `12(6):238` https://www.mdpi.com/2220-9964/12/6/238 | 일본·중국 사례에서 지형/수문 변수 가중치 학습 가능성 확인 |
 | ML 기반 APM 사례 | Cambridge 2023 https://www.cambridge.org/core/journals/latin-american-antiquity/article/machine-learning-in-archaeological-predictive-modelling-an-argentinian-case-study/A67A00E172BFE8458FBFF025B5A53DBD | 규칙 기반 결과를 후속 학습모델 피처로 활용 가능 |
+| 북아프리카 사례 | Geosciences 2018 `8(6):207` https://www.mdpi.com/2076-3263/8/6/207 | 건조 지역 유적 예측에서 지형+수문 변수 중요성 확인 |
 
 ## 3) 코드 반영: 국가/시대 분리
 
 추가 파일:
 
 - `feng_shui_gis/cultural_context.py`
+- `feng_shui_gis/config/contexts.json`
+- `feng_shui_gis/config/profiles.json`
+- `feng_shui_gis/config/terms.json`
+- `feng_shui_gis/config/analysis_rules.json`
+- `feng_shui_gis/profile_catalog.py`
 
 반영 내용:
 
-- 국가/지역: `east_asia`, `korea`, `china`, `japan`, `ryukyu`
+- 국가/지역: `east_asia`, `korea`, `china`, `japan`, `ryukyu`, `southeast_asia`, `global_apm`
 - 시대: `ancient`, `medieval`, `early_modern`, `modern`
+- 분석 프로파일 확장: `urban_real_estate`, `global_apm`
 - 컨텍스트가 바꾸는 항목:
   - 향 점수 목표각/민감도
   - 수계 최적 거리/분산
@@ -47,6 +57,7 @@
 
 - 점수 레이어: `fs_culture`, `fs_period`
 - 용어 레이어: `culture`, `period`, `term_ko`
+- 용어/시각화 규칙: `terms.json`에서 데이터 기반 관리(두꺼운 선/점 포함)
 
 ## 4) 이번 구현의 해석 범위
 

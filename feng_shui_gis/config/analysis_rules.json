@@ -1,0 +1,23 @@
+{
+  "sampling": {
+    "micro_radius_factor": 2.0,
+    "macro_radius_factor": 12.0,
+    "macro_bearing_step": 22,
+    "micro_bearing_step": 45
+  },
+  "dem_metrics": {
+    "form_back": { "target": 0.2, "sigma": 0.35 },
+    "form_front": { "target": 0.15, "sigma": 0.35 },
+    "form_side": { "target": 0.05, "sigma": 0.25 },
+    "xue": { "target": -0.1, "sigma": 0.3 },
+    "hierarchy": { "target": 0.55, "sigma": 0.3 },
+    "wetness": { "target": 0.6, "sigma": 0.28 },
+    "slope_denominator": 35.0
+  },
+  "hyeol_candidate": {
+    "tpi_min": -0.45,
+    "tpi_max": 0.35,
+    "tpi_target": -0.08,
+    "tpi_sigma": 0.3
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "general": {
+    "label": {
+      "en": "General",
+      "ko": "일반 풍수",
+      "zh": "通用",
+      "ja": "一般"
+    },
+    "weights": {
+      "slope": 0.2,
+      "aspect": 0.15,
+      "form": 0.25,
+      "long": 0.2,
+      "water": 0.2
+    },
+    "slope_target": 8.0,
+    "slope_sigma": 10.0,
+    "tpi_target": -0.05,
+    "tpi_sigma": 0.4
+  },
+  "tomb": {
+    "label": {
+      "en": "Tomb",
+      "ko": "무덤",
+      "zh": "墓葬",
+      "ja": "墳墓"
+    },
+    "weights": {
+      "long": 0.32,
+      "form": 0.24,
+      "water": 0.18,
+      "aspect": 0.14,
+      "slope": 0.08,
+      "tpi": 0.04
+    },
+    "slope_target": 10.0,
+    "slope_sigma": 8.0,
+    "tpi_target": 0.05,
+    "tpi_sigma": 0.25
+  },
+  "house": {
+    "label": {
+      "en": "House",
+      "ko": "주거",
+      "zh": "居住",
+      "ja": "住居"
+    },
+    "weights": {
+      "slope": 0.2,
+      "aspect": 0.24,
+      "form": 0.2,
+      "water": 0.18,
+      "long": 0.1,
+      "tpi": 0.08
+    },
+    "slope_target": 5.0,
+    "slope_sigma": 6.0,
+    "tpi_target": -0.05,
+    "tpi_sigma": 0.25
+  },
+  "village": {
+    "label": {
+      "en": "Village",
+      "ko": "마을",
+      "zh": "村落",
+      "ja": "集落"
+    },
+    "weights": {
+      "slope": 0.2,
+      "water": 0.22,
+      "form": 0.2,
+      "long": 0.14,
+      "aspect": 0.08,
+      "tpi": 0.16
+    },
+    "slope_target": 4.0,
+    "slope_sigma": 7.0,
+    "tpi_target": -0.1,
+    "tpi_sigma": 0.25
+  },
+  "well": {
+    "label": {
+      "en": "Well",
+      "ko": "우물",
+      "zh": "水井",
+      "ja": "井戸"
+    },
+    "weights": {
+      "conv": 0.38,
+      "water": 0.2,
+      "slope": 0.16,
+      "tpi": 0.2,
+      "form": 0.06
+    },
+    "slope_target": 3.0,
+    "slope_sigma": 5.0,
+    "tpi_target": -0.22,
+    "tpi_sigma": 0.22
+  },
+  "temple": {
+    "label": {
+      "en": "Temple",
+      "ko": "사찰",
+      "zh": "寺庙",
+      "ja": "寺院"
+    },
+    "weights": {
+      "long": 0.26,
+      "form": 0.25,
+      "aspect": 0.15,
+      "slope": 0.1,
+      "tpi": 0.16,
+      "water": 0.08
+    },
+    "slope_target": 9.0,
+    "slope_sigma": 10.0,
+    "tpi_target": 0.18,
+    "tpi_sigma": 0.25
+  },
+  "urban_real_estate": {
+    "label": {
+      "en": "Urban Real Estate",
+      "ko": "도시 부동산",
+      "zh": "城市不动产",
+      "ja": "都市不動産"
+    },
+    "weights": {
+      "aspect": 0.28,
+      "water": 0.24,
+      "form": 0.18,
+      "slope": 0.14,
+      "tpi": 0.08,
+      "long": 0.08
+    },
+    "slope_target": 4.0,
+    "slope_sigma": 6.0,
+    "tpi_target": -0.02,
+    "tpi_sigma": 0.22
+  },
+  "global_apm": {
+    "label": {
+      "en": "Global APM",
+      "ko": "글로벌 예측모델",
+      "zh": "全球预测模型",
+      "ja": "グローバル予測モデル"
+    },
+    "weights": {
+      "water": 0.28,
+      "slope": 0.22,
+      "tpi": 0.18,
+      "conv": 0.14,
+      "form": 0.1,
+      "aspect": 0.08
+    },
+    "slope_target": 6.0,
+    "slope_sigma": 8.0,
+    "tpi_target": -0.08,
+    "tpi_sigma": 0.3
+  }
+}

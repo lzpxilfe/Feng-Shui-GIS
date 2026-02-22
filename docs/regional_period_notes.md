@@ -32,6 +32,20 @@
 - 참고:
   - https://www.mdpi.com/2077-1444/15/2/203
 
+### Southeast Asia
+- 현대 도시 맥락에서는 풍수 요인이 부동산 가치/선호에 영향을 보인다는 실증 연구가 존재.
+- 입수/수구 계열(수문 접근), 방향 계열(향) 지표를 상대적으로 강화하는 설정을 실험.
+- 참고:
+  - https://www.emerald.com/insight/content/doi/10.1108/PM-01-2020-0001/full/html
+  - https://doi.org/10.1016/j.habitatint.2019.102068
+
+### Global APM baseline
+- 지역 고유 풍수 규칙이 불명확한 경우, 고고학 예측모델 공통 변수 중심의 중립 베이스라인이 유용.
+- 경사/수계/상대고도/수렴도 중심으로 보수적으로 설정.
+- 참고:
+  - https://www.mdpi.com/2220-9964/14/4/133
+  - https://www.mdpi.com/2220-9964/12/6/228
+
 ## 시대 차이(분석 가설)
 
 ### Ancient

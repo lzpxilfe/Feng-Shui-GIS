@@ -6,6 +6,7 @@ _MESSAGES = {
         "plugin_title": "Feng Shui GIS",
         "menu_title": "Feng Shui GIS",
         "panel_title": "Feng Shui Site Analyzer",
+        "panel_subtitle": "DEM and water-first landscape reading with optional archaeology scoring.",
         "sites_label": "Site points",
         "dem_label": "DEM raster",
         "water_label": "Water layer (optional)",
@@ -30,6 +31,19 @@ _MESSAGES = {
         "period_medieval": "Medieval",
         "period_early_modern": "Early modern",
         "period_modern": "Modern/Contemporary",
+        "tab_landscape": "Landscape",
+        "tab_analysis": "Advanced Analysis",
+        "landscape_desc": "Base mode: extract ridgeline hierarchy and hydro network from DEM first. Add Feng Shui terms only when needed.",
+        "analysis_desc": "Optional mode: run candidate-site scoring (fs_score) for archaeology.",
+        "auto_hydro_label": "If water layer is missing, derive hydro network from DEM automatically",
+        "include_terms_label": "Also create Feng Shui term points and structural links",
+        "analysis_auto_hydro_label": "Use DEM-derived hydro network when water layer is missing",
+        "extract_landscape_button": "Extract Landscape Flow / Maek",
+        "help_button": "Detailed Help",
+        "help_dialog_title": "Feng Shui GIS - Detailed Guide",
+        "help_tab_overview": "Workflow",
+        "help_tab_symbols": "Symbols",
+        "help_tab_references": "References",
         "run_button": "Run Analysis",
         "extract_terms_button": "Extract DEM Terms",
         "status_idle": "Choose layers, then run analysis.",
@@ -38,14 +52,17 @@ _MESSAGES = {
         "status_done": "Analysis completed.",
         "warn_missing_layers": "Select site points and DEM first.",
         "warn_dem_required": "Select DEM first.",
+        "warn_geographic_crs": "DEM CRS is geographic (degrees). Use projected CRS in meters for reliable distances.",
         "warn_failed": "Analysis failed",
         "ok_finished": "Created scored layer",
         "ok_terms_finished": "Created Feng Shui term layer",
+        "ok_landscape_finished": "Created landscape flow layers",
     },
     "ko": {
         "plugin_title": "풍수 GIS",
         "menu_title": "풍수 GIS",
         "panel_title": "풍수 입지 분석기",
+        "panel_subtitle": "DEM/수계를 우선으로 읽고, 필요할 때만 고급 입지 점수를 계산합니다.",
         "sites_label": "후보지 포인트",
         "dem_label": "DEM 래스터",
         "water_label": "수계 레이어(선택)",
@@ -70,6 +87,19 @@ _MESSAGES = {
         "period_medieval": "중세",
         "period_early_modern": "근세",
         "period_modern": "근현대",
+        "tab_landscape": "기본 지형",
+        "tab_analysis": "고급 분석",
+        "landscape_desc": "기본 모드: DEM에서 능선 계층(대간/정맥/기맥/지맥)과 수계 흐름을 먼저 추출합니다.",
+        "analysis_desc": "선택 모드: 후보지 포인트가 있을 때만 점수 기반 입지 분석(fs_score)을 실행합니다.",
+        "auto_hydro_label": "수계 레이어가 없으면 DEM 기반 자동 수문 추출 사용",
+        "include_terms_label": "풍수 용어 포인트/구조 연결선도 함께 생성",
+        "analysis_auto_hydro_label": "분석 시 수계가 없으면 DEM 자동 수문 추출 사용",
+        "extract_landscape_button": "지형 흐름/맥 추출",
+        "help_button": "상세 도움말",
+        "help_dialog_title": "풍수 GIS - 상세 가이드",
+        "help_tab_overview": "워크플로우",
+        "help_tab_symbols": "심볼",
+        "help_tab_references": "레퍼런스",
         "run_button": "분석 실행",
         "extract_terms_button": "DEM 용어 추출",
         "status_idle": "레이어를 선택하고 분석을 실행하세요.",
@@ -78,9 +108,11 @@ _MESSAGES = {
         "status_done": "분석 완료.",
         "warn_missing_layers": "후보지와 DEM을 선택하세요.",
         "warn_dem_required": "DEM을 선택하세요.",
+        "warn_geographic_crs": "DEM 좌표계가 경위도(도 단위)입니다. 거리 신뢰성을 위해 미터 투영 좌표계를 권장합니다.",
         "warn_failed": "분석 실패",
         "ok_finished": "점수 레이어가 생성되었습니다",
         "ok_terms_finished": "풍수 용어 레이어가 생성되었습니다",
+        "ok_landscape_finished": "지형 흐름 레이어가 생성되었습니다",
     },
     "zh": {
         "plugin_title": "风水 GIS",
@@ -118,9 +150,11 @@ _MESSAGES = {
         "status_done": "分析完成。",
         "warn_missing_layers": "请先选择候选点和 DEM 图层。",
         "warn_dem_required": "请先选择 DEM 图层。",
+        "warn_geographic_crs": "DEM 为地理坐标系（度）。为保证距离可靠，建议使用米制投影坐标系。",
         "warn_failed": "分析失败",
         "ok_finished": "已创建评分图层",
         "ok_terms_finished": "已创建风水术语图层",
+        "ok_landscape_finished": "已创建地形流线图层",
     },
     "ja": {
         "plugin_title": "風水 GIS",
@@ -158,22 +192,29 @@ _MESSAGES = {
         "status_done": "解析が完了しました。",
         "warn_missing_layers": "候補地と DEM を選択してください。",
         "warn_dem_required": "DEM を選択してください。",
+        "warn_geographic_crs": "DEM が地理座標系（度）です。距離精度のためメートル系投影座標を推奨します。",
         "warn_failed": "解析失敗",
         "ok_finished": "スコア付きレイヤーを作成しました",
         "ok_terms_finished": "風水用語レイヤーを作成しました",
+        "ok_landscape_finished": "地形フローレイヤーを作成しました",
     },
 }
 
 
 def _language_code():
+    # Korean is the default UI language for this plugin.
     code = QLocale.system().name().split("_", maxsplit=1)[0].lower()
-    if code in _MESSAGES:
-        return code
-    return "en"
+    if code == "ko":
+        return "ko"
+    return "ko"
+
+
+def language_code():
+    return _language_code()
 
 
 def tr(key):
     lang = _language_code()
     if key in _MESSAGES[lang]:
         return _MESSAGES[lang][key]
-    return _MESSAGES["en"].get(key, key)
+    return _MESSAGES["ko"].get(key, key)

@@ -1,0 +1,139 @@
+{
+  "base_culture_key": "east_asia",
+  "base_period_key": "early_modern",
+  "cultures": {
+    "east_asia": {
+      "label": { "en": "East Asia baseline", "ko": "동아시아 기본", "zh": "东亚基准", "ja": "東アジア基準" },
+      "aspect_targets": { "north": 180.0, "south": 0.0 },
+      "aspect_sharpness": 1.0,
+      "water_distance_target": 220.0,
+      "water_distance_sigma": 350.0,
+      "macro_radius_multiplier": 1.0,
+      "micro_radius_multiplier": 1.0,
+      "hyeol_threshold": 0.62,
+      "weight_bias": {},
+      "term_bias": {},
+      "term_target_shift": 0.0
+    },
+    "korea": {
+      "label": { "en": "Korea", "ko": "한국", "zh": "韩国", "ja": "韓国" },
+      "aspect_targets": { "north": 180.0, "south": 0.0 },
+      "aspect_sharpness": 1.15,
+      "water_distance_target": 210.0,
+      "water_distance_sigma": 330.0,
+      "macro_radius_multiplier": 1.1,
+      "micro_radius_multiplier": 1.0,
+      "hyeol_threshold": 0.64,
+      "weight_bias": { "form": 0.06, "long": 0.04, "water": 0.02, "aspect": 0.02, "slope": -0.03 },
+      "term_bias": { "ansan": 0.05, "josan": 0.05, "naecheongnyong": 0.04, "naebaekho": 0.04, "naesugu": 0.04 },
+      "term_target_shift": 0.01
+    },
+    "china": {
+      "label": { "en": "China", "ko": "중국", "zh": "中国", "ja": "中国" },
+      "aspect_targets": { "north": 180.0, "south": 0.0 },
+      "aspect_sharpness": 1.1,
+      "water_distance_target": 260.0,
+      "water_distance_sigma": 420.0,
+      "macro_radius_multiplier": 1.2,
+      "micro_radius_multiplier": 1.05,
+      "hyeol_threshold": 0.64,
+      "weight_bias": { "long": 0.07, "water": 0.05, "form": 0.03, "tpi": -0.03 },
+      "term_bias": { "jusan": 0.04, "jojongsan": 0.06, "naesugu": 0.03, "oesugu": 0.04 },
+      "term_target_shift": 0.03
+    },
+    "japan": {
+      "label": { "en": "Japan", "ko": "일본", "zh": "日本", "ja": "日本" },
+      "aspect_targets": { "north": 170.0, "south": 350.0 },
+      "aspect_sharpness": 0.85,
+      "water_distance_target": 240.0,
+      "water_distance_sigma": 360.0,
+      "macro_radius_multiplier": 1.0,
+      "micro_radius_multiplier": 0.95,
+      "hyeol_threshold": 0.6,
+      "weight_bias": { "aspect": 0.05, "form": 0.03, "water": -0.03, "long": 0.01 },
+      "term_bias": { "naecheongnyong": 0.03, "oecheongnyong": 0.02, "naebaekho": 0.03, "oebaekho": 0.02, "ansan": 0.02 },
+      "term_target_shift": -0.01
+    },
+    "ryukyu": {
+      "label": { "en": "Ryukyu/Okinawa", "ko": "류큐/오키나와", "zh": "琉球/冲绳", "ja": "琉球/沖縄" },
+      "aspect_targets": { "north": 165.0, "south": 345.0 },
+      "aspect_sharpness": 0.9,
+      "water_distance_target": 180.0,
+      "water_distance_sigma": 310.0,
+      "macro_radius_multiplier": 0.9,
+      "micro_radius_multiplier": 1.05,
+      "hyeol_threshold": 0.59,
+      "weight_bias": { "water": 0.1, "conv": 0.04, "long": -0.05, "form": 0.01 },
+      "term_bias": { "ipsu": 0.06, "naesugu": 0.05, "oesugu": 0.05 },
+      "term_target_shift": -0.03
+    },
+    "southeast_asia": {
+      "label": { "en": "Southeast Asia", "ko": "동남아", "zh": "东南亚", "ja": "東南アジア" },
+      "aspect_targets": { "north": 170.0, "south": 350.0 },
+      "aspect_sharpness": 0.95,
+      "water_distance_target": 190.0,
+      "water_distance_sigma": 300.0,
+      "macro_radius_multiplier": 0.95,
+      "micro_radius_multiplier": 1.05,
+      "hyeol_threshold": 0.6,
+      "weight_bias": { "water": 0.08, "aspect": 0.04, "form": -0.02, "long": -0.03 },
+      "term_bias": { "ipsu": 0.05, "naesugu": 0.04, "oesugu": 0.04 },
+      "term_target_shift": -0.02
+    },
+    "global_apm": {
+      "label": { "en": "Global APM baseline", "ko": "글로벌 예측모델 기본", "zh": "全球预测基准", "ja": "グローバル予測基準" },
+      "aspect_targets": { "north": 180.0, "south": 0.0 },
+      "aspect_sharpness": 0.9,
+      "water_distance_target": 200.0,
+      "water_distance_sigma": 320.0,
+      "macro_radius_multiplier": 1.0,
+      "micro_radius_multiplier": 1.0,
+      "hyeol_threshold": 0.58,
+      "weight_bias": { "water": 0.07, "slope": 0.03, "conv": 0.04, "long": -0.04 },
+      "term_bias": { "ipsu": 0.03, "naesugu": 0.03 },
+      "term_target_shift": -0.01
+    }
+  },
+  "periods": {
+    "ancient": {
+      "label": { "en": "Ancient", "ko": "고대", "zh": "古代", "ja": "古代" },
+      "water_target_shift": 30.0,
+      "water_sigma_shift": 20.0,
+      "macro_radius_multiplier": 1.15,
+      "micro_radius_multiplier": 1.0,
+      "hyeol_threshold_shift": 0.02,
+      "weight_bias": { "long": 0.05, "form": 0.03, "water": -0.02, "aspect": -0.02 },
+      "term_target_shift": 0.02
+    },
+    "medieval": {
+      "label": { "en": "Medieval", "ko": "중세", "zh": "中世", "ja": "中世" },
+      "water_target_shift": 10.0,
+      "water_sigma_shift": 10.0,
+      "macro_radius_multiplier": 1.05,
+      "micro_radius_multiplier": 1.0,
+      "hyeol_threshold_shift": 0.01,
+      "weight_bias": { "form": 0.03, "long": 0.03 },
+      "term_target_shift": 0.01
+    },
+    "early_modern": {
+      "label": { "en": "Early modern", "ko": "근세", "zh": "近世", "ja": "近世" },
+      "water_target_shift": 0.0,
+      "water_sigma_shift": 0.0,
+      "macro_radius_multiplier": 1.0,
+      "micro_radius_multiplier": 1.0,
+      "hyeol_threshold_shift": 0.0,
+      "weight_bias": { "aspect": 0.02, "water": 0.01 },
+      "term_target_shift": 0.0
+    },
+    "modern": {
+      "label": { "en": "Modern/Contemporary", "ko": "근현대", "zh": "近现代", "ja": "近現代" },
+      "water_target_shift": -15.0,
+      "water_sigma_shift": -20.0,
+      "macro_radius_multiplier": 0.9,
+      "micro_radius_multiplier": 1.0,
+      "hyeol_threshold_shift": -0.03,
+      "weight_bias": { "water": 0.03, "conv": 0.03, "long": -0.04, "form": -0.02 },
+      "term_target_shift": -0.02
+    }
+  }
+}
