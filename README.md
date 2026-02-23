@@ -8,6 +8,8 @@ Feng Shui GIS is a DEM-first interpretation plugin for archaeology-oriented land
 2. Extracts hydro network from DEM (if no water layer is supplied).
 3. Optionally derives Feng Shui term points and structural links.
 4. Optionally scores candidate sites (`fs_score`) when point data is provided.
+5. Provides context-parameter evidence (`source_doi`, `evidence_level`) in UI.
+6. Runs Korean SHP auto-calibration and outputs ROC/AUC reports (`reports/*.json`, `reports/*.md`).
 
 ## Core Principle
 
@@ -25,8 +27,9 @@ Feng Shui GIS is a DEM-first interpretation plugin for archaeology-oriented land
 ## Interpretability
 
 - Layers expose `reason_ko` / `fs_reason` fields.
-- Selecting a feature shows reasoning text in QGIS message bar.
+- Selecting a feature shows reasoning text in QGIS message bar and popup window.
 - Map tip templates include key metrics for each layer type.
+- Context panel shows DOI immediately for selected parameter and opens full evidence dialog.
 
 ## Configuration (No Hardcoded Research Constants)
 

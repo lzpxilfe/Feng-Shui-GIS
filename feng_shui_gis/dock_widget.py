@@ -11,6 +11,7 @@ from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSpinBox,
     QTabWidget,
     QTextBrowser,
     QVBoxLayout,
@@ -23,6 +24,8 @@ from .cultural_context import (
     available_cultures,
     available_periods,
     culture_label,
+    context_evidence_html,
+    context_evidence_records,
     period_label,
 )
 from .locale import language_code, tr
@@ -271,9 +274,41 @@ class FengShuiHelpDialog(QDialog):
         """
 
 
+class ContextEvidenceDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("컨텍스트 근거")
+        self.resize(860, 620)
+        self.setStyleSheet(FengShuiHelpDialog._dialog_stylesheet())
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        self.browser = QTextBrowser(self)
+        self.browser.setOpenExternalLinks(True)
+        self.browser.setReadOnly(True)
+        self.browser.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.browser.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        layout.addWidget(self.browser)
+
+    def set_html(self, html):
+        self.browser.setHtml(html)
+
+
 class FengShuiDockWidget(QWidget):
     run_requested = pyqtSignal(object, object, object, str, str, str, str, bool)
     terms_requested = pyqtSignal(object, object, str, str, str, bool, bool)
+    calibration_requested = pyqtSignal(
+        object,
+        object,
+        object,
+        str,
+        str,
+        str,
+        str,
+        int,
+        int,
+        bool,
+    )
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -282,6 +317,8 @@ class FengShuiDockWidget(QWidget):
         self.resize(680, 820)
         self.setMinimumSize(620, 760)
         self._help_dialog = None
+        self._context_evidence_dialog = None
+        self._context_records = []
         self.setStyleSheet(self._main_stylesheet())
         self._build_ui()
 
@@ -356,8 +393,36 @@ class FengShuiDockWidget(QWidget):
         if "early_modern" in period_keys:
             self.period_combo.setCurrentIndex(period_keys.index("early_modern"))
         form.addRow(tr("period_label"), self.period_combo)
+
+        self.context_param_combo = QComboBox(self)
+        form.addRow("근거 파라미터", self.context_param_combo)
+
+        evidence_row = QHBoxLayout()
+        self.context_evidence_button = QPushButton("컨텍스트 근거 보기", self)
+        self.context_evidence_button.setObjectName("helpButton")
+        self.context_evidence_button.clicked.connect(self._open_context_evidence_dialog)
+        evidence_row.addWidget(self.context_evidence_button)
+        evidence_row.addStretch(1)
+
+        self.context_evidence_hint = QLabel("", self)
+        self.context_evidence_hint.setObjectName("contextHint")
+        self.context_evidence_hint.setWordWrap(True)
+
+        self.context_param_hint = QLabel("", self)
+        self.context_param_hint.setObjectName("contextParamHint")
+        self.context_param_hint.setWordWrap(True)
+
         controls_layout.addLayout(form)
+        controls_layout.addLayout(evidence_row)
+        controls_layout.addWidget(self.context_evidence_hint)
+        controls_layout.addWidget(self.context_param_hint)
         layout.addWidget(controls)
+
+        self.culture_combo.currentIndexChanged.connect(self._update_context_evidence_hint)
+        self.period_combo.currentIndexChanged.connect(self._update_context_evidence_hint)
+        self.hemisphere_combo.currentIndexChanged.connect(self._update_context_evidence_hint)
+        self.context_param_combo.currentIndexChanged.connect(self._update_selected_param_evidence_hint)
+        self._update_context_evidence_hint()
 
         tabs = QTabWidget(self)
         tabs.setDocumentMode(True)
@@ -434,10 +499,39 @@ class FengShuiDockWidget(QWidget):
         self.analysis_auto_hydro_checkbox.setChecked(True)
         card_layout.addWidget(self.analysis_auto_hydro_checkbox)
 
+        ratio_row = QHBoxLayout()
+        ratio_label = QLabel("음성 샘플 배수", card)
+        self.negative_ratio_combo = QComboBox(card)
+        self.negative_ratio_combo.addItem("1x", 1)
+        self.negative_ratio_combo.addItem("2x", 2)
+        self.negative_ratio_combo.addItem("3x (권장)", 3)
+        self.negative_ratio_combo.addItem("4x", 4)
+        self.negative_ratio_combo.setCurrentIndex(2)
+        ratio_row.addWidget(ratio_label)
+        ratio_row.addWidget(self.negative_ratio_combo, 1)
+        card_layout.addLayout(ratio_row)
+
+        seed_row = QHBoxLayout()
+        seed_label = QLabel("랜덤 시드", card)
+        self.calibration_seed_spin = QSpinBox(card)
+        self.calibration_seed_spin.setRange(1, 999999)
+        self.calibration_seed_spin.setValue(42)
+        seed_row.addWidget(seed_label)
+        seed_row.addWidget(self.calibration_seed_spin, 1)
+        card_layout.addLayout(seed_row)
+
         self.run_button = QPushButton(tr("run_button"), card)
         self.run_button.setObjectName("primaryAction")
         self.run_button.clicked.connect(self._emit_run_requested)
         card_layout.addWidget(self.run_button)
+
+        self.calibration_button = QPushButton(
+            "한국 SHP 캘리브레이션 (ROC/AUC 리포트)",
+            card,
+        )
+        self.calibration_button.setObjectName("helpButton")
+        self.calibration_button.clicked.connect(self._emit_calibration_requested)
+        card_layout.addWidget(self.calibration_button)
         layout.addWidget(card)
         layout.addStretch(1)
         return tab
@@ -448,6 +542,82 @@ class FengShuiDockWidget(QWidget):
         self._help_dialog.show()
         self._help_dialog.raise_()
         self._help_dialog.activateWindow()
+
+    def _open_context_evidence_dialog(self):
+        html = context_evidence_html(
+            culture_key=self.culture_combo.currentData(),
+            period_key=self.period_combo.currentData(),
+            hemisphere=self.hemisphere_combo.currentData(),
+        )
+        if self._context_evidence_dialog is None:
+            self._context_evidence_dialog = ContextEvidenceDialog(self)
+        self._context_evidence_dialog.set_html(html)
+        self._context_evidence_dialog.show()
+        self._context_evidence_dialog.raise_()
+        self._context_evidence_dialog.activateWindow()
+
+    def _update_context_evidence_hint(self, *_args):
+        records = context_evidence_records(
+            culture_key=self.culture_combo.currentData(),
+            period_key=self.period_combo.currentData(),
+            hemisphere=self.hemisphere_combo.currentData(),
+        )
+        self._context_records = records
+
+        selected_key = self.context_param_combo.currentData()
+        self.context_param_combo.blockSignals(True)
+        self.context_param_combo.clear()
+        for index, item in enumerate(records):
+            group = item.get("group", "-")
+            name = item.get("name", "-")
+            self.context_param_combo.addItem(f"{group}.{name}", index)
+        if records:
+            if isinstance(selected_key, int) and 0 <= selected_key < len(records):
+                self.context_param_combo.setCurrentIndex(selected_key)
+            else:
+                self.context_param_combo.setCurrentIndex(0)
+        self.context_param_combo.blockSignals(False)
+
+        source_list = []
+        for item in records:
+            for source in item.get("source_doi", []):
+                if source not in source_list:
+                    source_list.append(source)
+            if len(source_list) >= 2:
+                break
+        hint = (
+            f"현재 프로필 근거: {self.culture_combo.currentText()} / "
+            f"{self.period_combo.currentText()} (상세는 '컨텍스트 근거 보기')."
+        )
+        if source_list:
+            hint += f" 대표 DOI: {source_list[0]}"
+            if len(source_list) > 1:
+                hint += f", {source_list[1]}"
+        self.context_evidence_hint.setText(hint)
+        self._update_selected_param_evidence_hint()
+
+    def _update_selected_param_evidence_hint(self, *_args):
+        if not self._context_records:
+            self.context_param_hint.setText("선택 가능한 파라미터 근거가 없습니다.")
+            return
+
+        index = self.context_param_combo.currentIndex()
+        if index < 0 or index >= len(self._context_records):
+            index = 0
+        item = self._context_records[index]
+        value = item.get("value")
+        if isinstance(value, float):
+            value_text = f"{value:.4f}".rstrip("0").rstrip(".")
+        else:
+            value_text = str(value)
+        level = item.get("evidence_level", "U")
+        dois = item.get("source_doi", [])
+        doi_text = ", ".join(dois) if dois else "DOI 없음"
+        note = item.get("note") or "설명 없음"
+        self.context_param_hint.setText(
+            f"[{item.get('group', '-')}.{item.get('name', '-')}] "
+            f"값={value_text} | 근거수준={level} | DOI={doi_text} | 메모={note}"
+        )
 
     def set_status(self, text):
         self.status_label.setText(text)
@@ -473,6 +643,20 @@ class FengShuiDockWidget(QWidget):
             self.period_combo.currentData(),
             self.landscape_auto_hydro_checkbox.isChecked(),
             self.include_terms_checkbox.isChecked(),
+        )
+
+    def _emit_calibration_requested(self):
+        self.calibration_requested.emit(
+            self.sites_combo.currentLayer(),
+            self.dem_combo.currentLayer(),
+            self.water_combo.currentLayer(),
+            self.hemisphere_combo.currentData(),
+            self.profile_combo.currentData(),
+            self.culture_combo.currentData(),
+            self.period_combo.currentData(),
+            int(self.negative_ratio_combo.currentData()),
+            int(self.calibration_seed_spin.value()),
+            self.analysis_auto_hydro_checkbox.isChecked(),
         )
 
     @staticmethod
@@ -521,6 +705,16 @@ class FengShuiDockWidget(QWidget):
                 border: 1px solid #c7ddd6;
                 border-radius: 9px;
                 padding: 8px 10px;
+            }
+            QLabel#contextHint {
+                color: #38534c;
+                font-size: 11px;
+                padding: 2px 0px;
+            }
+            QLabel#contextParamHint {
+                color: #2c413c;
+                font-size: 11px;
+                padding: 2px 0px 4px 0px;
             }
             QComboBox, QgsMapLayerComboBox, QLineEdit {
                 background: #ffffff;
