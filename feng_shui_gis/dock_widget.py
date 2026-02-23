@@ -156,6 +156,8 @@ class FengShuiHelpDialog(QDialog):
             <p><b>2) 수계 미입력 시</b>: DEM 기반 자동 수문 추출을 실행합니다.</p>
             <p><b>3) 상세 용어</b>: 필요 시 혈/명당/청룡/백호 등 용어 포인트/구조 연결선을 추가합니다.</p>
             <p><b>4) 고급 분석 모드</b>: 후보지 포인트가 있을 때 점수 분석(<code>fs_score</code>)을 실행합니다.</p>
+            <p><b>클릭 설명</b>: 각 레이어의 피처를 식별(Identify)하면 <code>reason_ko</code> 또는 <code>fs_reason</code> 필드에서
+            왜 해당 분류/점수가 나왔는지 상세 근거를 확인할 수 있습니다.</p>
             <p><b>권장</b>: 경위도 대신 미터 단위 투영 좌표계(UTM/TM) 사용.</p>
         """
 

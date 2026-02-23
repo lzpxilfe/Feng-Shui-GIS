@@ -34,6 +34,20 @@ from .profile_catalog import (
     term_specs,
 )
 
+RIDGE_CLASS_LABELS_KO = {
+    "daegan": "대간",
+    "jeongmaek": "정맥",
+    "gimaek": "기맥",
+    "jimaek": "지맥",
+}
+
+HYDRO_CLASS_LABELS_KO = {
+    "main": "주수계",
+    "secondary": "중간 수계",
+    "branch": "지류",
+    "minor": "미소 수로",
+}
+
 
 class FengShuiAnalyzer:
     """Compute archaeology-oriented Feng Shui scores from DEM and optional water."""
@@ -176,6 +190,8 @@ class FengShuiAnalyzer:
             to_add.append(QgsField("fs_conf", QVariant.Double, "double", 6, 3))
         if layer.fields().indexFromName("fs_note") < 0:
             to_add.append(QgsField("fs_note", QVariant.String, "string", 80))
+        if layer.fields().indexFromName("fs_reason") < 0:
+            to_add.append(QgsField("fs_reason", QVariant.String, "string", 254))
         if layer.fields().indexFromName("fs_water_m") < 0:
             to_add.append(QgsField("fs_water_m", QVariant.Double, "double", 12, 3))
         if layer.fields().indexFromName("fs_slope") < 0:
@@ -264,12 +280,22 @@ class FengShuiAnalyzer:
                 total_score = self._profile_weighted_score(indicators, profile)
                 confidence = self._profile_confidence(indicators, profile)
                 note = self._explain_top_factors(indicators, profile)
+                score_text = "n/a" if total_score is None else f"{total_score:.2f}"
+                slope_text = "n/a" if slope_value is None else f"{slope_value:.2f}"
+                aspect_text = "n/a" if aspect_value is None else f"{aspect_value:.1f}"
+                water_text = "n/a" if water_distance is None else f"{water_distance:.1f}"
+                reason_ko = (
+                    f"모델={profile_key}, 문화권={context['culture_key']}, 시대={context['period_key']}, "
+                    f"총점={score_text}, 경사={slope_text}, 향={aspect_text}, "
+                    f"수계거리={water_text}, 상위요인={note}"
+                )
 
                 feature["fs_culture"] = context["culture_key"]
                 feature["fs_period"] = context["period_key"]
                 feature["fs_model"] = profile_key
                 feature["fs_conf"] = confidence
                 feature["fs_note"] = note
+                feature["fs_reason"] = reason_ko
                 feature["fs_water_m"] = water_distance
                 feature["fs_slope"] = indicators["slope"]
                 feature["fs_aspect"] = indicators["aspect"]
@@ -740,6 +766,7 @@ class FengShuiAnalyzer:
         fields.append(QgsField("score", QVariant.Double, "double", 7, 3))
         fields.append(QgsField("elev", QVariant.Double, "double", 12, 3))
         fields.append(QgsField("note", QVariant.String, "string", 80))
+        fields.append(QgsField("reason_ko", QVariant.String, "string", 254))
         data.addAttributes(fields)
         term_layer.updateFields()
 
@@ -772,6 +799,12 @@ class FengShuiAnalyzer:
                     0.0,
                     min(1.0, adjusted_score + term_bias.get(term_id, 0.0)),
                 )
+            score_text = "n/a" if adjusted_score is None else f"{adjusted_score:.3f}"
+            elev_text = "n/a" if elev is None else f"{elev:.2f}"
+            reason_ko = (
+                f"{term_label_ko(term_id)} 후보. parent={parent_id}, rank={rank}, "
+                f"score={score_text}, elev={elev_text}, 근거={note}"
+            )
             self._append_term_feature(
                 layer=term_layer,
                 term_id=term_id,
@@ -785,6 +818,7 @@ class FengShuiAnalyzer:
                 score=adjusted_score,
                 elev=elev,
                 note=note,
+                reason_ko=reason_ko,
             )
 
         for rank, item in enumerate(selected, start=1):
@@ -930,6 +964,7 @@ class FengShuiAnalyzer:
         term_ko=None,
         culture=None,
         period=None,
+        reason_ko=None,
     ):
         feature = QgsFeature(layer.fields())
         feature.setGeometry(QgsGeometry.fromPointXY(point))
@@ -943,6 +978,7 @@ class FengShuiAnalyzer:
         feature["score"] = score
         feature["elev"] = elev
         feature["note"] = note
+        feature["reason_ko"] = reason_ko if reason_ko else ""
         layer.dataProvider().addFeature(feature)
 
     def build_term_links(self, term_layer):
@@ -960,6 +996,9 @@ class FengShuiAnalyzer:
         fields.append(QgsField("score", QVariant.Double, "double", 7, 3))
         fields.append(QgsField("culture", QVariant.String, "string", 20))
         fields.append(QgsField("period", QVariant.String, "string", 20))
+        fields.append(QgsField("src_id", QVariant.String, "string", 28))
+        fields.append(QgsField("dst_id", QVariant.String, "string", 28))
+        fields.append(QgsField("reason_ko", QVariant.String, "string", 254))
         data.addAttributes(fields)
         link_layer.updateFields()
 
@@ -1018,11 +1057,12 @@ class FengShuiAnalyzer:
                 if origin.x() == destination.x() and origin.y() == destination.y():
                     continue
 
+                use_bend = (source_id != "hyeol" and target_id != "hyeol")
                 path_points = self._link_path_points(
                     origin=origin,
                     destination=destination,
                     center=hyeol_point,
-                    use_bend=(source_id != "hyeol" and target_id != "hyeol"),
+                    use_bend=use_bend,
                 )
                 score = self._mean_scores(
                     self._to_float(source["score"]),
@@ -1043,6 +1083,14 @@ class FengShuiAnalyzer:
                 line_feature["score"] = score
                 line_feature["culture"] = source["culture"] or target["culture"]
                 line_feature["period"] = source["period"] or target["period"]
+                line_feature["src_id"] = source_id
+                line_feature["dst_id"] = target_id
+                score_text = "n/a" if score is None else f"{score:.3f}"
+                bend_text = "곡선 보정" if use_bend else "직결"
+                line_feature["reason_ko"] = (
+                    f"구조 연결 {term_label_ko(source_id)}→{term_label_ko(target_id)}. "
+                    f"표현={term_label_ko(style_term)}, 형태={bend_text}, 평균점수={score_text}."
+                )
                 link_features.append(line_feature)
 
         if link_features:
@@ -1134,9 +1182,11 @@ class FengShuiAnalyzer:
         fields = QgsFields()
         fields.append(QgsField("stream_id", QVariant.Int))
         fields.append(QgsField("flow_acc", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("acc_thr", QVariant.Double, "double", 12, 3))
         fields.append(QgsField("order", QVariant.Int))
         fields.append(QgsField("stream_class", QVariant.String, "string", 16))
         fields.append(QgsField("len", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("reason_ko", QVariant.String, "string", 254))
         data.addAttributes(fields)
         hydro_layer.updateFields()
 
@@ -1300,9 +1350,14 @@ class FengShuiAnalyzer:
             feature.setGeometry(QgsGeometry.fromPolylineXY(points))
             feature["stream_id"] = stream_id
             feature["flow_acc"] = max_acc
+            feature["acc_thr"] = accumulation_threshold
             feature["order"] = int(max_order)
             feature["stream_class"] = stream_class
             feature["len"] = length
+            feature["reason_ko"] = (
+                f"DEM 유하방향 기반 수로. flow_acc={max_acc:.2f}, 임계치={accumulation_threshold:.2f}, "
+                f"order={int(max_order)}, 분류={HYDRO_CLASS_LABELS_KO.get(stream_class, stream_class)}."
+            )
             features.append(feature)
             stream_id += 1
 
@@ -1362,9 +1417,11 @@ class FengShuiAnalyzer:
         fields.append(QgsField("strength", QVariant.Double, "double", 7, 3))
         fields.append(QgsField("ridge_rank", QVariant.Int))
         fields.append(QgsField("ridge_class", QVariant.String, "string", 16))
+        fields.append(QgsField("ridge_score", QVariant.Double, "double", 7, 3))
         fields.append(QgsField("elev_a", QVariant.Double, "double", 12, 3))
         fields.append(QgsField("elev_b", QVariant.Double, "double", 12, 3))
         fields.append(QgsField("len", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("reason_ko", QVariant.String, "string", 254))
         data.addAttributes(fields)
         ridge_layer.updateFields()
 
@@ -1527,9 +1584,16 @@ class FengShuiAnalyzer:
             feature["strength"] = item["strength"]
             feature["ridge_rank"] = item["ridge_rank"]
             feature["ridge_class"] = item["ridge_class"]
+            feature["ridge_score"] = item["ridge_score"]
             feature["elev_a"] = item["elev_a"]
             feature["elev_b"] = item["elev_b"]
             feature["len"] = item["len"]
+            feature["reason_ko"] = (
+                f"능선 점수={item['ridge_score']:.3f} (길이+능선성 결합), "
+                f"순위={item['ridge_rank']}/{item['total_count']}, "
+                f"상위백분위={item['percentile']*100:.1f}%, "
+                f"분류={RIDGE_CLASS_LABELS_KO.get(item['ridge_class'], item['ridge_class'])}."
+            )
             features.append(feature)
 
         if features:
@@ -1699,7 +1763,7 @@ class FengShuiAnalyzer:
 
         ranked = []
         total = len(scored)
-        for index, (_, item) in enumerate(scored, start=1):
+        for index, (score_value, item) in enumerate(scored, start=1):
             percentile = index / total
             if percentile <= 0.05:
                 ridge_class = "daegan"
@@ -1714,6 +1778,9 @@ class FengShuiAnalyzer:
                     "ridge_id": index,
                     "ridge_rank": index,
                     "ridge_class": ridge_class,
+                    "ridge_score": score_value,
+                    "percentile": percentile,
+                    "total_count": total,
                     "points": item["points"],
                     "len": item["len"],
                     "strength": item["strength"],

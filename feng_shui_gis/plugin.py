@@ -3,7 +3,12 @@ import os
 
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
-from qgis.core import QgsProcessingContext, QgsProcessingFeedback, QgsProject
+from qgis.core import (
+    QgsProcessingContext,
+    QgsProcessingFeedback,
+    QgsProject,
+    QgsVectorLayer,
+)
 
 from .analysis import FengShuiAnalyzer
 from .dock_widget import FengShuiDockWidget
@@ -108,6 +113,7 @@ class FengShuiGisPlugin:
             )
             output_layer.setName(f"{site_layer.name()}_fengshui")
             QgsProject.instance().addMapLayer(output_layer)
+            self._configure_layer_click_info(output_layer)
 
         except Exception as exc:  # pylint: disable=broad-except
             self.iface.messageBar().pushCritical(
@@ -226,3 +232,47 @@ class FengShuiGisPlugin:
                 continue
             project.addMapLayer(layer, False)
             root.insertLayer(index, layer)
+            FengShuiGisPlugin._configure_layer_click_info(layer)
+
+    @staticmethod
+    def _configure_layer_click_info(layer):
+        if not isinstance(layer, QgsVectorLayer):
+            return
+
+        field_names = {field.name() for field in layer.fields()}
+        if "reason_ko" not in field_names and "fs_reason" not in field_names:
+            return
+
+        if "term_ko" in field_names:
+            layer.setDisplayExpression("\"term_ko\"")
+            layer.setMapTipTemplate(
+                "<h3>[% \"term_ko\" %]</h3>"
+                "<p><b>이유</b>: [% \"reason_ko\" %]</p>"
+                "<p><b>score</b>: [% \"score\" %], <b>rank</b>: [% \"rank\" %]</p>"
+            )
+            return
+
+        if "ridge_class" in field_names:
+            layer.setDisplayExpression("\"ridge_class\" || ' #' || \"ridge_rank\"")
+            layer.setMapTipTemplate(
+                "<h3>[% \"ridge_class\" %] / #% \"ridge_rank\"</h3>"
+                "<p><b>이유</b>: [% \"reason_ko\" %]</p>"
+                "<p><b>strength</b>: [% \"strength\" %], <b>len</b>: [% \"len\" %]</p>"
+            )
+            return
+
+        if "stream_class" in field_names:
+            layer.setDisplayExpression("\"stream_class\" || ' #' || \"stream_id\"")
+            layer.setMapTipTemplate(
+                "<h3>[% \"stream_class\" %] / #% \"stream_id\"</h3>"
+                "<p><b>이유</b>: [% \"reason_ko\" %]</p>"
+                "<p><b>order</b>: [% \"order\" %], <b>flow_acc</b>: [% \"flow_acc\" %]</p>"
+            )
+            return
+
+        if "fs_reason" in field_names:
+            layer.setDisplayExpression("'fs_score=' || to_string(\"fs_score\")")
+            layer.setMapTipTemplate(
+                "<h3>입지 점수</h3>"
+                "<p><b>이유</b>: [% \"fs_reason\" %]</p>"
+            )
