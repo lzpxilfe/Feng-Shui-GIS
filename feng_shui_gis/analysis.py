@@ -1002,21 +1002,16 @@ class FengShuiAnalyzer:
         data.addAttributes(fields)
         link_layer.updateFields()
 
+        # Keep structural links but remove center-radial spokes from hyeol/myeongdang.
         link_plan = [
-            ("hyeol", "jusan", "jusan"),
-            ("jusan", "dunoe", "dunoe"),
-            ("dunoe", "jojongsan", "jojongsan"),
-            ("hyeol", "naecheongnyong", "naecheongnyong"),
-            ("naecheongnyong", "oecheongnyong", "oecheongnyong"),
-            ("hyeol", "naebaekho", "naebaekho"),
-            ("naebaekho", "oebaekho", "oebaekho"),
-            ("hyeol", "ansan", "ansan"),
-            ("ansan", "josan", "josan"),
-            ("hyeol", "myeongdang", "myeongdang"),
-            ("myeongdang", "misa", "misa"),
-            ("hyeol", "naesugu", "naesugu"),
-            ("naesugu", "oesugu", "oesugu"),
-            ("naesugu", "ipsu", "ipsu"),
+            ("jusan", "dunoe", "jusan"),
+            ("dunoe", "jojongsan", "dunoe"),
+            ("naecheongnyong", "oecheongnyong", "naecheongnyong"),
+            ("naebaekho", "oebaekho", "naebaekho"),
+            ("ansan", "josan", "ansan"),
+            ("myeongdang", "misa", "myeongdang"),
+            ("naesugu", "oesugu", "naesugu"),
+            ("naesugu", "ipsu", "naesugu"),
             ("naecheongnyong", "ansan", "ansan"),
             ("ansan", "naebaekho", "ansan"),
             ("oecheongnyong", "josan", "josan"),
@@ -1057,7 +1052,7 @@ class FengShuiAnalyzer:
                 if origin.x() == destination.x() and origin.y() == destination.y():
                     continue
 
-                use_bend = (source_id != "hyeol" and target_id != "hyeol")
+                use_bend = True
                 path_points = self._link_path_points(
                     origin=origin,
                     destination=destination,
@@ -1089,7 +1084,8 @@ class FengShuiAnalyzer:
                 bend_text = "곡선 보정" if use_bend else "직결"
                 line_feature["reason_ko"] = (
                     f"구조 연결 {term_label_ko(source_id)}→{term_label_ko(target_id)}. "
-                    f"표현={term_label_ko(style_term)}, 형태={bend_text}, 평균점수={score_text}."
+                    f"표현={term_label_ko(style_term)}, 형태={bend_text}, 평균점수={score_text}, "
+                    "중심 방사 연결 제외."
                 )
                 link_features.append(line_feature)
 
