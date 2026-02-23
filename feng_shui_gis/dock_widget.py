@@ -189,10 +189,10 @@ class FengShuiHelpDialog(QDialog):
     @staticmethod
     def _hydro_legend_rows():
         specs = [
-            ("main", "#0b3d91", 2.8),
-            ("secondary", "#1456b8", 2.2),
-            ("branch", "#2b7bd8", 1.7),
-            ("minor", "#63a5ff", 1.2),
+            ("main", "#0b3d91", 1.6),
+            ("secondary", "#1456b8", 1.2),
+            ("branch", "#2b7bd8", 0.9),
+            ("minor", "#63a5ff", 0.7),
         ]
         rows = []
         for class_id, color, width in specs:
