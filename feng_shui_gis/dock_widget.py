@@ -6,6 +6,7 @@ from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFrame,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -70,11 +71,15 @@ class FengShuiHelpDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(tr("help_dialog_title"))
         self.resize(760, 640)
+        self.setStyleSheet(self._dialog_stylesheet())
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
         tabs = QTabWidget(self)
+        tabs.setDocumentMode(True)
         tabs.addTab(self._browser(self._overview_html()), tr("help_tab_overview"))
         tabs.addTab(self._browser(self._symbols_html()), tr("help_tab_symbols"))
         tabs.addTab(self._browser(self._refs_html()), tr("help_tab_references"))
@@ -85,8 +90,62 @@ class FengShuiHelpDialog(QDialog):
         browser = QTextBrowser()
         browser.setOpenExternalLinks(True)
         browser.setReadOnly(True)
+        browser.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        browser.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        browser.setUndoRedoEnabled(False)
         browser.setHtml(html)
         return browser
+
+    @staticmethod
+    def _dialog_stylesheet():
+        return """
+            QDialog {
+                background-color: #f6f2e8;
+                color: #1f2423;
+            }
+            QTabWidget::pane {
+                border: 1px solid #d3c8b3;
+                border-radius: 8px;
+                background: #fffdf8;
+            }
+            QTabBar::tab {
+                background: #ece4d4;
+                border: 1px solid #d3c8b3;
+                padding: 7px 12px;
+                margin-right: 3px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+            }
+            QTabBar::tab:selected {
+                background: #fffdf8;
+                color: #173736;
+                font-weight: 600;
+            }
+            QTextBrowser {
+                border: none;
+                background: #fffdf8;
+                padding: 10px;
+                color: #1f2423;
+            }
+            QScrollBar:vertical {
+                background: #efe8d8;
+                width: 12px;
+                margin: 2px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background: #bfae92;
+                border-radius: 6px;
+                min-height: 26px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #a89579;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+                width: 0px;
+            }
+        """
 
     @staticmethod
     def _line_legend_rows():
@@ -205,18 +264,42 @@ class FengShuiDockWidget(QWidget):
         super().__init__(parent)
         self.setWindowFlags(Qt.Window)
         self.setWindowTitle(tr("panel_title"))
-        self.resize(620, 760)
+        self.resize(680, 820)
+        self.setMinimumSize(620, 760)
         self._help_dialog = None
+        self.setStyleSheet(self._main_stylesheet())
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
 
-        title = QLabel(f"<h2>{escape(tr('panel_title'))}</h2><p>{escape(tr('panel_subtitle'))}</p>")
-        title.setWordWrap(True)
-        layout.addWidget(title)
+        hero = QFrame(self)
+        hero.setObjectName("heroCard")
+        hero_layout = QVBoxLayout(hero)
+        hero_layout.setContentsMargins(14, 12, 14, 12)
+        hero_layout.setSpacing(4)
+        title = QLabel(tr("panel_title"), hero)
+        title.setObjectName("heroTitle")
+        subtitle = QLabel(tr("panel_subtitle"), hero)
+        subtitle.setObjectName("heroSubtitle")
+        subtitle.setWordWrap(True)
+        hero_layout.addWidget(title)
+        hero_layout.addWidget(subtitle)
+        layout.addWidget(hero)
+
+        controls = QFrame(self)
+        controls.setObjectName("sectionCard")
+        controls_layout = QVBoxLayout(controls)
+        controls_layout.setContentsMargins(14, 12, 14, 14)
+        controls_layout.setSpacing(10)
 
         form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFormAlignment(Qt.AlignTop)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(8)
         self.sites_combo = QgsMapLayerComboBox(self)
         self.sites_combo.setFilters(QgsMapLayerProxyModel.PointLayer)
         form.addRow(tr("sites_label"), self.sites_combo)
@@ -258,19 +341,25 @@ class FengShuiDockWidget(QWidget):
         if "early_modern" in period_keys:
             self.period_combo.setCurrentIndex(period_keys.index("early_modern"))
         form.addRow(tr("period_label"), self.period_combo)
-        layout.addLayout(form)
+        controls_layout.addLayout(form)
+        layout.addWidget(controls)
 
         tabs = QTabWidget(self)
+        tabs.setDocumentMode(True)
+        tabs.setObjectName("modeTabs")
         tabs.addTab(self._build_landscape_tab(), tr("tab_landscape"))
         tabs.addTab(self._build_analysis_tab(), tr("tab_analysis"))
         layout.addWidget(tabs)
 
         self.status_label = QLabel(tr("status_idle"), self)
+        self.status_label.setObjectName("statusPill")
         self.status_label.setWordWrap(True)
+        self.status_label.setMinimumHeight(38)
         layout.addWidget(self.status_label)
 
         help_row = QHBoxLayout()
         self.help_button = QPushButton(tr("help_button"), self)
+        self.help_button.setObjectName("helpButton")
         self.help_button.clicked.connect(self._open_help_dialog)
         help_row.addWidget(self.help_button)
         help_row.addStretch(1)
@@ -279,40 +368,62 @@ class FengShuiDockWidget(QWidget):
     def _build_landscape_tab(self):
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
-        desc = QLabel(tr("landscape_desc"), tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        card = QFrame(tab)
+        card.setObjectName("tabCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        card_layout.setSpacing(8)
+
+        desc = QLabel(tr("landscape_desc"), card)
         desc.setWordWrap(True)
-        layout.addWidget(desc)
+        card_layout.addWidget(desc)
 
-        self.landscape_auto_hydro_checkbox = QCheckBox(tr("auto_hydro_label"), tab)
+        self.landscape_auto_hydro_checkbox = QCheckBox(tr("auto_hydro_label"), card)
         self.landscape_auto_hydro_checkbox.setChecked(True)
-        layout.addWidget(self.landscape_auto_hydro_checkbox)
+        card_layout.addWidget(self.landscape_auto_hydro_checkbox)
 
-        self.include_terms_checkbox = QCheckBox(tr("include_terms_label"), tab)
+        self.include_terms_checkbox = QCheckBox(tr("include_terms_label"), card)
         self.include_terms_checkbox.setChecked(False)
-        layout.addWidget(self.include_terms_checkbox)
+        card_layout.addWidget(self.include_terms_checkbox)
 
-        self.extract_terms_button = QPushButton(tr("extract_landscape_button"), tab)
+        self.extract_terms_button = QPushButton(tr("extract_landscape_button"), card)
+        self.extract_terms_button.setObjectName("primaryAction")
         self.extract_terms_button.clicked.connect(self._emit_terms_requested)
-        layout.addWidget(self.extract_terms_button)
+        card_layout.addWidget(self.extract_terms_button)
+        layout.addWidget(card)
         layout.addStretch(1)
         return tab
 
     def _build_analysis_tab(self):
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
-        desc = QLabel(tr("analysis_desc"), tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        card = QFrame(tab)
+        card.setObjectName("tabCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        card_layout.setSpacing(8)
+
+        desc = QLabel(tr("analysis_desc"), card)
         desc.setWordWrap(True)
-        layout.addWidget(desc)
+        card_layout.addWidget(desc)
 
         self.analysis_auto_hydro_checkbox = QCheckBox(
-            tr("analysis_auto_hydro_label"), tab
+            tr("analysis_auto_hydro_label"), card
         )
         self.analysis_auto_hydro_checkbox.setChecked(True)
-        layout.addWidget(self.analysis_auto_hydro_checkbox)
+        card_layout.addWidget(self.analysis_auto_hydro_checkbox)
 
-        self.run_button = QPushButton(tr("run_button"), tab)
+        self.run_button = QPushButton(tr("run_button"), card)
+        self.run_button.setObjectName("primaryAction")
         self.run_button.clicked.connect(self._emit_run_requested)
-        layout.addWidget(self.run_button)
+        card_layout.addWidget(self.run_button)
+        layout.addWidget(card)
         layout.addStretch(1)
         return tab
 
@@ -348,3 +459,138 @@ class FengShuiDockWidget(QWidget):
             self.landscape_auto_hydro_checkbox.isChecked(),
             self.include_terms_checkbox.isChecked(),
         )
+
+    @staticmethod
+    def _main_stylesheet():
+        return """
+            QWidget {
+                background: #f4efe3;
+                color: #1f2423;
+                font-size: 12px;
+            }
+            QLabel {
+                background: transparent;
+            }
+            QFrame#heroCard {
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 #2d6258,
+                    stop: 1 #1d4740
+                );
+                border: 1px solid #173736;
+                border-radius: 12px;
+            }
+            QLabel#heroTitle {
+                background: transparent;
+                color: #f7fbf3;
+                font-size: 20px;
+                font-weight: 700;
+            }
+            QLabel#heroSubtitle {
+                background: transparent;
+                color: #d8e8df;
+                font-size: 12px;
+            }
+            QFrame#sectionCard {
+                background: #fffdf8;
+                border: 1px solid #d6cab3;
+                border-radius: 12px;
+            }
+            QFrame#tabCard {
+                background: #fffdf9;
+                border: 1px solid #ddd2bf;
+                border-radius: 10px;
+            }
+            QLabel#statusPill {
+                background: #edf5f2;
+                border: 1px solid #c7ddd6;
+                border-radius: 9px;
+                padding: 8px 10px;
+            }
+            QComboBox, QgsMapLayerComboBox, QLineEdit {
+                background: #ffffff;
+                border: 1px solid #cdbfa7;
+                border-radius: 6px;
+                padding: 5px 7px;
+                min-height: 28px;
+            }
+            QComboBox:hover, QgsMapLayerComboBox:hover {
+                border-color: #bcae96;
+            }
+            QComboBox:focus, QgsMapLayerComboBox:focus, QLineEdit:focus {
+                border: 1px solid #2d6258;
+            }
+            QCheckBox {
+                padding: 2px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border: 1px solid #bcae96;
+                background: #ffffff;
+            }
+            QCheckBox::indicator:checked {
+                background: #2d6258;
+                border: 1px solid #1f4a42;
+            }
+            QTabWidget::pane {
+                border: 1px solid #d6cab3;
+                border-radius: 8px;
+                background: #fffdf8;
+            }
+            QTabBar::tab {
+                background: #ece4d4;
+                border: 1px solid #d6cab3;
+                padding: 7px 12px;
+                margin-right: 3px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+            }
+            QTabBar::tab:selected {
+                background: #fffdf8;
+                color: #173736;
+                font-weight: 600;
+            }
+            QPushButton#primaryAction {
+                background: #1f6255;
+                color: #f5f9f6;
+                border: 1px solid #134c41;
+                border-radius: 8px;
+                padding: 9px 12px;
+                font-weight: 600;
+            }
+            QPushButton#primaryAction:hover {
+                background: #257160;
+            }
+            QPushButton#primaryAction:pressed {
+                background: #1b5549;
+            }
+            QPushButton#helpButton {
+                background: #f4f1e8;
+                border: 1px solid #cbbfa9;
+                border-radius: 7px;
+                padding: 6px 11px;
+            }
+            QPushButton#helpButton:hover {
+                background: #ece4d4;
+            }
+            QScrollBar:vertical {
+                background: #efe8d8;
+                width: 12px;
+                margin: 2px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background: #bfae92;
+                border-radius: 6px;
+                min-height: 26px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #a89579;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+                width: 0px;
+            }
+        """
