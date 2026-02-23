@@ -48,6 +48,18 @@ This audit keeps only verified DOI-backed sources for Feng Shui + spatial analys
 - Geomancy and architecture in Choson: https://doi.org/10.1515/9781438468716-011
 - Geomantic water practices in Choson: https://doi.org/10.1515/9781438468716-009
 
+9. GIS mausoleum suitability, 2021
+- DOI: https://doi.org/10.3390/ijgi10110752
+- Scope: Feng Shui suitability evaluation of mausoleums (Nanjing) using GIS.
+
+10. Parametric architecture + Fengshui, 2026
+- DOI: https://doi.org/10.1038/s40494-025-01686-y
+- Scope: Parametric investigation of Fengshui influence in courtyard dwelling design.
+
+11. Burial landscape change, 2020
+- DOI: https://doi.org/10.1080/13576275.2020.1750356
+- Scope: Contemporary burial ritual landscape transition tied to Feng Shui practice.
+
 ## Evidence Quality Note
 
 - Stronger evidence exists for geomorphic pattern reading and selected case studies.

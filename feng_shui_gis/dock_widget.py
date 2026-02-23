@@ -210,14 +210,14 @@ class FengShuiHelpDialog(QDialog):
     @staticmethod
     def _overview_html():
         return """
-            <h3>湲곕낯 ?뚰겕?뚮줈??/h3>
-            <p><b>1) 湲곕낯 吏??紐⑤뱶</b>: DEM(+?좏깮 ?섍퀎)?먯꽌 ?μ꽑/?섍퀎 ?ㅽ듃?뚰겕瑜?癒쇱? 異붿텧?⑸땲??</p>
-            <p><b>2) ?섍퀎 誘몄엯????/b>: DEM 湲곕컲 ?먮룞 ?섎Ц 異붿텧???ㅽ뻾?⑸땲??</p>
-            <p><b>3) ?곸꽭 ?⑹뼱</b>: ?꾩슂 ????紐낅떦/泥?！/諛깊샇 ???⑹뼱 ?ъ씤??援ъ“ ?곌껐?좎쓣 異붽??⑸땲??</p>
-            <p><b>4) 怨좉툒 遺꾩꽍 紐⑤뱶</b>: ?꾨낫吏 ?ъ씤?멸? ?덉쓣 ???먯닔 遺꾩꽍(<code>fs_score</code>)???ㅽ뻾?⑸땲??</p>
-            <p><b>?대┃ ?ㅻ챸</b>: 媛??덉씠?댁쓽 ?쇱쿂瑜??앸퀎(Identify)?섎㈃ <code>reason_ko</code> ?먮뒗 <code>fs_reason</code> ?꾨뱶?먯꽌
-            ???대떦 遺꾨쪟/?먯닔媛 ?섏솕?붿? ?곸꽭 洹쇨굅瑜??뺤씤?????덉뒿?덈떎.</p>
-            <p><b>沅뚯옣</b>: 寃쎌쐞?????誘명꽣 ?⑥쐞 ?ъ쁺 醫뚰몴怨?UTM/TM) ?ъ슜.</p>
+            <h3>기본 워크플로우</h3>
+            <p><b>1) 기본 지형 모드</b>: DEM(+선택 수계)에서 능선/수계 흐름을 먼저 추출합니다.</p>
+            <p><b>2) 수계가 없을 때</b>: DEM 기반 자동 수문 추출을 실행합니다.</p>
+            <p><b>3) 상세 용어</b>: 필요할 때만 혈/명당/청룡/백호 등 용어 포인트와 구조 연결을 생성합니다.</p>
+            <p><b>4) 고급 분석 모드</b>: 후보지 점 레이어가 있을 때만 입지 점수(<code>fs_score</code>)를 계산합니다.</p>
+            <p><b>클릭 설명</b>: 레이어 피처를 식별(Identify)하거나 선택하면 <code>reason_ko</code> 또는
+            <code>fs_reason</code> 필드에서 해당 결과의 근거(점수, 임계치, 거리/방위 등)를 확인할 수 있습니다.</p>
+            <p><b>권장</b>: 거리 해석이 필요한 분석이므로 투영좌표계(UTM/TM, meter 단위)를 권장합니다.</p>
         """
 
     def _symbols_html(self):
@@ -225,22 +225,22 @@ class FengShuiHelpDialog(QDialog):
         ridge_rows = self._ridge_legend_rows()
         hydro_rows = self._hydro_legend_rows()
         return f"""
-            <h3>?щ낵怨??섎?</h3>
-            <p><b>?띿닔 援ъ“ ?곌껐??/b> (諛⑹궗?뺤씠 ?꾨땶 援ъ“???곌껐)</p>
+            <h3>결과 심볼 안내</h3>
+            <p><b>풍수 구조 연결선</b> (중심 방사형이 아닌 구조-구조 연결)</p>
             <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>?⑹뼱</th><th>?섎?</th><th>??/th><th>?먭퍡</th></tr>
+                <tr><th>용어</th><th>의미</th><th>색</th><th>선폭</th></tr>
                 {line_rows}
             </table>
             <br>
-            <p><b>?곕㎘ 怨꾩링(?곌꼍?쒖떇)</b></p>
+            <p><b>능선 계층(산경표식)</b></p>
             <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>怨꾩링</th><th>??/th><th>?먭퍡</th><th>?щ챸??/th></tr>
+                <tr><th>계층</th><th>색</th><th>선폭</th><th>투명도</th></tr>
                 {ridge_rows}
             </table>
             <br>
-            <p><b>?섍퀎 怨꾩링</b></p>
+            <p><b>수계 계층</b></p>
             <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>怨꾩링</th><th>??/th><th>?먭퍡</th></tr>
+                <tr><th>계층</th><th>색</th><th>선폭</th></tr>
                 {hydro_rows}
             </table>
         """

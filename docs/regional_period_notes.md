@@ -17,6 +17,10 @@ This file documents interpretation boundaries.
 ### China
 - Strong conceptual geomancy literature exists, but plugin-ready modern GIS calibration references remain limited in this codebase.
 - Current implementation uses East-Asia baseline + conservative bias settings.
+- Additional verified references:
+  - GIS mausoleum suitability: https://doi.org/10.3390/ijgi10110752
+  - Burial landscape transition: https://doi.org/10.1080/13576275.2020.1750356
+  - Parametric design influence: https://doi.org/10.1038/s40494-025-01686-y
 
 ### Japan / Ryukyu
 - Ryukyu/Okinawa landscape form evidence is relatively concrete for village/tree-layout context.
