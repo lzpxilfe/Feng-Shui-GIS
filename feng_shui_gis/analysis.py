@@ -1183,6 +1183,10 @@ class FengShuiAnalyzer:
         fields.append(QgsField("stream_id", QVariant.Int))
         fields.append(QgsField("flow_acc", QVariant.Double, "double", 12, 3))
         fields.append(QgsField("acc_thr", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("keep_q", QVariant.Double, "double", 6, 3))
+        fields.append(QgsField("min_len", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("min_ord", QVariant.Int))
+        fields.append(QgsField("node_cnt", QVariant.Int))
         fields.append(QgsField("order", QVariant.Int))
         fields.append(QgsField("stream_class", QVariant.String, "string", 16))
         fields.append(QgsField("len", QVariant.Double, "double", 12, 3))
@@ -1269,14 +1273,33 @@ class FengShuiAnalyzer:
         stream_order = self._compute_stream_order(nodes, downstream, upstream)
         accumulation_values = [contrib[k] for k in downstream.keys()]
         accumulation_values.sort()
-        cut_index = int(len(accumulation_values) * 0.82)
+        node_count = len(nodes)
+        keep_quantile = self._hydro_keep_quantile(node_count)
+        min_order = self._hydro_min_order(node_count)
+        min_path_length = self._hydro_min_path_length(
+            dem_layer=dem_layer,
+            spacing=spacing,
+            node_count=node_count,
+        )
+
+        cut_index = int(len(accumulation_values) * keep_quantile)
         cut_index = max(0, min(len(accumulation_values) - 1, cut_index))
-        accumulation_threshold = max(6.0, accumulation_values[cut_index])
+        accumulation_threshold = max(8.0, accumulation_values[cut_index])
 
         selected_downstream = {}
         for key, target in downstream.items():
             order_value = stream_order.get(key, 1)
-            if contrib.get(key, 1.0) >= accumulation_threshold or order_value >= 2:
+            acc_value = contrib.get(key, 1.0)
+            keep = acc_value >= accumulation_threshold
+            if not keep and order_value >= min_order:
+                keep = True
+            if (
+                not keep
+                and order_value >= max(2, min_order - 1)
+                and acc_value >= (accumulation_threshold * 0.82)
+            ):
+                keep = True
+            if keep:
                 selected_downstream[key] = target
 
         if not selected_downstream:
@@ -1344,6 +1367,8 @@ class FengShuiAnalyzer:
 
             max_acc = max(contrib.get(key, 1.0) for key in path)
             max_order = max(stream_order.get(key, 1) for key in path)
+            if length < min_path_length and max_order < min_order:
+                continue
             stream_class = self._stream_class(max_order)
 
             feature = QgsFeature(hydro_layer.fields())
@@ -1351,12 +1376,18 @@ class FengShuiAnalyzer:
             feature["stream_id"] = stream_id
             feature["flow_acc"] = max_acc
             feature["acc_thr"] = accumulation_threshold
+            feature["keep_q"] = keep_quantile
+            feature["min_len"] = min_path_length
+            feature["min_ord"] = int(min_order)
+            feature["node_cnt"] = int(node_count)
             feature["order"] = int(max_order)
             feature["stream_class"] = stream_class
             feature["len"] = length
             feature["reason_ko"] = (
-                f"DEM 유하방향 기반 수로. flow_acc={max_acc:.2f}, 임계치={accumulation_threshold:.2f}, "
-                f"order={int(max_order)}, 분류={HYDRO_CLASS_LABELS_KO.get(stream_class, stream_class)}."
+                f"DEM 유하방향 수로. flow_acc={max_acc:.2f}, 임계치={accumulation_threshold:.2f}, "
+                f"유지백분위={keep_quantile*100:.1f}%, 차수={int(max_order)}(최소 {min_order}), "
+                f"길이={length:.1f}m(최소 {min_path_length:.1f}m), "
+                f"분류={HYDRO_CLASS_LABELS_KO.get(stream_class, stream_class)}."
             )
             features.append(feature)
             stream_id += 1
@@ -1369,10 +1400,10 @@ class FengShuiAnalyzer:
     @staticmethod
     def style_hydro_network(hydro_layer):
         class_styles = {
-            "main": ("#0b3d91", 2.8, 0.78),
-            "secondary": ("#1456b8", 2.2, 0.70),
-            "branch": ("#2b7bd8", 1.7, 0.62),
-            "minor": ("#63a5ff", 1.2, 0.52),
+            "main": ("#0b3d91", 1.6, 0.48),
+            "secondary": ("#1456b8", 1.2, 0.40),
+            "branch": ("#2b7bd8", 0.9, 0.32),
+            "minor": ("#63a5ff", 0.7, 0.24),
         }
         categories = []
         for class_id, (color, width, opacity) in class_styles.items():
@@ -1392,11 +1423,11 @@ class FengShuiAnalyzer:
         fallback = QgsLineSymbol.createSimple(
             {
                 "line_color": "#5f93d2",
-                "line_width": "1.0",
+                "line_width": "0.6",
                 "line_style": "solid",
             }
         )
-        fallback.setOpacity(0.45)
+        fallback.setOpacity(0.20)
         renderer.setSourceSymbol(fallback)
         hydro_layer.setRenderer(renderer)
         hydro_layer.triggerRepaint()
@@ -1456,8 +1487,8 @@ class FengShuiAnalyzer:
         elev_min = min(elevations)
         elev_max = max(elevations)
         elev_range = max(1e-6, elev_max - elev_min)
-        prominence_min = max(0.8, elev_range * 0.015)
-        neighbor_delta = max(0.1, elev_range * 0.003)
+        prominence_min = max(0.6, elev_range * 0.010)
+        neighbor_delta = max(0.05, elev_range * 0.0022)
 
         neighborhood = [
             (-1, -1),
@@ -1486,8 +1517,12 @@ class FengShuiAnalyzer:
                 1 for item in neighbors if elev >= (item["elev"] + neighbor_delta)
             )
             prominence = elev - mean_neighbor
-            required = max(3, int(len(neighbors) * 0.62))
-            if higher_count < required or prominence < prominence_min:
+            required = max(3, int(len(neighbors) * 0.55))
+            soft_required = max(2, int(len(neighbors) * 0.45))
+            if (
+                (higher_count < required or prominence < prominence_min)
+                and (higher_count < soft_required or prominence < (prominence_min * 0.78))
+            ):
                 continue
 
             prominence_norm = min(1.0, prominence / (prominence_min * 2.0))
@@ -1512,7 +1547,22 @@ class FengShuiAnalyzer:
         if len(ridge_nodes) < 2:
             return ridge_layer
 
-        segment_offsets = [(1, 0), (0, 1), (1, 1), (1, -1)]
+        segment_offsets = [
+            (1, 0),
+            (0, 1),
+            (1, 1),
+            (1, -1),
+            (2, 0),
+            (0, 2),
+            (2, 1),
+            (1, 2),
+            (2, -1),
+            (1, -2),
+            (2, 2),
+            (2, -2),
+        ]
+        max_segment_distance = spacing * 2.9
+        max_segment_drop = max(2.0, elev_range * 0.14)
         adjacency = {key: set() for key in ridge_nodes.keys()}
         for key_a in ridge_nodes.keys():
             ix, iy = key_a
@@ -1520,13 +1570,25 @@ class FengShuiAnalyzer:
                 key_b = (ix + dx, iy + dy)
                 if key_b not in ridge_nodes:
                     continue
+                point_a = ridge_nodes[key_a]["point"]
+                point_b = ridge_nodes[key_b]["point"]
+                distance = math.hypot(
+                    point_b.x() - point_a.x(),
+                    point_b.y() - point_a.y(),
+                )
+                if distance > max_segment_distance:
+                    continue
+                if abs(ridge_nodes[key_a]["elev"] - ridge_nodes[key_b]["elev"]) > (
+                    max_segment_drop
+                ):
+                    continue
                 adjacency[key_a].add(key_b)
                 adjacency[key_b].add(key_a)
 
         if not any(adjacency.values()):
             return ridge_layer
 
-        self._bridge_ridge_endpoints(
+        bridged_count = self._bridge_ridge_endpoints(
             adjacency=adjacency,
             ridge_nodes=ridge_nodes,
             spacing=spacing,
@@ -1592,7 +1654,9 @@ class FengShuiAnalyzer:
                 f"능선 점수={item['ridge_score']:.3f} (길이+능선성 결합), "
                 f"순위={item['ridge_rank']}/{item['total_count']}, "
                 f"상위백분위={item['percentile']*100:.1f}%, "
-                f"분류={RIDGE_CLASS_LABELS_KO.get(item['ridge_class'], item['ridge_class'])}."
+                f"분류={RIDGE_CLASS_LABELS_KO.get(item['ridge_class'], item['ridge_class'])}, "
+                f"연결기준=거리<= {max_segment_distance:.1f}m · 고도차<= {max_segment_drop:.1f}m, "
+                f"보정연결={bridged_count}개."
             )
             features.append(feature)
 
@@ -1658,14 +1722,15 @@ class FengShuiAnalyzer:
     def _bridge_ridge_endpoints(self, adjacency, ridge_nodes, spacing, elev_range):
         endpoints = [key for key, neighbors in adjacency.items() if len(neighbors) == 1]
         if len(endpoints) < 2:
-            return
+            return 0
         if len(endpoints) > 1800:
-            return
+            return 0
 
-        max_distance = spacing * 2.6
+        max_distance = spacing * 3.6
         max_distance_sq = max_distance * max_distance
-        elev_tolerance = max(1.0, elev_range * 0.04)
+        elev_tolerance = max(2.0, elev_range * 0.16)
         used = set()
+        bridged = 0
 
         for key in endpoints:
             if key in used:
@@ -1673,8 +1738,9 @@ class FengShuiAnalyzer:
 
             point = ridge_nodes[key]["point"]
             elev = ridge_nodes[key]["elev"]
+            strength = ridge_nodes[key]["strength"]
             best = None
-            best_dist = None
+            best_score = None
             for other in endpoints:
                 if other == key or other in used:
                     continue
@@ -1691,9 +1757,15 @@ class FengShuiAnalyzer:
                 distance_sq = (dx * dx) + (dy * dy)
                 if distance_sq > max_distance_sq:
                     continue
-                if best is None or distance_sq < best_dist:
+                distance_ratio = math.sqrt(distance_sq) / max_distance
+                elev_ratio = abs(elev - other_elev) / elev_tolerance
+                strength_ratio = abs(strength - ridge_nodes[other]["strength"])
+                score = (distance_ratio * 0.55) + (elev_ratio * 0.25) + (
+                    strength_ratio * 0.20
+                )
+                if best is None or score < best_score:
                     best = other
-                    best_dist = distance_sq
+                    best_score = score
 
             if best is None:
                 continue
@@ -1701,6 +1773,9 @@ class FengShuiAnalyzer:
             adjacency[best].add(key)
             used.add(key)
             used.add(best)
+            bridged += 1
+
+        return bridged
 
     def _ridge_paths_from_graph(self, adjacency):
         visited_edges = set()
@@ -1806,6 +1881,39 @@ class FengShuiAnalyzer:
         return spacing
 
     @staticmethod
+    def _hydro_keep_quantile(node_count):
+        if node_count >= 20000:
+            return 0.95
+        if node_count >= 12000:
+            return 0.93
+        if node_count >= 7000:
+            return 0.91
+        if node_count >= 3000:
+            return 0.89
+        return 0.86
+
+    @staticmethod
+    def _hydro_min_order(node_count):
+        if node_count >= 18000:
+            return 4
+        if node_count >= 4000:
+            return 3
+        return 2
+
+    @staticmethod
+    def _hydro_min_path_length(dem_layer, spacing, node_count):
+        extent = dem_layer.extent()
+        diag = math.hypot(extent.width(), extent.height())
+        length = max(spacing * 4.0, diag * 0.006)
+        if node_count >= 18000:
+            length = max(length, spacing * 10.0)
+        elif node_count >= 9000:
+            length = max(length, spacing * 7.0)
+        elif node_count >= 4000:
+            length = max(length, spacing * 5.5)
+        return length
+
+    @staticmethod
     def _compute_stream_order(nodes, downstream, upstream):
         pending = {key: len(upstream.get(key, [])) for key in nodes.keys()}
         seeds = [key for key, cnt in pending.items() if cnt == 0]
@@ -1865,11 +1973,11 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _stream_class(order):
-        if order >= 5:
+        if order >= 6:
             return "main"
-        if order >= 4:
+        if order >= 5:
             return "secondary"
-        if order >= 3:
+        if order >= 4:
             return "branch"
         return "minor"
 
