@@ -260,13 +260,33 @@ class FengShuiGisPlugin:
         if fs_reason_index >= 0:
             layer.setFieldAlias(fs_reason_index, "입지근거")
 
+        if "src_id" in field_names and "dst_id" in field_names:
+            layer.setDisplayExpression(
+                "\"term_ko\" || ' ' || \"src_id\" || '→' || \"dst_id\""
+            )
+            layer.setMapTipTemplate(
+                "<h3>[% \"term_ko\" %] [% \"src_id\" %]→[% \"dst_id\" %]</h3>"
+                "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
+                "<p><b>score</b>: [% \"score\" %], <b>len(m)</b>: [% \"len_m\" %], <b>azimuth</b>: [% \"azimuth\" %]</p>"
+            )
+            self._bind_reason_on_selection(layer, "reason_ko")
+            return
+
         if "term_ko" in field_names:
             layer.setDisplayExpression("\"term_ko\"")
-            layer.setMapTipTemplate(
-                "<h3>[% \"term_ko\" %]</h3>"
-                "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
-                "<p><b>score</b>: [% \"score\" %], <b>rank</b>: [% \"rank\" %]</p>"
-            )
+            if "fit_sc" in field_names:
+                layer.setMapTipTemplate(
+                    "<h3>[% \"term_ko\" %]</h3>"
+                    "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
+                    "<p><b>score</b>: [% \"score\" %], <b>rank</b>: [% \"rank\" %], <b>fit</b>: [% \"fit_sc\" %]</p>"
+                    "<p><b>delta</b>: [% \"delta_rel\" %], <b>target</b>: [% \"target_rel\" %], <b>radius(m)</b>: [% \"radius_m\" %]</p>"
+                )
+            else:
+                layer.setMapTipTemplate(
+                    "<h3>[% \"term_ko\" %]</h3>"
+                    "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
+                    "<p><b>score</b>: [% \"score\" %], <b>rank</b>: [% \"rank\" %]</p>"
+                )
             self._bind_reason_on_selection(layer, "reason_ko")
             return
 
@@ -312,8 +332,8 @@ class FengShuiGisPlugin:
 
             value = feature[reason_field] if reason_field in feature.fields().names() else None
             message = str(value).strip() if value not in (None, "") else "설명 없음"
-            if len(message) > 260:
-                message = f"{message[:257]}..."
+            if len(message) > 900:
+                message = f"{message[:897]}..."
             self.iface.messageBar().pushInfo(f"{layer.name()} 설명", message)
 
         layer.selectionChanged.connect(_on_selection)

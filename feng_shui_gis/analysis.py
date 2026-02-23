@@ -142,12 +142,15 @@ class FengShuiAnalyzer:
         hemisphere="north",
         culture_key="east_asia",
         period_key="early_modern",
-        max_hyeol=7,
+        max_hyeol=5,
     ):
         context = build_context(culture_key, period_key, hemisphere)
         provider = dem_layer.dataProvider()
         dem_step = self._dem_step(dem_layer)
         sample_spacing = self._adaptive_spacing(dem_layer, dem_step)
+        recommended_count = self._recommended_hyeol_count(dem_layer, sample_spacing)
+        effective_keep = max(1, min(max_hyeol, recommended_count))
+        suppress_distance = sample_spacing * (10.5 if effective_keep <= 3 else 9.0)
         candidates = self._collect_hyeol_candidates(
             provider=provider,
             dem_layer=dem_layer,
@@ -158,8 +161,8 @@ class FengShuiAnalyzer:
         )
         selected = self._suppress_near_duplicates(
             candidates=candidates,
-            min_distance=sample_spacing * 8.0,
-            keep=max_hyeol,
+            min_distance=suppress_distance,
+            keep=effective_keep,
         )
         return self._build_term_layer(
             dem_layer=dem_layer,
@@ -618,6 +621,58 @@ class FengShuiAnalyzer:
         return sum(valid) / len(valid)
 
     @staticmethod
+    def _fmt_num(value, digits=3):
+        if value is None:
+            return "n/a"
+        return f"{float(value):.{digits}f}"
+
+    @staticmethod
+    def _azimuth_label(azimuth):
+        if azimuth is None:
+            return "ring"
+        directions = [
+            "북",
+            "북동",
+            "동",
+            "남동",
+            "남",
+            "남서",
+            "서",
+            "북서",
+        ]
+        idx = int(((azimuth % 360.0) + 22.5) // 45.0) % 8
+        return directions[idx]
+
+    def _compose_term_reason(
+        self,
+        term_id,
+        adjusted_score,
+        base_score,
+        elev,
+        delta_rel,
+        target_rel,
+        fit_score,
+        radius_m,
+        azimuth,
+        mode,
+        note,
+    ):
+        mode_ko = {
+            "max": "국지 최대점",
+            "min": "국지 최소점",
+            "gentle": "완경사점",
+            "refine": "전면 보정점",
+        }.get(mode, "추정점")
+        return (
+            f"{term_label_ko(term_id)} 추정. 최종점수={self._fmt_num(adjusted_score, 3)}, "
+            f"기저점수={self._fmt_num(base_score, 3)}, 고도={self._fmt_num(elev, 2)}m, "
+            f"상대고도={self._fmt_num(delta_rel, 4)}(목표 {self._fmt_num(target_rel, 4)}), "
+            f"적합도={self._fmt_num(fit_score, 3)}, 반경={self._fmt_num(radius_m, 1)}m, "
+            f"방위={self._fmt_num(azimuth, 1)}°({self._azimuth_label(azimuth)}), "
+            f"추출방식={mode_ko}, 근거={note}."
+        )
+
+    @staticmethod
     def _stddev(values):
         if not values:
             return None
@@ -663,6 +718,20 @@ class FengShuiAnalyzer:
         if total > max_points:
             spacing *= math.sqrt(total / max_points)
         return spacing
+
+    @staticmethod
+    def _recommended_hyeol_count(dem_layer, spacing):
+        extent = dem_layer.extent()
+        approx_cols = max(1, int(extent.width() / max(spacing, 1e-6)))
+        approx_rows = max(1, int(extent.height() / max(spacing, 1e-6)))
+        approx_nodes = approx_cols * approx_rows
+        if approx_nodes >= 22000:
+            return 2
+        if approx_nodes >= 12000:
+            return 3
+        if approx_nodes >= 5000:
+            return 4
+        return 5
 
     @staticmethod
     def _grid_points(dem_layer, spacing):
@@ -765,8 +834,16 @@ class FengShuiAnalyzer:
         fields.append(QgsField("rank", QVariant.Int))
         fields.append(QgsField("score", QVariant.Double, "double", 7, 3))
         fields.append(QgsField("elev", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("base_sc", QVariant.Double, "double", 7, 3))
+        fields.append(QgsField("delta_rel", QVariant.Double, "double", 8, 4))
+        fields.append(QgsField("target_rel", QVariant.Double, "double", 8, 4))
+        fields.append(QgsField("fit_sc", QVariant.Double, "double", 7, 3))
+        fields.append(QgsField("radius_m", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("azimuth", QVariant.Double, "double", 7, 2))
+        fields.append(QgsField("mode", QVariant.String, "string", 8))
+        fields.append(QgsField("relief_m", QVariant.Double, "double", 12, 3))
         fields.append(QgsField("note", QVariant.String, "string", 80))
-        fields.append(QgsField("reason_ko", QVariant.String, "string", 254))
+        fields.append(QgsField("reason_ko", QVariant.String, "string", 1024))
         data.addAttributes(fields)
         term_layer.updateFields()
 
@@ -791,19 +868,53 @@ class FengShuiAnalyzer:
         period_id = context.get("period_key", "early_modern")
         term_bias = context.get("term_bias", {})
         term_target_shift = context.get("term_target_shift", 0.0)
+        term_min_score = max(0.42, context.get("hyeol_threshold", 0.62) * 0.72)
 
-        def add_term(term_id, term_name, parent_id, rank, point, score, elev, note):
+        def add_term(
+            term_id,
+            term_name,
+            parent_id,
+            rank,
+            point,
+            score,
+            elev,
+            note,
+            mandatory=False,
+            base_score_value=None,
+            delta_rel=None,
+            target_rel=None,
+            fit_score=None,
+            radius_m=None,
+            azimuth=None,
+            mode=None,
+            relief_m=None,
+            reason_text=None,
+        ):
             adjusted_score = score
             if adjusted_score is not None:
                 adjusted_score = max(
                     0.0,
                     min(1.0, adjusted_score + term_bias.get(term_id, 0.0)),
                 )
-            score_text = "n/a" if adjusted_score is None else f"{adjusted_score:.3f}"
-            elev_text = "n/a" if elev is None else f"{elev:.2f}"
-            reason_ko = (
-                f"{term_label_ko(term_id)} 후보. parent={parent_id}, rank={rank}, "
-                f"score={score_text}, elev={elev_text}, 근거={note}"
+            if (
+                not mandatory
+                and adjusted_score is not None
+                and adjusted_score < term_min_score
+            ):
+                return
+
+            reason_ko = reason_text or self._compose_term_reason(
+                term_id=term_id,
+                adjusted_score=adjusted_score,
+                base_score=base_score_value,
+                elev=elev,
+                delta_rel=delta_rel,
+                target_rel=target_rel,
+                fit_score=fit_score,
+                radius_m=radius_m,
+                azimuth=azimuth,
+                mode=mode,
+                note=note,
             )
             self._append_term_feature(
                 layer=term_layer,
@@ -818,13 +929,28 @@ class FengShuiAnalyzer:
                 score=adjusted_score,
                 elev=elev,
                 note=note,
+                base_sc=base_score_value,
+                delta_rel=delta_rel,
+                target_rel=target_rel,
+                fit_sc=fit_score,
+                radius_m=radius_m,
+                azimuth=azimuth,
+                mode=mode,
+                relief_m=relief_m,
                 reason_ko=reason_ko,
             )
 
+        selected_total = max(1, len(selected))
         for rank, item in enumerate(selected, start=1):
             center_point = item["point"]
             center_elev = item["elev"]
             base_score = item["score"]
+            metrics = item.get("metrics", {})
+            form_score = metrics.get("form_score")
+            long_score = metrics.get("long_score")
+            wet_score = metrics.get("dem_water_score")
+            tpi_norm = metrics.get("tpi_norm")
+            conv_score = metrics.get("convergence")
 
             ring_values = self._sample_ring(
                 provider=provider,
@@ -837,6 +963,13 @@ class FengShuiAnalyzer:
                 relief = max(1.0, max(ring_values) - min(ring_values))
 
             parent_id = rank
+            hyeol_reason = (
+                f"혈 후보 #{rank}/{selected_total}. 점수={self._fmt_num(base_score, 3)}, "
+                f"형국={self._fmt_num(form_score, 3)}, 종심={self._fmt_num(long_score, 3)}, "
+                f"수렴습윤={self._fmt_num(wet_score, 3)}, TPI={self._fmt_num(tpi_norm, 4)}, "
+                f"수렴도={self._fmt_num(conv_score, 3)}, 기복={self._fmt_num(relief, 1)}m, "
+                f"고도={self._fmt_num(center_elev, 2)}m, 기준치>={context['hyeol_threshold']:.3f} 충족."
+            )
             add_term(
                 term_id="hyeol",
                 term_name=term_label("hyeol", "en"),
@@ -846,6 +979,10 @@ class FengShuiAnalyzer:
                 score=base_score,
                 elev=center_elev,
                 note="core candidate",
+                mandatory=True,
+                base_score_value=base_score,
+                relief_m=relief,
+                reason_text=hyeol_reason,
             )
 
             myeongdang_point = self._offset_point(
@@ -855,15 +992,28 @@ class FengShuiAnalyzer:
             if myeongdang_elev is None:
                 myeongdang_point = center_point
                 myeongdang_elev = center_elev
+            myeongdang_delta = (myeongdang_elev - center_elev) / relief
+            myeongdang_target = -0.03 + (term_target_shift * 0.4)
+            myeongdang_fit = self._score_gaussian(myeongdang_delta, myeongdang_target, 0.24)
+            myeongdang_score = self._mean_scores(base_score, myeongdang_fit)
             add_term(
                 term_id="myeongdang",
                 term_name=term_label("myeongdang", "en"),
                 parent_id=parent_id,
                 rank=rank,
                 point=myeongdang_point,
-                score=min(1.0, base_score * 0.98),
+                score=myeongdang_score,
                 elev=myeongdang_elev,
                 note="open core basin",
+                mandatory=True,
+                base_score_value=base_score,
+                delta_rel=myeongdang_delta,
+                target_rel=myeongdang_target,
+                fit_score=myeongdang_fit,
+                radius_m=inner_radius * 0.35,
+                azimuth=card["front"],
+                mode="refine",
+                relief_m=relief,
             )
 
             radius_map = {"inner": inner_radius, "outer": outer_radius, "far": far_radius}
@@ -885,9 +1035,11 @@ class FengShuiAnalyzer:
                 if point is None:
                     continue
                 delta = (elev - center_elev) / relief
+                target_rel = target + term_target_shift
+                fit_score = self._score_gaussian(delta, target_rel, sigma)
                 score = self._mean_scores(
                     base_score,
-                    self._score_gaussian(delta, target + term_target_shift, sigma),
+                    fit_score,
                 )
                 add_term(
                     term_id=term_id,
@@ -898,6 +1050,14 @@ class FengShuiAnalyzer:
                     score=score,
                     elev=elev,
                     note=f"delta={delta:.3f}",
+                    base_score_value=base_score,
+                    delta_rel=delta,
+                    target_rel=target_rel,
+                    fit_score=fit_score,
+                    radius_m=radius,
+                    azimuth=azimuth,
+                    mode=mode,
+                    relief_m=relief,
                 )
 
             ipsu_point, ipsu_elev, _ = self._ring_extreme(
@@ -908,9 +1068,11 @@ class FengShuiAnalyzer:
             )
             if ipsu_point is not None:
                 delta = (ipsu_elev - center_elev) / relief
+                target_rel = -0.22 + term_target_shift
+                fit_score = self._score_gaussian(delta, target_rel, 0.35)
                 score = self._mean_scores(
                     base_score,
-                    self._score_gaussian(delta, -0.22 + term_target_shift, 0.35),
+                    fit_score,
                 )
                 add_term(
                     term_id="ipsu",
@@ -921,6 +1083,14 @@ class FengShuiAnalyzer:
                     score=score,
                     elev=ipsu_elev,
                     note=f"ring_min delta={delta:.3f}",
+                    base_score_value=base_score,
+                    delta_rel=delta,
+                    target_rel=target_rel,
+                    fit_score=fit_score,
+                    radius_m=outer_radius,
+                    azimuth=None,
+                    mode="min",
+                    relief_m=relief,
                 )
 
             misa_point, misa_elev = self._sector_gentle_point(
@@ -932,9 +1102,11 @@ class FengShuiAnalyzer:
             )
             if misa_point is not None:
                 delta = (misa_elev - center_elev) / relief
+                target_rel = -0.03 + (term_target_shift * 0.5)
+                fit_score = self._score_gaussian(delta, target_rel, 0.20)
                 score = self._mean_scores(
                     base_score,
-                    self._score_gaussian(delta, -0.03 + (term_target_shift * 0.5), 0.20),
+                    fit_score,
                 )
                 add_term(
                     term_id="misa",
@@ -945,6 +1117,14 @@ class FengShuiAnalyzer:
                     score=score,
                     elev=misa_elev,
                     note=f"gentle delta={delta:.3f}",
+                    base_score_value=base_score,
+                    delta_rel=delta,
+                    target_rel=target_rel,
+                    fit_score=fit_score,
+                    radius_m=inner_radius,
+                    azimuth=card["front"],
+                    mode="gentle",
+                    relief_m=relief,
                 )
 
         term_layer.updateExtents()
@@ -961,6 +1141,14 @@ class FengShuiAnalyzer:
         score,
         elev,
         note,
+        base_sc=None,
+        delta_rel=None,
+        target_rel=None,
+        fit_sc=None,
+        radius_m=None,
+        azimuth=None,
+        mode=None,
+        relief_m=None,
         term_ko=None,
         culture=None,
         period=None,
@@ -977,6 +1165,14 @@ class FengShuiAnalyzer:
         feature["rank"] = rank
         feature["score"] = score
         feature["elev"] = elev
+        feature["base_sc"] = base_sc
+        feature["delta_rel"] = delta_rel
+        feature["target_rel"] = target_rel
+        feature["fit_sc"] = fit_sc
+        feature["radius_m"] = radius_m
+        feature["azimuth"] = azimuth
+        feature["mode"] = mode if mode else ""
+        feature["relief_m"] = relief_m
         feature["note"] = note
         feature["reason_ko"] = reason_ko if reason_ko else ""
         layer.dataProvider().addFeature(feature)
@@ -998,7 +1194,10 @@ class FengShuiAnalyzer:
         fields.append(QgsField("period", QVariant.String, "string", 20))
         fields.append(QgsField("src_id", QVariant.String, "string", 28))
         fields.append(QgsField("dst_id", QVariant.String, "string", 28))
-        fields.append(QgsField("reason_ko", QVariant.String, "string", 254))
+        fields.append(QgsField("len_m", QVariant.Double, "double", 12, 3))
+        fields.append(QgsField("azimuth", QVariant.Double, "double", 7, 2))
+        fields.append(QgsField("curved", QVariant.Int))
+        fields.append(QgsField("reason_ko", QVariant.String, "string", 1024))
         data.addAttributes(fields)
         link_layer.updateFields()
 
@@ -1012,10 +1211,6 @@ class FengShuiAnalyzer:
             ("myeongdang", "misa", "myeongdang"),
             ("naesugu", "oesugu", "naesugu"),
             ("naesugu", "ipsu", "naesugu"),
-            ("naecheongnyong", "ansan", "ansan"),
-            ("ansan", "naebaekho", "ansan"),
-            ("oecheongnyong", "josan", "josan"),
-            ("josan", "oebaekho", "josan"),
         ]
 
         grouped = defaultdict(dict)
@@ -1030,6 +1225,7 @@ class FengShuiAnalyzer:
 
         link_features = []
         seen_edges = set()
+        min_link_score = 0.48
         for parent_id, terms in grouped.items():
             hyeol_feature = terms.get("hyeol")
             hyeol_point = None
@@ -1063,6 +1259,14 @@ class FengShuiAnalyzer:
                     self._to_float(source["score"]),
                     self._to_float(target["score"]),
                 )
+                if score is not None and score < min_link_score:
+                    continue
+                dx = destination.x() - origin.x()
+                dy = destination.y() - origin.y()
+                length_m = math.hypot(dx, dy)
+                if length_m <= 0:
+                    continue
+                azimuth = (math.degrees(math.atan2(dx, dy)) + 360.0) % 360.0
                 rank_value = (
                     source["rank"] if source["rank"] is not None else target["rank"]
                 )
@@ -1080,11 +1284,15 @@ class FengShuiAnalyzer:
                 line_feature["period"] = source["period"] or target["period"]
                 line_feature["src_id"] = source_id
                 line_feature["dst_id"] = target_id
+                line_feature["len_m"] = length_m
+                line_feature["azimuth"] = azimuth
+                line_feature["curved"] = 1 if use_bend else 0
                 score_text = "n/a" if score is None else f"{score:.3f}"
                 bend_text = "곡선 보정" if use_bend else "직결"
                 line_feature["reason_ko"] = (
                     f"구조 연결 {term_label_ko(source_id)}→{term_label_ko(target_id)}. "
                     f"표현={term_label_ko(style_term)}, 형태={bend_text}, 평균점수={score_text}, "
+                    f"거리={length_m:.1f}m, 방위={azimuth:.1f}°({self._azimuth_label(azimuth)}), "
                     "중심 방사 연결 제외."
                 )
                 link_features.append(line_feature)
@@ -1113,15 +1321,25 @@ class FengShuiAnalyzer:
         categories = []
         for term_id, style in style_map.items():
             fill_color, size, stroke_color, stroke_width = style
+            if term_id == "hyeol":
+                size_scale = 0.92
+                opacity = 0.95
+            elif term_id == "myeongdang":
+                size_scale = 0.86
+                opacity = 0.88
+            else:
+                size_scale = 0.70
+                opacity = 0.68
             symbol = QgsMarkerSymbol.createSimple(
                 {
                     "name": "circle",
                     "color": fill_color,
-                    "size": str(size),
+                    "size": str(max(1.8, float(size) * size_scale)),
                     "outline_color": stroke_color,
-                    "outline_width": str(stroke_width),
+                    "outline_width": str(max(0.35, float(stroke_width) * 0.75)),
                 }
             )
+            symbol.setOpacity(opacity)
             categories.append(QgsRendererCategory(term_id, symbol, term_id))
 
         renderer = QgsCategorizedSymbolRenderer("term_id", categories)
@@ -1129,11 +1347,12 @@ class FengShuiAnalyzer:
             {
                 "name": "circle",
                 "color": "#cccccc",
-                "size": "3.0",
+                "size": "2.1",
                 "outline_color": "#555555",
-                "outline_width": "0.5",
+                "outline_width": "0.35",
             }
         )
+        fallback.setOpacity(0.60)
         renderer.setSourceSymbol(fallback)
         term_layer.setRenderer(renderer)
         term_layer.triggerRepaint()
@@ -1146,20 +1365,26 @@ class FengShuiAnalyzer:
             symbol = QgsLineSymbol.createSimple(
                 {
                     "line_color": color,
-                    "line_width": str(width),
+                    "line_width": str(max(0.55, float(width) * 0.56)),
                     "line_style": "solid",
+                    "capstyle": "round",
+                    "joinstyle": "round",
                 }
             )
+            symbol.setOpacity(0.38)
             categories.append(QgsRendererCategory(term_id, symbol, term_id))
 
         renderer = QgsCategorizedSymbolRenderer("term_id", categories)
         default_symbol = QgsLineSymbol.createSimple(
             {
                 "line_color": "#777777",
-                "line_width": "1.4",
+                "line_width": "0.65",
                 "line_style": "solid",
+                "capstyle": "round",
+                "joinstyle": "round",
             }
         )
+        default_symbol.setOpacity(0.26)
         renderer.setSourceSymbol(default_symbol)
         link_layer.setRenderer(renderer)
         link_layer.triggerRepaint()
