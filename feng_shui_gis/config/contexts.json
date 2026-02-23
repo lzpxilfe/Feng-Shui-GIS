@@ -3,137 +3,1475 @@
   "base_period_key": "early_modern",
   "cultures": {
     "east_asia": {
-      "label": { "en": "East Asia baseline", "ko": "동아시아 기본", "zh": "东亚基准", "ja": "東アジア基準" },
-      "aspect_targets": { "north": 180.0, "south": 0.0 },
-      "aspect_sharpness": 1.0,
-      "water_distance_target": 220.0,
-      "water_distance_sigma": 350.0,
-      "macro_radius_multiplier": 1.0,
-      "micro_radius_multiplier": 1.0,
-      "hyeol_threshold": 0.62,
+      "label": {
+        "en": "East Asia baseline",
+        "ko": "동아시아 기본",
+        "zh": "东亚基准",
+        "ja": "東アジア基準"
+      },
+      "aspect_targets": {
+        "north": {
+          "value": 180.0,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.1109/IGARSS.2002.1027144"
+          ],
+          "evidence_level": "B",
+          "note": "East Asia baseline prior from cross-region literature."
+        },
+        "south": {
+          "value": 0.0,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.1109/IGARSS.2002.1027144"
+          ],
+          "evidence_level": "B",
+          "note": "East Asia baseline prior from cross-region literature."
+        }
+      },
+      "aspect_sharpness": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.1109/IGARSS.2002.1027144"
+        ],
+        "evidence_level": "B",
+        "note": "East Asia baseline prior from cross-region literature."
+      },
+      "water_distance_target": {
+        "value": 220.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.1109/IGARSS.2002.1027144"
+        ],
+        "evidence_level": "B",
+        "note": "East Asia baseline prior from cross-region literature."
+      },
+      "water_distance_sigma": {
+        "value": 350.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.1109/IGARSS.2002.1027144"
+        ],
+        "evidence_level": "B",
+        "note": "East Asia baseline prior from cross-region literature."
+      },
+      "macro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.1109/IGARSS.2002.1027144"
+        ],
+        "evidence_level": "B",
+        "note": "East Asia baseline prior from cross-region literature."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.1109/IGARSS.2002.1027144"
+        ],
+        "evidence_level": "B",
+        "note": "East Asia baseline prior from cross-region literature."
+      },
+      "hyeol_threshold": {
+        "value": 0.62,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.1109/IGARSS.2002.1027144"
+        ],
+        "evidence_level": "B",
+        "note": "East Asia baseline prior from cross-region literature."
+      },
       "weight_bias": {},
       "term_bias": {},
-      "term_target_shift": 0.0
+      "term_target_shift": {
+        "value": 0.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.1109/IGARSS.2002.1027144"
+        ],
+        "evidence_level": "B",
+        "note": "East Asia baseline prior from cross-region literature."
+      }
     },
     "korea": {
-      "label": { "en": "Korea", "ko": "한국", "zh": "韩国", "ja": "韓国" },
-      "aspect_targets": { "north": 180.0, "south": 0.0 },
-      "aspect_sharpness": 1.15,
-      "water_distance_target": 210.0,
-      "water_distance_sigma": 330.0,
-      "macro_radius_multiplier": 1.1,
-      "micro_radius_multiplier": 1.0,
-      "hyeol_threshold": 0.64,
-      "weight_bias": { "form": 0.06, "long": 0.04, "water": 0.02, "aspect": 0.02, "slope": -0.03 },
-      "term_bias": { "ansan": 0.05, "josan": 0.05, "naecheongnyong": 0.04, "naebaekho": 0.04, "naesugu": 0.04 },
-      "term_target_shift": 0.01
+      "label": {
+        "en": "Korea",
+        "ko": "한국",
+        "zh": "韩国",
+        "ja": "韓国"
+      },
+      "aspect_targets": {
+        "north": {
+          "value": 180.0,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        },
+        "south": {
+          "value": 0.0,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        }
+      },
+      "aspect_sharpness": {
+        "value": 1.15,
+        "source_doi": [
+          "https://doi.org/10.1007/s11355-006-0014-8",
+          "https://doi.org/10.15299/jk.2016.8.60.203",
+          "https://doi.org/10.1515/9781438468716-011",
+          "https://doi.org/10.1515/9781438468716-009"
+        ],
+        "evidence_level": "A",
+        "note": "Korean settlement/architecture/landscape evidence."
+      },
+      "water_distance_target": {
+        "value": 210.0,
+        "source_doi": [
+          "https://doi.org/10.1007/s11355-006-0014-8",
+          "https://doi.org/10.15299/jk.2016.8.60.203",
+          "https://doi.org/10.1515/9781438468716-011",
+          "https://doi.org/10.1515/9781438468716-009"
+        ],
+        "evidence_level": "A",
+        "note": "Korean settlement/architecture/landscape evidence."
+      },
+      "water_distance_sigma": {
+        "value": 330.0,
+        "source_doi": [
+          "https://doi.org/10.1007/s11355-006-0014-8",
+          "https://doi.org/10.15299/jk.2016.8.60.203",
+          "https://doi.org/10.1515/9781438468716-011",
+          "https://doi.org/10.1515/9781438468716-009"
+        ],
+        "evidence_level": "A",
+        "note": "Korean settlement/architecture/landscape evidence."
+      },
+      "macro_radius_multiplier": {
+        "value": 1.1,
+        "source_doi": [
+          "https://doi.org/10.1007/s11355-006-0014-8",
+          "https://doi.org/10.15299/jk.2016.8.60.203",
+          "https://doi.org/10.1515/9781438468716-011",
+          "https://doi.org/10.1515/9781438468716-009"
+        ],
+        "evidence_level": "A",
+        "note": "Korean settlement/architecture/landscape evidence."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1007/s11355-006-0014-8",
+          "https://doi.org/10.15299/jk.2016.8.60.203",
+          "https://doi.org/10.1515/9781438468716-011",
+          "https://doi.org/10.1515/9781438468716-009"
+        ],
+        "evidence_level": "A",
+        "note": "Korean settlement/architecture/landscape evidence."
+      },
+      "hyeol_threshold": {
+        "value": 0.64,
+        "source_doi": [
+          "https://doi.org/10.1007/s11355-006-0014-8",
+          "https://doi.org/10.15299/jk.2016.8.60.203",
+          "https://doi.org/10.1515/9781438468716-011",
+          "https://doi.org/10.1515/9781438468716-009"
+        ],
+        "evidence_level": "A",
+        "note": "Korean settlement/architecture/landscape evidence."
+      },
+      "weight_bias": {
+        "form": {
+          "value": 0.06,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        },
+        "long": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        },
+        "water": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        },
+        "aspect": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        },
+        "slope": {
+          "value": -0.03,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        }
+      },
+      "term_bias": {
+        "ansan": {
+          "value": 0.05,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        },
+        "josan": {
+          "value": 0.05,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        },
+        "naecheongnyong": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        },
+        "naebaekho": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        },
+        "naesugu": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.1007/s11355-006-0014-8",
+            "https://doi.org/10.15299/jk.2016.8.60.203",
+            "https://doi.org/10.1515/9781438468716-011",
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "A",
+          "note": "Korean settlement/architecture/landscape evidence."
+        }
+      },
+      "term_target_shift": {
+        "value": 0.01,
+        "source_doi": [
+          "https://doi.org/10.1007/s11355-006-0014-8",
+          "https://doi.org/10.15299/jk.2016.8.60.203",
+          "https://doi.org/10.1515/9781438468716-011",
+          "https://doi.org/10.1515/9781438468716-009"
+        ],
+        "evidence_level": "A",
+        "note": "Korean settlement/architecture/landscape evidence."
+      }
     },
     "china": {
-      "label": { "en": "China", "ko": "중국", "zh": "中国", "ja": "中国" },
-      "aspect_targets": { "north": 180.0, "south": 0.0 },
-      "aspect_sharpness": 1.1,
-      "water_distance_target": 260.0,
-      "water_distance_sigma": 420.0,
-      "macro_radius_multiplier": 1.2,
-      "micro_radius_multiplier": 1.05,
-      "hyeol_threshold": 0.64,
-      "weight_bias": { "long": 0.07, "water": 0.05, "form": 0.03, "tpi": -0.03 },
-      "term_bias": { "jusan": 0.04, "jojongsan": 0.06, "naesugu": 0.03, "oesugu": 0.04 },
-      "term_target_shift": 0.03
+      "label": {
+        "en": "China",
+        "ko": "중국",
+        "zh": "中国",
+        "ja": "中国"
+      },
+      "aspect_targets": {
+        "north": {
+          "value": 180.0,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        },
+        "south": {
+          "value": 0.0,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        }
+      },
+      "aspect_sharpness": {
+        "value": 1.1,
+        "source_doi": [
+          "https://doi.org/10.3390/ijgi10110752",
+          "https://doi.org/10.1080/13576275.2020.1750356",
+          "https://doi.org/10.1038/s40494-025-01686-y"
+        ],
+        "evidence_level": "A",
+        "note": "GIS suitability + parametric and burial landscape references."
+      },
+      "water_distance_target": {
+        "value": 260.0,
+        "source_doi": [
+          "https://doi.org/10.3390/ijgi10110752",
+          "https://doi.org/10.1080/13576275.2020.1750356",
+          "https://doi.org/10.1038/s40494-025-01686-y"
+        ],
+        "evidence_level": "A",
+        "note": "GIS suitability + parametric and burial landscape references."
+      },
+      "water_distance_sigma": {
+        "value": 420.0,
+        "source_doi": [
+          "https://doi.org/10.3390/ijgi10110752",
+          "https://doi.org/10.1080/13576275.2020.1750356",
+          "https://doi.org/10.1038/s40494-025-01686-y"
+        ],
+        "evidence_level": "A",
+        "note": "GIS suitability + parametric and burial landscape references."
+      },
+      "macro_radius_multiplier": {
+        "value": 1.2,
+        "source_doi": [
+          "https://doi.org/10.3390/ijgi10110752",
+          "https://doi.org/10.1080/13576275.2020.1750356",
+          "https://doi.org/10.1038/s40494-025-01686-y"
+        ],
+        "evidence_level": "A",
+        "note": "GIS suitability + parametric and burial landscape references."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.05,
+        "source_doi": [
+          "https://doi.org/10.3390/ijgi10110752",
+          "https://doi.org/10.1080/13576275.2020.1750356",
+          "https://doi.org/10.1038/s40494-025-01686-y"
+        ],
+        "evidence_level": "A",
+        "note": "GIS suitability + parametric and burial landscape references."
+      },
+      "hyeol_threshold": {
+        "value": 0.64,
+        "source_doi": [
+          "https://doi.org/10.3390/ijgi10110752",
+          "https://doi.org/10.1080/13576275.2020.1750356",
+          "https://doi.org/10.1038/s40494-025-01686-y"
+        ],
+        "evidence_level": "A",
+        "note": "GIS suitability + parametric and burial landscape references."
+      },
+      "weight_bias": {
+        "long": {
+          "value": 0.07,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        },
+        "water": {
+          "value": 0.05,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        },
+        "form": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        },
+        "tpi": {
+          "value": -0.03,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        }
+      },
+      "term_bias": {
+        "jusan": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        },
+        "jojongsan": {
+          "value": 0.06,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        },
+        "naesugu": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        },
+        "oesugu": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752",
+            "https://doi.org/10.1080/13576275.2020.1750356",
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "A",
+          "note": "GIS suitability + parametric and burial landscape references."
+        }
+      },
+      "term_target_shift": {
+        "value": 0.03,
+        "source_doi": [
+          "https://doi.org/10.3390/ijgi10110752",
+          "https://doi.org/10.1080/13576275.2020.1750356",
+          "https://doi.org/10.1038/s40494-025-01686-y"
+        ],
+        "evidence_level": "A",
+        "note": "GIS suitability + parametric and burial landscape references."
+      }
     },
     "japan": {
-      "label": { "en": "Japan", "ko": "일본", "zh": "日本", "ja": "日本" },
-      "aspect_targets": { "north": 170.0, "south": 350.0 },
-      "aspect_sharpness": 0.85,
-      "water_distance_target": 240.0,
-      "water_distance_sigma": 360.0,
-      "macro_radius_multiplier": 1.0,
-      "micro_radius_multiplier": 0.95,
-      "hyeol_threshold": 0.6,
-      "weight_bias": { "aspect": 0.05, "form": 0.03, "water": -0.03, "long": 0.01 },
-      "term_bias": { "naecheongnyong": 0.03, "oecheongnyong": 0.02, "naebaekho": 0.03, "oebaekho": 0.02, "ansan": 0.02 },
-      "term_target_shift": -0.01
+      "label": {
+        "en": "Japan",
+        "ko": "일본",
+        "zh": "日本",
+        "ja": "日本"
+      },
+      "aspect_targets": {
+        "north": {
+          "value": 170.0,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        },
+        "south": {
+          "value": 350.0,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        }
+      },
+      "aspect_sharpness": {
+        "value": 0.85,
+        "source_doi": [
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "B",
+        "note": "Japan/Okinawa landscape adaptation evidence."
+      },
+      "water_distance_target": {
+        "value": 240.0,
+        "source_doi": [
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "B",
+        "note": "Japan/Okinawa landscape adaptation evidence."
+      },
+      "water_distance_sigma": {
+        "value": 360.0,
+        "source_doi": [
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "B",
+        "note": "Japan/Okinawa landscape adaptation evidence."
+      },
+      "macro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "B",
+        "note": "Japan/Okinawa landscape adaptation evidence."
+      },
+      "micro_radius_multiplier": {
+        "value": 0.95,
+        "source_doi": [
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "B",
+        "note": "Japan/Okinawa landscape adaptation evidence."
+      },
+      "hyeol_threshold": {
+        "value": 0.6,
+        "source_doi": [
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "B",
+        "note": "Japan/Okinawa landscape adaptation evidence."
+      },
+      "weight_bias": {
+        "aspect": {
+          "value": 0.05,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        },
+        "form": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        },
+        "water": {
+          "value": -0.03,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        },
+        "long": {
+          "value": 0.01,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        }
+      },
+      "term_bias": {
+        "naecheongnyong": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        },
+        "oecheongnyong": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        },
+        "naebaekho": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        },
+        "oebaekho": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        },
+        "ansan": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "B",
+          "note": "Japan/Okinawa landscape adaptation evidence."
+        }
+      },
+      "term_target_shift": {
+        "value": -0.01,
+        "source_doi": [
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "B",
+        "note": "Japan/Okinawa landscape adaptation evidence."
+      }
     },
     "ryukyu": {
-      "label": { "en": "Ryukyu/Okinawa", "ko": "류큐/오키나와", "zh": "琉球/冲绳", "ja": "琉球/沖縄" },
-      "aspect_targets": { "north": 165.0, "south": 345.0 },
-      "aspect_sharpness": 0.9,
-      "water_distance_target": 180.0,
-      "water_distance_sigma": 310.0,
-      "macro_radius_multiplier": 0.9,
-      "micro_radius_multiplier": 1.05,
-      "hyeol_threshold": 0.59,
-      "weight_bias": { "water": 0.1, "conv": 0.04, "long": -0.05, "form": 0.01 },
-      "term_bias": { "ipsu": 0.06, "naesugu": 0.05, "oesugu": 0.05 },
-      "term_target_shift": -0.03
+      "label": {
+        "en": "Ryukyu/Okinawa",
+        "ko": "류큐/오키나와",
+        "zh": "琉球/冲绳",
+        "ja": "琉球/沖縄"
+      },
+      "aspect_targets": {
+        "north": {
+          "value": 165.0,
+          "source_doi": [
+            "https://doi.org/10.1163/156853508X276824",
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "A",
+          "note": "Ryukyu village/tree-layout quantitative case evidence."
+        },
+        "south": {
+          "value": 345.0,
+          "source_doi": [
+            "https://doi.org/10.1163/156853508X276824",
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "A",
+          "note": "Ryukyu village/tree-layout quantitative case evidence."
+        }
+      },
+      "aspect_sharpness": {
+        "value": 0.9,
+        "source_doi": [
+          "https://doi.org/10.1163/156853508X276824",
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "A",
+        "note": "Ryukyu village/tree-layout quantitative case evidence."
+      },
+      "water_distance_target": {
+        "value": 180.0,
+        "source_doi": [
+          "https://doi.org/10.1163/156853508X276824",
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "A",
+        "note": "Ryukyu village/tree-layout quantitative case evidence."
+      },
+      "water_distance_sigma": {
+        "value": 310.0,
+        "source_doi": [
+          "https://doi.org/10.1163/156853508X276824",
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "A",
+        "note": "Ryukyu village/tree-layout quantitative case evidence."
+      },
+      "macro_radius_multiplier": {
+        "value": 0.9,
+        "source_doi": [
+          "https://doi.org/10.1163/156853508X276824",
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "A",
+        "note": "Ryukyu village/tree-layout quantitative case evidence."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.05,
+        "source_doi": [
+          "https://doi.org/10.1163/156853508X276824",
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "A",
+        "note": "Ryukyu village/tree-layout quantitative case evidence."
+      },
+      "hyeol_threshold": {
+        "value": 0.59,
+        "source_doi": [
+          "https://doi.org/10.1163/156853508X276824",
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "A",
+        "note": "Ryukyu village/tree-layout quantitative case evidence."
+      },
+      "weight_bias": {
+        "water": {
+          "value": 0.1,
+          "source_doi": [
+            "https://doi.org/10.1163/156853508X276824",
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "A",
+          "note": "Ryukyu village/tree-layout quantitative case evidence."
+        },
+        "conv": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.1163/156853508X276824",
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "A",
+          "note": "Ryukyu village/tree-layout quantitative case evidence."
+        },
+        "long": {
+          "value": -0.05,
+          "source_doi": [
+            "https://doi.org/10.1163/156853508X276824",
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "A",
+          "note": "Ryukyu village/tree-layout quantitative case evidence."
+        },
+        "form": {
+          "value": 0.01,
+          "source_doi": [
+            "https://doi.org/10.1163/156853508X276824",
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "A",
+          "note": "Ryukyu village/tree-layout quantitative case evidence."
+        }
+      },
+      "term_bias": {
+        "ipsu": {
+          "value": 0.06,
+          "source_doi": [
+            "https://doi.org/10.1163/156853508X276824",
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "A",
+          "note": "Ryukyu village/tree-layout quantitative case evidence."
+        },
+        "naesugu": {
+          "value": 0.05,
+          "source_doi": [
+            "https://doi.org/10.1163/156853508X276824",
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "A",
+          "note": "Ryukyu village/tree-layout quantitative case evidence."
+        },
+        "oesugu": {
+          "value": 0.05,
+          "source_doi": [
+            "https://doi.org/10.1163/156853508X276824",
+            "https://doi.org/10.1163/156853511X577475",
+            "https://doi.org/10.1016/j.ufug.2007.10.001"
+          ],
+          "evidence_level": "A",
+          "note": "Ryukyu village/tree-layout quantitative case evidence."
+        }
+      },
+      "term_target_shift": {
+        "value": -0.03,
+        "source_doi": [
+          "https://doi.org/10.1163/156853508X276824",
+          "https://doi.org/10.1163/156853511X577475",
+          "https://doi.org/10.1016/j.ufug.2007.10.001"
+        ],
+        "evidence_level": "A",
+        "note": "Ryukyu village/tree-layout quantitative case evidence."
+      }
     },
     "southeast_asia": {
-      "label": { "en": "Southeast Asia", "ko": "동남아", "zh": "东南亚", "ja": "東南アジア" },
-      "aspect_targets": { "north": 170.0, "south": 350.0 },
-      "aspect_sharpness": 0.95,
-      "water_distance_target": 190.0,
-      "water_distance_sigma": 300.0,
-      "macro_radius_multiplier": 0.95,
-      "micro_radius_multiplier": 1.05,
-      "hyeol_threshold": 0.6,
-      "weight_bias": { "water": 0.08, "aspect": 0.04, "form": -0.02, "long": -0.03 },
-      "term_bias": { "ipsu": 0.05, "naesugu": 0.04, "oesugu": 0.04 },
-      "term_target_shift": -0.02
+      "label": {
+        "en": "Southeast Asia",
+        "ko": "동남아",
+        "zh": "东南亚",
+        "ja": "東南アジア"
+      },
+      "aspect_targets": {
+        "north": {
+          "value": 170.0,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Transferred prior with limited direct calibration in this plugin."
+        },
+        "south": {
+          "value": 350.0,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Transferred prior with limited direct calibration in this plugin."
+        }
+      },
+      "aspect_sharpness": {
+        "value": 0.95,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Transferred prior with limited direct calibration in this plugin."
+      },
+      "water_distance_target": {
+        "value": 190.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Transferred prior with limited direct calibration in this plugin."
+      },
+      "water_distance_sigma": {
+        "value": 300.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Transferred prior with limited direct calibration in this plugin."
+      },
+      "macro_radius_multiplier": {
+        "value": 0.95,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Transferred prior with limited direct calibration in this plugin."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.05,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Transferred prior with limited direct calibration in this plugin."
+      },
+      "hyeol_threshold": {
+        "value": 0.6,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Transferred prior with limited direct calibration in this plugin."
+      },
+      "weight_bias": {
+        "water": {
+          "value": 0.08,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Transferred prior with limited direct calibration in this plugin."
+        },
+        "aspect": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Transferred prior with limited direct calibration in this plugin."
+        },
+        "form": {
+          "value": -0.02,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Transferred prior with limited direct calibration in this plugin."
+        },
+        "long": {
+          "value": -0.03,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Transferred prior with limited direct calibration in this plugin."
+        }
+      },
+      "term_bias": {
+        "ipsu": {
+          "value": 0.05,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Transferred prior with limited direct calibration in this plugin."
+        },
+        "naesugu": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Transferred prior with limited direct calibration in this plugin."
+        },
+        "oesugu": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Transferred prior with limited direct calibration in this plugin."
+        }
+      },
+      "term_target_shift": {
+        "value": -0.02,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Transferred prior with limited direct calibration in this plugin."
+      }
     },
     "global_apm": {
-      "label": { "en": "Global APM baseline", "ko": "글로벌 예측모델 기본", "zh": "全球预测基准", "ja": "グローバル予測基準" },
-      "aspect_targets": { "north": 180.0, "south": 0.0 },
-      "aspect_sharpness": 0.9,
-      "water_distance_target": 200.0,
-      "water_distance_sigma": 320.0,
-      "macro_radius_multiplier": 1.0,
-      "micro_radius_multiplier": 1.0,
-      "hyeol_threshold": 0.58,
-      "weight_bias": { "water": 0.07, "slope": 0.03, "conv": 0.04, "long": -0.04 },
-      "term_bias": { "ipsu": 0.03, "naesugu": 0.03 },
-      "term_target_shift": -0.01
+      "label": {
+        "en": "Global APM baseline",
+        "ko": "글로벌 예측모델 기본",
+        "zh": "全球预测基准",
+        "ja": "グローバル予測基準"
+      },
+      "aspect_targets": {
+        "north": {
+          "value": 180.0,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.3368/lj.16.2.174"
+          ],
+          "evidence_level": "B",
+          "note": "Generic archaeological predictive modeling baseline."
+        },
+        "south": {
+          "value": 0.0,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.3368/lj.16.2.174"
+          ],
+          "evidence_level": "B",
+          "note": "Generic archaeological predictive modeling baseline."
+        }
+      },
+      "aspect_sharpness": {
+        "value": 0.9,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.3368/lj.16.2.174"
+        ],
+        "evidence_level": "B",
+        "note": "Generic archaeological predictive modeling baseline."
+      },
+      "water_distance_target": {
+        "value": 200.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.3368/lj.16.2.174"
+        ],
+        "evidence_level": "B",
+        "note": "Generic archaeological predictive modeling baseline."
+      },
+      "water_distance_sigma": {
+        "value": 320.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.3368/lj.16.2.174"
+        ],
+        "evidence_level": "B",
+        "note": "Generic archaeological predictive modeling baseline."
+      },
+      "macro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.3368/lj.16.2.174"
+        ],
+        "evidence_level": "B",
+        "note": "Generic archaeological predictive modeling baseline."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.3368/lj.16.2.174"
+        ],
+        "evidence_level": "B",
+        "note": "Generic archaeological predictive modeling baseline."
+      },
+      "hyeol_threshold": {
+        "value": 0.58,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.3368/lj.16.2.174"
+        ],
+        "evidence_level": "B",
+        "note": "Generic archaeological predictive modeling baseline."
+      },
+      "weight_bias": {
+        "water": {
+          "value": 0.07,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.3368/lj.16.2.174"
+          ],
+          "evidence_level": "B",
+          "note": "Generic archaeological predictive modeling baseline."
+        },
+        "slope": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.3368/lj.16.2.174"
+          ],
+          "evidence_level": "B",
+          "note": "Generic archaeological predictive modeling baseline."
+        },
+        "conv": {
+          "value": 0.04,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.3368/lj.16.2.174"
+          ],
+          "evidence_level": "B",
+          "note": "Generic archaeological predictive modeling baseline."
+        },
+        "long": {
+          "value": -0.04,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.3368/lj.16.2.174"
+          ],
+          "evidence_level": "B",
+          "note": "Generic archaeological predictive modeling baseline."
+        }
+      },
+      "term_bias": {
+        "ipsu": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.3368/lj.16.2.174"
+          ],
+          "evidence_level": "B",
+          "note": "Generic archaeological predictive modeling baseline."
+        },
+        "naesugu": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.3368/lj.16.2.174"
+          ],
+          "evidence_level": "B",
+          "note": "Generic archaeological predictive modeling baseline."
+        }
+      },
+      "term_target_shift": {
+        "value": -0.01,
+        "source_doi": [
+          "https://doi.org/10.1080/13658810802055954",
+          "https://doi.org/10.3368/lj.16.2.174"
+        ],
+        "evidence_level": "B",
+        "note": "Generic archaeological predictive modeling baseline."
+      }
     }
   },
   "periods": {
     "ancient": {
-      "label": { "en": "Ancient", "ko": "고대", "zh": "古代", "ja": "古代" },
-      "water_target_shift": 30.0,
-      "water_sigma_shift": 20.0,
-      "macro_radius_multiplier": 1.15,
-      "micro_radius_multiplier": 1.0,
-      "hyeol_threshold_shift": 0.02,
-      "weight_bias": { "long": 0.05, "form": 0.03, "water": -0.02, "aspect": -0.02 },
-      "term_target_shift": 0.02
+      "label": {
+        "en": "Ancient",
+        "ko": "고대",
+        "zh": "古代",
+        "ja": "古代"
+      },
+      "water_target_shift": {
+        "value": 30.0,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-004"
+        ],
+        "evidence_level": "C",
+        "note": "Ancient-period shift is heuristic prior."
+      },
+      "water_sigma_shift": {
+        "value": 20.0,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-004"
+        ],
+        "evidence_level": "C",
+        "note": "Ancient-period shift is heuristic prior."
+      },
+      "macro_radius_multiplier": {
+        "value": 1.15,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-004"
+        ],
+        "evidence_level": "C",
+        "note": "Ancient-period shift is heuristic prior."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-004"
+        ],
+        "evidence_level": "C",
+        "note": "Ancient-period shift is heuristic prior."
+      },
+      "hyeol_threshold_shift": {
+        "value": 0.02,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-004"
+        ],
+        "evidence_level": "C",
+        "note": "Ancient-period shift is heuristic prior."
+      },
+      "weight_bias": {
+        "long": {
+          "value": 0.05,
+          "source_doi": [
+            "https://doi.org/10.1515/9781438468716-004"
+          ],
+          "evidence_level": "C",
+          "note": "Ancient-period shift is heuristic prior."
+        },
+        "form": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1515/9781438468716-004"
+          ],
+          "evidence_level": "C",
+          "note": "Ancient-period shift is heuristic prior."
+        },
+        "water": {
+          "value": -0.02,
+          "source_doi": [
+            "https://doi.org/10.1515/9781438468716-004"
+          ],
+          "evidence_level": "C",
+          "note": "Ancient-period shift is heuristic prior."
+        },
+        "aspect": {
+          "value": -0.02,
+          "source_doi": [
+            "https://doi.org/10.1515/9781438468716-004"
+          ],
+          "evidence_level": "C",
+          "note": "Ancient-period shift is heuristic prior."
+        }
+      },
+      "term_target_shift": {
+        "value": 0.02,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-004"
+        ],
+        "evidence_level": "C",
+        "note": "Ancient-period shift is heuristic prior."
+      }
     },
     "medieval": {
-      "label": { "en": "Medieval", "ko": "중세", "zh": "中世", "ja": "中世" },
-      "water_target_shift": 10.0,
-      "water_sigma_shift": 10.0,
-      "macro_radius_multiplier": 1.05,
-      "micro_radius_multiplier": 1.0,
-      "hyeol_threshold_shift": 0.01,
-      "weight_bias": { "form": 0.03, "long": 0.03 },
-      "term_target_shift": 0.01
+      "label": {
+        "en": "Medieval",
+        "ko": "중세",
+        "zh": "中世",
+        "ja": "中世"
+      },
+      "water_target_shift": {
+        "value": 10.0,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-011"
+        ],
+        "evidence_level": "C",
+        "note": "Medieval-period shift is heuristic prior."
+      },
+      "water_sigma_shift": {
+        "value": 10.0,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-011"
+        ],
+        "evidence_level": "C",
+        "note": "Medieval-period shift is heuristic prior."
+      },
+      "macro_radius_multiplier": {
+        "value": 1.05,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-011"
+        ],
+        "evidence_level": "C",
+        "note": "Medieval-period shift is heuristic prior."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-011"
+        ],
+        "evidence_level": "C",
+        "note": "Medieval-period shift is heuristic prior."
+      },
+      "hyeol_threshold_shift": {
+        "value": 0.01,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-011"
+        ],
+        "evidence_level": "C",
+        "note": "Medieval-period shift is heuristic prior."
+      },
+      "weight_bias": {
+        "form": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1515/9781438468716-011"
+          ],
+          "evidence_level": "C",
+          "note": "Medieval-period shift is heuristic prior."
+        },
+        "long": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1515/9781438468716-011"
+          ],
+          "evidence_level": "C",
+          "note": "Medieval-period shift is heuristic prior."
+        }
+      },
+      "term_target_shift": {
+        "value": 0.01,
+        "source_doi": [
+          "https://doi.org/10.1515/9781438468716-011"
+        ],
+        "evidence_level": "C",
+        "note": "Medieval-period shift is heuristic prior."
+      }
     },
     "early_modern": {
-      "label": { "en": "Early modern", "ko": "근세", "zh": "近世", "ja": "近世" },
-      "water_target_shift": 0.0,
-      "water_sigma_shift": 0.0,
-      "macro_radius_multiplier": 1.0,
-      "micro_radius_multiplier": 1.0,
-      "hyeol_threshold_shift": 0.0,
-      "weight_bias": { "aspect": 0.02, "water": 0.01 },
-      "term_target_shift": 0.0
+      "label": {
+        "en": "Early modern",
+        "ko": "근세",
+        "zh": "近世",
+        "ja": "近世"
+      },
+      "water_target_shift": {
+        "value": 0.0,
+        "source_doi": [
+          "https://doi.org/10.15299/jk.2016.8.60.203"
+        ],
+        "evidence_level": "B",
+        "note": "Early-modern profile tied to settlement case studies."
+      },
+      "water_sigma_shift": {
+        "value": 0.0,
+        "source_doi": [
+          "https://doi.org/10.15299/jk.2016.8.60.203"
+        ],
+        "evidence_level": "B",
+        "note": "Early-modern profile tied to settlement case studies."
+      },
+      "macro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.15299/jk.2016.8.60.203"
+        ],
+        "evidence_level": "B",
+        "note": "Early-modern profile tied to settlement case studies."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.15299/jk.2016.8.60.203"
+        ],
+        "evidence_level": "B",
+        "note": "Early-modern profile tied to settlement case studies."
+      },
+      "hyeol_threshold_shift": {
+        "value": 0.0,
+        "source_doi": [
+          "https://doi.org/10.15299/jk.2016.8.60.203"
+        ],
+        "evidence_level": "B",
+        "note": "Early-modern profile tied to settlement case studies."
+      },
+      "weight_bias": {
+        "aspect": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.15299/jk.2016.8.60.203"
+          ],
+          "evidence_level": "B",
+          "note": "Early-modern profile tied to settlement case studies."
+        },
+        "water": {
+          "value": 0.01,
+          "source_doi": [
+            "https://doi.org/10.15299/jk.2016.8.60.203"
+          ],
+          "evidence_level": "B",
+          "note": "Early-modern profile tied to settlement case studies."
+        }
+      },
+      "term_target_shift": {
+        "value": 0.0,
+        "source_doi": [
+          "https://doi.org/10.15299/jk.2016.8.60.203"
+        ],
+        "evidence_level": "B",
+        "note": "Early-modern profile tied to settlement case studies."
+      }
     },
     "modern": {
-      "label": { "en": "Modern/Contemporary", "ko": "근현대", "zh": "近现代", "ja": "近現代" },
-      "water_target_shift": -15.0,
-      "water_sigma_shift": -20.0,
-      "macro_radius_multiplier": 0.9,
-      "micro_radius_multiplier": 1.0,
-      "hyeol_threshold_shift": -0.03,
-      "weight_bias": { "water": 0.03, "conv": 0.03, "long": -0.04, "form": -0.02 },
-      "term_target_shift": -0.02
+      "label": {
+        "en": "Modern/Contemporary",
+        "ko": "근현대",
+        "zh": "近现代",
+        "ja": "近現代"
+      },
+      "water_target_shift": {
+        "value": -15.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Modern-period shift is heuristic prior with limited calibration."
+      },
+      "water_sigma_shift": {
+        "value": -20.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Modern-period shift is heuristic prior with limited calibration."
+      },
+      "macro_radius_multiplier": {
+        "value": 0.9,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Modern-period shift is heuristic prior with limited calibration."
+      },
+      "micro_radius_multiplier": {
+        "value": 1.0,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Modern-period shift is heuristic prior with limited calibration."
+      },
+      "hyeol_threshold_shift": {
+        "value": -0.03,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Modern-period shift is heuristic prior with limited calibration."
+      },
+      "weight_bias": {
+        "water": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Modern-period shift is heuristic prior with limited calibration."
+        },
+        "conv": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Modern-period shift is heuristic prior with limited calibration."
+        },
+        "long": {
+          "value": -0.04,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Modern-period shift is heuristic prior with limited calibration."
+        },
+        "form": {
+          "value": -0.02,
+          "source_doi": [
+            "https://doi.org/10.1080/13576275.2020.1750356"
+          ],
+          "evidence_level": "C",
+          "note": "Modern-period shift is heuristic prior with limited calibration."
+        }
+      },
+      "term_target_shift": {
+        "value": -0.02,
+        "source_doi": [
+          "https://doi.org/10.1080/13576275.2020.1750356"
+        ],
+        "evidence_level": "C",
+        "note": "Modern-period shift is heuristic prior with limited calibration."
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from collections import defaultdict, deque
 import math
+import random
 
 from qgis import processing
 from qgis.PyQt.QtCore import QVariant
@@ -135,6 +136,84 @@ class FengShuiAnalyzer:
             context=context,
         )
         return output_layer
+
+    def calibrate(
+        self,
+        site_layer,
+        dem_layer,
+        water_layer=None,
+        hemisphere="north",
+        profile_key="general",
+        culture_key="korea",
+        period_key="early_modern",
+        negative_ratio=3,
+        random_seed=42,
+    ):
+        positive_points = self._collect_points(site_layer)
+        if len(positive_points) < 3:
+            raise RuntimeError("Calibration requires at least 3 positive site points.")
+
+        negative_ratio = max(1, int(negative_ratio))
+        random_seed = int(random_seed)
+        target_negative = len(positive_points) * negative_ratio
+        negative_points = self._sample_negative_points(
+            dem_layer=dem_layer,
+            positive_points=positive_points,
+            target_count=target_negative,
+            random_seed=random_seed,
+        )
+        if len(negative_points) < max(3, int(target_negative * 0.4)):
+            raise RuntimeError(
+                "Could not generate enough negative samples for calibration."
+            )
+
+        input_layer = self._build_calibration_input_layer(
+            site_layer=site_layer,
+            dem_layer=dem_layer,
+            positive_points=positive_points,
+            negative_points=negative_points,
+        )
+        scored_layer = self.run(
+            site_layer=input_layer,
+            dem_layer=dem_layer,
+            water_layer=water_layer,
+            hemisphere=hemisphere,
+            profile_key=profile_key,
+            culture_key=culture_key,
+            period_key=period_key,
+        )
+
+        labels = []
+        scores = []
+        for feature in scored_layer.getFeatures():
+            label = feature["fs_label"] if "fs_label" in feature.fields().names() else None
+            score = self._to_float(feature["fs_score"]) if "fs_score" in feature.fields().names() else None
+            if label is None or score is None:
+                continue
+            labels.append(int(label))
+            scores.append(float(score))
+
+        metrics = self._binary_classification_metrics(labels, scores)
+        context = build_context(culture_key, period_key, hemisphere)
+        report = {
+            "culture_key": culture_key,
+            "period_key": period_key,
+            "profile_key": profile_key,
+            "hemisphere": hemisphere,
+            "negative_ratio": negative_ratio,
+            "random_seed": random_seed,
+            "positive_count": len(positive_points),
+            "negative_count": len(negative_points),
+            "valid_count": metrics["count"],
+            "roc_auc": metrics["roc_auc"],
+            "pr_auc": metrics["pr_auc"],
+            "best_f1": metrics["best_f1"],
+            "best_f1_threshold": metrics["best_f1_threshold"],
+            "best_youden_j": metrics["best_youden_j"],
+            "best_youden_threshold": metrics["best_youden_threshold"],
+            "evidence_parameters": context.get("evidence", {}).get("parameters", {}),
+        }
+        return scored_layer, report
 
     def extract_terms(
         self,
@@ -365,6 +444,108 @@ class FengShuiAnalyzer:
 
         point = centroid.asPoint()
         return QgsPointXY(point.x(), point.y())
+
+    def _collect_points(self, layer):
+        points = []
+        for feature in layer.getFeatures():
+            point = self._feature_point(feature)
+            if point is not None:
+                points.append(point)
+        return points
+
+    def _sample_negative_points(
+        self,
+        dem_layer,
+        positive_points,
+        target_count,
+        random_seed=42,
+    ):
+        provider = dem_layer.dataProvider()
+        extent = dem_layer.extent()
+        dem_step = self._dem_step(dem_layer)
+        min_distance = max(
+            dem_step * 20.0,
+            min(extent.width(), extent.height()) / 240.0,
+        )
+        min_distance_sq = min_distance * min_distance
+        min_negative_separation_sq = (min_distance * 0.40) ** 2
+        rng = random.Random(random_seed)
+        points = []
+        trial_cap = max(target_count * 120, 3000)
+        trial = 0
+
+        while len(points) < target_count and trial < trial_cap:
+            trial += 1
+            x = rng.uniform(extent.xMinimum(), extent.xMaximum())
+            y = rng.uniform(extent.yMinimum(), extent.yMaximum())
+            point = QgsPointXY(x, y)
+            if self._sample_dem(provider, point) is None:
+                continue
+
+            reject = False
+            for positive in positive_points:
+                dx = x - positive.x()
+                dy = y - positive.y()
+                if (dx * dx) + (dy * dy) < min_distance_sq:
+                    reject = True
+                    break
+            if reject:
+                continue
+
+            for negative in points[-200:]:
+                dx = x - negative.x()
+                dy = y - negative.y()
+                if (dx * dx) + (dy * dy) < min_negative_separation_sq:
+                    reject = True
+                    break
+            if reject:
+                continue
+            points.append(point)
+        return points
+
+    @staticmethod
+    def _build_calibration_input_layer(
+        site_layer,
+        dem_layer,
+        positive_points,
+        negative_points,
+    ):
+        layer = QgsVectorLayer(
+            f"Point?crs={dem_layer.crs().authid()}",
+            f"{site_layer.name()}_calibration_input",
+            "memory",
+        )
+        data = layer.dataProvider()
+        fields = QgsFields()
+        fields.append(QgsField("cal_id", QVariant.Int))
+        fields.append(QgsField("fs_label", QVariant.Int))
+        fields.append(QgsField("fs_group", QVariant.String, "string", 8))
+        data.addAttributes(fields)
+        layer.updateFields()
+
+        features = []
+        running = 1
+        for point in positive_points:
+            feature = QgsFeature(layer.fields())
+            feature.setGeometry(QgsGeometry.fromPointXY(point))
+            feature["cal_id"] = running
+            feature["fs_label"] = 1
+            feature["fs_group"] = "positive"
+            features.append(feature)
+            running += 1
+        for point in negative_points:
+            feature = QgsFeature(layer.fields())
+            feature.setGeometry(QgsGeometry.fromPointXY(point))
+            feature["cal_id"] = running
+            feature["fs_label"] = 0
+            feature["fs_group"] = "negative"
+            features.append(feature)
+            running += 1
+
+        if features:
+            data.addFeatures(features)
+        layer.updateExtents()
+        return layer
 
     @staticmethod
     def _dem_step(dem_layer):
@@ -2201,6 +2382,92 @@ class FengShuiAnalyzer:
         if order >= 4:
             return "branch"
         return "minor"
+
+    @staticmethod
+    def _binary_classification_metrics(labels, scores):
+        if not labels or not scores or len(labels) != len(scores):
+            return {
+                "count": 0,
+                "roc_auc": 0.0,
+                "pr_auc": 0.0,
+                "best_f1": 0.0,
+                "best_f1_threshold": 0.0,
+                "best_youden_j": 0.0,
+                "best_youden_threshold": 0.0,
+            }
+
+        pairs = sorted(zip(scores, labels), key=lambda item: item[0], reverse=True)
+        positive_count = sum(1 for _, label in pairs if label == 1)
+        negative_count = sum(1 for _, label in pairs if label == 0)
+        if positive_count == 0 or negative_count == 0:
+            return {
+                "count": len(pairs),
+                "roc_auc": 0.0,
+                "pr_auc": 0.0,
+                "best_f1": 0.0,
+                "best_f1_threshold": 0.0,
+                "best_youden_j": 0.0,
+                "best_youden_threshold": 0.0,
+            }
+
+        tp = 0
+        fp = 0
+        roc_points = [(0.0, 0.0)]
+        pr_points = [(0.0, 1.0)]
+        best_f1 = (0.0, pairs[0][0])
+        best_youden = (-999.0, pairs[0][0])
+
+        for score, label in pairs:
+            if label == 1:
+                tp += 1
+            else:
+                fp += 1
+            fn = positive_count - tp
+            _tn = negative_count - fp
+            tpr = tp / positive_count
+            fpr = fp / negative_count
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
+            recall = tpr
+            roc_points.append((fpr, tpr))
+            pr_points.append((recall, precision))
+
+            f1 = (
+                (2.0 * precision * recall) / (precision + recall)
+                if (precision + recall) > 0
+                else 0.0
+            )
+            if f1 > best_f1[0]:
+                best_f1 = (f1, score)
+            youden = tpr - fpr
+            if youden > best_youden[0]:
+                best_youden = (youden, score)
+
+        roc_auc = FengShuiAnalyzer._trapezoid_auc(roc_points)
+        pr_auc = FengShuiAnalyzer._trapezoid_auc(pr_points)
+        return {
+            "count": len(pairs),
+            "roc_auc": roc_auc,
+            "pr_auc": pr_auc,
+            "best_f1": best_f1[0],
+            "best_f1_threshold": best_f1[1],
+            "best_youden_j": best_youden[0],
+            "best_youden_threshold": best_youden[1],
+        }
+
+    @staticmethod
+    def _trapezoid_auc(points):
+        if len(points) < 2:
+            return 0.0
+        ordered = sorted(points, key=lambda item: item[0])
+        area = 0.0
+        for index in range(1, len(ordered)):
+            x0, y0 = ordered[index - 1]
+            x1, y1 = ordered[index]
+            dx = x1 - x0
+            if dx <= 0:
+                continue
+            area += dx * ((y0 + y1) * 0.5)
+        return max(0.0, min(1.0, area))
 
     def _sector_extreme(
         self, provider, center_point, radius, center_azimuth, mode, span=80.0, samples=17

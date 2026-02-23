@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
+import json
 import os
+from datetime import datetime
 
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtWidgets import QAction, QDialog, QVBoxLayout, QTextBrowser
 from qgis.core import (
     QgsFeatureRequest,
+    QgsProject,
     QgsProcessingContext,
     QgsProcessingFeedback,
-    QgsProject,
     QgsVectorLayer,
 )
 
@@ -24,6 +26,10 @@ class FengShuiGisPlugin:
         self.dock = None
         self.plugin_dir = os.path.dirname(__file__)
         self._selection_hooks = {}
+        self._reason_dialog = None
+        self._reason_browser = None
+        self._report_dialog = None
+        self._report_browser = None
 
     def initGui(self):
         icon_path = os.path.join(self.plugin_dir, "yingyang.png")
@@ -63,11 +69,24 @@ class FengShuiGisPlugin:
             self.dock.deleteLater()
             self.dock = None
 
+        if self._reason_dialog:
+            self._reason_dialog.close()
+            self._reason_dialog.deleteLater()
+            self._reason_dialog = None
+            self._reason_browser = None
+
+        if self._report_dialog:
+            self._report_dialog.close()
+            self._report_dialog.deleteLater()
+            self._report_dialog = None
+            self._report_browser = None
+
     def toggle_panel(self):
         if self.dock is None:
             self.dock = FengShuiDockWidget(self.iface.mainWindow())
             self.dock.run_requested.connect(self.run_analysis)
             self.dock.terms_requested.connect(self.run_term_extraction)
+            self.dock.calibration_requested.connect(self.run_calibration)
         if self.dock.isVisible():
             self.dock.hide()
         else:
@@ -228,6 +247,90 @@ class FengShuiGisPlugin:
         if self.dock:
             self.dock.set_status(tr("status_done"))
 
+    def run_calibration(
+        self,
+        site_layer,
+        dem_layer,
+        water_layer,
+        hemisphere,
+        profile_key,
+        culture_key,
+        period_key,
+        negative_ratio,
+        random_seed,
+        auto_hydro,
+    ):
+        if not site_layer or not dem_layer:
+            self.iface.messageBar().pushWarning(
+                tr("plugin_title"),
+                tr("warn_missing_layers"),
+            )
+            if self.dock:
+                self.dock.set_status(tr("warn_missing_layers"))
+            return
+
+        if self.dock:
+            self.dock.set_status("캘리브레이션 실행 중...")
+        self._warn_if_geographic(dem_layer)
+
+        calibration_culture = "korea"
+        if culture_key != "korea":
+            self.iface.messageBar().pushWarning(
+                tr("plugin_title"),
+                "캘리브레이션은 한국 SHP 기준으로 korea 컨텍스트를 사용합니다.",
+            )
+
+        try:
+            context = QgsProcessingContext()
+            context.setProject(QgsProject.instance())
+            feedback = QgsProcessingFeedback()
+            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
+            prepared_water = water_layer
+            if prepared_water is None and auto_hydro:
+                auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
+                if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
+                    analyzer.style_hydro_network(auto_hydro_layer)
+                    auto_hydro_layer.setName(f"{dem_layer.name()}_hydro_auto_calib")
+                    QgsProject.instance().addMapLayer(auto_hydro_layer)
+                    prepared_water = auto_hydro_layer
+
+            scored_layer, report = analyzer.calibrate(
+                site_layer=site_layer,
+                dem_layer=dem_layer,
+                water_layer=prepared_water,
+                hemisphere=hemisphere,
+                profile_key=profile_key,
+                culture_key=calibration_culture,
+                period_key=period_key,
+                negative_ratio=negative_ratio,
+                random_seed=random_seed,
+            )
+            scored_layer.setName(f"{site_layer.name()}_calibration")
+            QgsProject.instance().addMapLayer(scored_layer)
+            self._configure_layer_click_info(scored_layer)
+
+            json_path, md_path = self._write_calibration_report(report)
+            self._show_report_popup(report, json_path, md_path)
+
+        except Exception as exc:  # pylint: disable=broad-except
+            self.iface.messageBar().pushCritical(
+                tr("warn_failed"),
+                str(exc),
+            )
+            if self.dock:
+                self.dock.set_status(f"{tr('warn_failed')}: {exc}")
+            return
+
+        self.iface.messageBar().pushSuccess(
+            tr("plugin_title"),
+            (
+                f"캘리브레이션 완료: ROC_AUC={report.get('roc_auc', 0):.4f}, "
+                f"PR_AUC={report.get('pr_auc', 0):.4f}"
+            ),
+        )
+        if self.dock:
+            self.dock.set_status("캘리브레이션 완료.")
+
     def _warn_if_geographic(self, layer):
         if layer and layer.crs().isGeographic():
             self.iface.messageBar().pushWarning(
@@ -334,7 +437,96 @@ class FengShuiGisPlugin:
             message = str(value).strip() if value not in (None, "") else "설명 없음"
             if len(message) > 900:
                 message = f"{message[:897]}..."
+            self._show_reason_popup(f"{layer.name()} 설명", message)
             self.iface.messageBar().pushInfo(f"{layer.name()} 설명", message)
 
         layer.selectionChanged.connect(_on_selection)
         self._selection_hooks[layer.id()] = _on_selection
+
+    def _show_reason_popup(self, title, message):
+        if self._reason_dialog is None:
+            self._reason_dialog = QDialog(self.iface.mainWindow())
+            self._reason_dialog.setWindowTitle("피처 근거")
+            self._reason_dialog.resize(640, 420)
+            layout = QVBoxLayout(self._reason_dialog)
+            self._reason_browser = QTextBrowser(self._reason_dialog)
+            self._reason_browser.setOpenExternalLinks(True)
+            self._reason_browser.setReadOnly(True)
+            layout.addWidget(self._reason_browser)
+        self._reason_dialog.setWindowTitle(title)
+        safe = (
+            str(message)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "<br/>")
+        )
+        self._reason_browser.setHtml(f"<h3>{title}</h3><p>{safe}</p>")
+        self._reason_dialog.show()
+        self._reason_dialog.raise_()
+        self._reason_dialog.activateWindow()
+
+    def _write_calibration_report(self, report):
+        project_home = QgsProject.instance().homePath().strip()
+        if not project_home:
+            project_home = os.path.abspath(os.path.join(self.plugin_dir, ".."))
+        report_dir = os.path.join(project_home, "reports")
+        os.makedirs(report_dir, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name = f"feng_shui_calibration_{stamp}"
+        json_path = os.path.join(report_dir, f"{base_name}.json")
+        md_path = os.path.join(report_dir, f"{base_name}.md")
+
+        with open(json_path, "w", encoding="utf-8") as handle:
+            json.dump(report, handle, ensure_ascii=False, indent=2)
+
+        markdown = (
+            f"# Feng Shui Calibration Report ({stamp})\n\n"
+            f"- Positive samples: {report.get('positive_count')}\n"
+            f"- Negative samples: {report.get('negative_count')}\n"
+            f"- Valid scored samples: {report.get('valid_count')}\n"
+            f"- ROC AUC: {report.get('roc_auc', 0):.6f}\n"
+            f"- PR AUC: {report.get('pr_auc', 0):.6f}\n"
+            f"- Best F1: {report.get('best_f1', 0):.6f} @ threshold {report.get('best_f1_threshold', 0):.6f}\n"
+            f"- Best Youden J: {report.get('best_youden_j', 0):.6f} @ threshold {report.get('best_youden_threshold', 0):.6f}\n\n"
+            "## Context\n\n"
+            f"- culture: {report.get('culture_key')}\n"
+            f"- period: {report.get('period_key')}\n"
+            f"- profile: {report.get('profile_key')}\n"
+            f"- hemisphere: {report.get('hemisphere')}\n"
+            f"- negative_ratio: {report.get('negative_ratio')}\n"
+            f"- random_seed: {report.get('random_seed')}\n"
+        )
+        with open(md_path, "w", encoding="utf-8") as handle:
+            handle.write(markdown)
+
+        return json_path, md_path
+
+    def _show_report_popup(self, report, json_path, md_path):
+        if self._report_dialog is None:
+            self._report_dialog = QDialog(self.iface.mainWindow())
+            self._report_dialog.setWindowTitle("캘리브레이션 리포트")
+            self._report_dialog.resize(760, 520)
+            layout = QVBoxLayout(self._report_dialog)
+            self._report_browser = QTextBrowser(self._report_dialog)
+            self._report_browser.setOpenExternalLinks(True)
+            self._report_browser.setReadOnly(True)
+            layout.addWidget(self._report_browser)
+
+        html = (
+            "<h3>한국 SHP 캘리브레이션 결과</h3>"
+            f"<p><b>ROC AUC</b>: {report.get('roc_auc', 0):.4f}<br/>"
+            f"<b>PR AUC</b>: {report.get('pr_auc', 0):.4f}<br/>"
+            f"<b>Positive</b>: {report.get('positive_count')} / "
+            f"<b>Negative</b>: {report.get('negative_count')} / "
+            f"<b>Valid</b>: {report.get('valid_count')}</p>"
+            f"<p><b>Best F1</b>: {report.get('best_f1', 0):.4f} "
+            f"(threshold={report.get('best_f1_threshold', 0):.4f})<br/>"
+            f"<b>Best Youden J</b>: {report.get('best_youden_j', 0):.4f} "
+            f"(threshold={report.get('best_youden_threshold', 0):.4f})</p>"
+            f"<p><b>JSON</b>: {json_path}<br/><b>Markdown</b>: {md_path}</p>"
+        )
+        self._report_browser.setHtml(html)
+        self._report_dialog.show()
+        self._report_dialog.raise_()
+        self._report_dialog.activateWindow()
