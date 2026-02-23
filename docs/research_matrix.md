@@ -1,73 +1,37 @@
-# Research Matrix (Region + Period + Archaeology)
+﻿# Research Matrix (Rebuilt, DOI-verified)
 
-기준일: 2026-02-22  
-목적: 국가/시대별 풍수 해석 차이를 GIS 규칙으로 분리하기 위한 근거 정리
+Updated: 2026-02-23
 
-## 1) 지역·시대별 핵심 문헌
+This matrix separates direct quantitative evidence from contextual interpretation sources.
 
-| 지역 | 시대 초점 | 출처 | 해석상 핵심 |
+## A. Direct Spatial / GIS Evidence (higher confidence)
+
+| Domain | Source | DOI / Link | What it supports |
 |---|---|---|---|
-| 중국 | 진~당~명청(장묘/왕릉) | Han et al. 2021, Sustainability `13(15):8532` https://www.mdpi.com/2071-1050/13/15/8532 | Long/Sha/Shui/Xue를 GIS 지표로 정량화(AHP) |
-| 중국 | 명~청 황릉 수문 맥락 | Sun et al. 2024, DOI `10.1038/s40494-024-01301-1` (CAS 보도: https://english.cas.cn/newsroom/research_news/life/202407/t20240708_675734.shtml) | 풍수 입지와 유역/물길 형성의 결합 |
-| 한국 | 조선 왕릉 | UNESCO WHC (등재기준 관련 설명) https://whc.unesco.org/en/list/1319/ | 풍수 기반 입지(지형·방향·수계·의례축) |
-| 한국 | 조선 전기 취락 지형 해석 | Kim 1991, *Jimbun Chiri* `43(1)` DOI `10.4200/jjhg1948.43.1_42` https://www.jstage.jst.go.jp/article/jjhg1948/43/1/43_1_42/_article | 풍수가 취락 지형 인식(형국도)과 연결됨 |
-| 일본 | 수용사(에도까지) | Watanabe 2015, Estudos Japoneses `35` https://revistas.usp.br/ej/article/view/108036 | 중국 전래 풍수가 일본에서 과학/점술 체계와 융합 |
-| 일본 | 중세 맥락 | Atsuko Koma 2014, Kyoto University Repository `史林 97(5)` https://repository.kulib.kyoto-u.ac.jp/dspace/handle/2433/193589 | 중세 일본 풍수 지리서의 전개와 문헌 수용 양상 |
-| 일본(류큐/오키나와) | 근세~근현대 묘제 | Kinjo et al. 2024, Religions `15(2):203` https://www.mdpi.com/2077-1444/15/2/203 | 음양·풍수·현지 장묘 관행이 결합된 지역 변형 |
-| 동남아(말레이시아) | 현대 부동산 | Hassan et al. 2020, Property Management `38(4)` https://www.emerald.com/insight/content/doi/10.1108/PM-01-2020-0001/full/html | 풍수 요소가 주택가격·선호에 미치는 영향 실증 |
-| 중국(도시) | 현대 주거시장 | Chia et al. 2020, Habitat International DOI `10.1016/j.habitatint.2019.102068` https://doi.org/10.1016/j.habitatint.2019.102068 | 산수(Shan-Shui) 가치와 주거 가격의 정량 연계 |
-| 동아시아 공통 | 현대 경관학 관점 | Yue & Wang 2024, JoLA https://www.sciencedirect.com/science/article/pii/S1617138124000036 | 산수/보호-개방/방향 원리를 현대 공간분석으로 재해석 |
-| 사찰 입지 | 근세/근대 사례 다수 | Bae et al. 2025, Land `14(5):1124` https://www.mdpi.com/2073-445X/14/5/1124 | 고도/경사/수계/접근성/가시성 복합 요인 |
+| Tomb-site parameter extraction | Um (2009), IJGIS | https://doi.org/10.1080/13658810802055954 | Spatially prioritized Feng Shui parameter framing from tomb footprint |
+| Remote sensing + GIS on Feng Shui woodland | Tung Fung & Marafa (2002), IGARSS | https://doi.org/10.1109/IGARSS.2002.1027144 | Landscape pattern mapping from imagery and GIS |
+| Korean landscape ecology / bi-bo woodland | Whang & Lee (2006) | https://doi.org/10.1007/s11355-006-0014-8 | Terrain-water-vegetation logic in Korean context |
+| Compass-based Korean village case | Kim (2016), Journal of Koreanology | https://doi.org/10.15299/jk.2016.8.60.203 | Orientation and settlement interpretation workflow |
 
-## 2) 고고학 GIS 모델링 문헌
+## B. Regional Context Evidence (medium confidence)
 
-| 주제 | 출처 | 시사점 |
-|---|---|---|
-| 예측모델 체계 리뷰 | IJGI 2025 https://www.mdpi.com/2220-9964/14/4/133 | 변수의 문화권 의존성이 커서 지역 프리셋 필요 |
-| 모델 검증 방법 | IJGI 2023 https://www.mdpi.com/2220-9964/12/6/228 | 전이 성능(지역/시대 이동) 검증이 필수 |
-| 동아시아 APM 실증 | IJGI 2023 `12(6):238` https://www.mdpi.com/2220-9964/12/6/238 | 일본·중국 사례에서 지형/수문 변수 가중치 학습 가능성 확인 |
-| ML 기반 APM 사례 | Cambridge 2023 https://www.cambridge.org/core/journals/latin-american-antiquity/article/machine-learning-in-archaeological-predictive-modelling-an-argentinian-case-study/A67A00E172BFE8458FBFF025B5A53DBD | 규칙 기반 결과를 후속 학습모델 피처로 활용 가능 |
-| 북아프리카 사례 | Geosciences 2018 `8(6):207` https://www.mdpi.com/2076-3263/8/6/207 | 건조 지역 유적 예측에서 지형+수문 변수 중요성 확인 |
+| Region | Source | DOI / Link | What it supports |
+|---|---|---|---|
+| Ryukyu/Okinawa | Chen et al. (2008), Worldviews | https://doi.org/10.1163/156853508X276824 | Village landscape morphology shaped by Feng Shui practice |
+| Ryukyu/Okinawa | Nakama & Chen (2011), Worldviews | https://doi.org/10.1163/156853511X577475 | Landscape and planting logic over time |
+| Ryukyu/Okinawa | UFUG (2008) | https://doi.org/10.1016/j.ufug.2007.10.001 | House-embracing tree layout metrics |
+| Korea (Joseon) | P'ungsu chapter (2017) | https://doi.org/10.1515/9781438468716-011 | Architecture-geomancy relation |
+| Korea (Joseon) | P'ungsu chapter (2017) | https://doi.org/10.1515/9781438468716-009 | Water acquisition/management geomancy practices |
 
-## 3) 코드 반영: 국가/시대 분리
+## C. Parameterization Status in Plugin
 
-추가 파일:
+- DEM-derived ridge/hydro extraction: algorithmic geomorphometry (implemented, reproducible).
+- Term geometry (hyeol/myeongdang/blue-dragon/white-tiger): rule-based heuristic from literature interpretation.
+- Country/period context weights (`contexts.json`): initial hypothesis profile, not final calibrated model.
 
-- `feng_shui_gis/cultural_context.py`
-- `feng_shui_gis/config/contexts.json`
-- `feng_shui_gis/config/profiles.json`
-- `feng_shui_gis/config/terms.json`
-- `feng_shui_gis/config/analysis_rules.json`
-- `feng_shui_gis/profile_catalog.py`
+## D. Required Next Validation (for research-grade use)
 
-반영 내용:
-
-- 국가/지역: `east_asia`, `korea`, `china`, `japan`, `ryukyu`, `southeast_asia`, `global_apm`
-- 시대: `ancient`, `medieval`, `early_modern`, `modern`
-- 분석 프로파일 확장: `urban_real_estate`, `global_apm`
-- 컨텍스트가 바꾸는 항목:
-  - 향 점수 목표각/민감도
-  - 수계 최적 거리/분산
-  - 미시/거시 반경(형세 탐색 스케일)
-  - `hyeol` 후보 임계치
-  - 지표 가중치 편향(`form/long/water/aspect/...`)
-  - 용어별 편향(`jusan`, `naesugu` 등)
-
-결과 필드 확장:
-
-- 점수 레이어: `fs_culture`, `fs_period`
-- 용어 레이어: `culture`, `period`, `term_ko`
-- 용어/시각화 규칙: `terms.json`에서 데이터 기반 관리(두꺼운 선/점 포함)
-
-## 4) 이번 구현의 해석 범위
-
-- 현재는 문헌의 질적 차이를 수치 파라미터로 1차 변환한 규칙 기반 모델
-- “정답 판정”이 아니라 국가/시대별 가설 비교를 위한 연구 보조 레이어
-- 발굴 기록/문헌 기록/유물 분포와 반드시 교차 검증 필요
-
-## 5) 다음 고도화 우선순위
-
-1. 왕조/시대 세분화 프리셋(예: 조선 전기/후기, 명/청 분리)
-2. Viewshed 통합(사찰·봉수·왕릉 조망축)
-3. GRASS `r.watershed` 기반 수구·입수 추정 보강
-4. 현장 데이터로 파라미터 캘리브레이션(ROC/AUC, Precision-Recall)
+1. Per-country/per-period ground-truth site dataset.
+2. Out-of-sample evaluation (AUC/PR/F1) by site type (tomb, village, temple, well, etc.).
+3. Sensitivity analysis for radius, threshold, directional targets.
+4. Publish calibration sheet and uncertainty intervals with each release.
