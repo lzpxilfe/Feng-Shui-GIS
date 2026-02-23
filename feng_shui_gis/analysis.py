@@ -844,13 +844,76 @@ class FengShuiAnalyzer:
             "gentle": "완경사점",
             "refine": "전면 보정점",
         }.get(mode, "추정점")
+        mode_hint = {
+            "max": "주변보다 상대적으로 높은 위치를 찾았습니다",
+            "min": "주변보다 상대적으로 낮은 위치를 찾았습니다",
+            "gentle": "경사가 완만한 위치를 찾았습니다",
+            "refine": "중심 혈 전면에서 위치를 미세 보정했습니다",
+        }.get(mode, "지형 패턴에 맞는 후보를 찾았습니다")
         return (
-            f"{term_label_ko(term_id)} 추정. 최종점수={self._fmt_num(adjusted_score, 3)}, "
-            f"기저점수={self._fmt_num(base_score, 3)}, 고도={self._fmt_num(elev, 2)}m, "
+            f"{term_label_ko(term_id)} 후보입니다. 쉽게 보면 {mode_hint}. "
+            f"요약: 점수 {self._fmt_num(adjusted_score, 3)}, 적합도 {self._fmt_num(fit_score, 3)}, "
+            f"고도 {self._fmt_num(elev, 2)}m. "
+            f"[세부] 기저점수={self._fmt_num(base_score, 3)}, "
             f"상대고도={self._fmt_num(delta_rel, 4)}(목표 {self._fmt_num(target_rel, 4)}), "
-            f"적합도={self._fmt_num(fit_score, 3)}, 반경={self._fmt_num(radius_m, 1)}m, "
+            f"반경={self._fmt_num(radius_m, 1)}m, "
             f"방위={self._fmt_num(azimuth, 1)}°({self._azimuth_label(azimuth)}), "
             f"추출방식={mode_ko}, 근거={note}."
+        )
+
+    @staticmethod
+    def _score_band_label(value):
+        if value is None:
+            return "정보 없음"
+        if value >= 0.8:
+            return "매우 양호"
+        if value >= 0.65:
+            return "양호"
+        if value >= 0.5:
+            return "보통"
+        return "낮음"
+
+    @staticmethod
+    def _tpi_hint(tpi_norm):
+        if tpi_norm is None:
+            return "지형 곡률 정보 없음"
+        if tpi_norm <= -0.08:
+            return "완만한 오목 지형에 가까움"
+        if tpi_norm < 0.08:
+            return "평탄에 가까운 중립 지형"
+        return "완만한 볼록 지형에 가까움"
+
+    def _compose_hyeol_reason(
+        self,
+        rank,
+        selected_total,
+        base_score,
+        form_score,
+        long_score,
+        wet_score,
+        tpi_norm,
+        conv_score,
+        relief,
+        center_elev,
+        threshold,
+    ):
+        gap_text = "판정 불가"
+        if base_score is not None:
+            gap = base_score - threshold
+            if gap >= 0:
+                gap_text = f"기준치보다 +{gap:.3f} 높아 통과"
+            else:
+                gap_text = f"기준치보다 {gap:.3f} 낮음"
+
+        return (
+            f"혈 후보 #{rank}/{selected_total}. 한 줄 해석: {gap_text}입니다. "
+            f"형국 {self._fmt_num(form_score, 3)}({self._score_band_label(form_score)}), "
+            f"종심 {self._fmt_num(long_score, 3)}({self._score_band_label(long_score)}), "
+            f"수렴습윤 {self._fmt_num(wet_score, 3)}({self._score_band_label(wet_score)}), "
+            f"수렴도 {self._fmt_num(conv_score, 3)}({self._score_band_label(conv_score)}), "
+            f"TPI {self._fmt_num(tpi_norm, 4)}({self._tpi_hint(tpi_norm)}), "
+            f"주변 기복 {self._fmt_num(relief, 1)}m, 중심 고도 {self._fmt_num(center_elev, 2)}m. "
+            f"[세부수치] 점수={self._fmt_num(base_score, 3)}, 기준치>={threshold:.3f}."
         )
 
     @staticmethod
@@ -1144,12 +1207,18 @@ class FengShuiAnalyzer:
                 relief = max(1.0, max(ring_values) - min(ring_values))
 
             parent_id = rank
-            hyeol_reason = (
-                f"혈 후보 #{rank}/{selected_total}. 점수={self._fmt_num(base_score, 3)}, "
-                f"형국={self._fmt_num(form_score, 3)}, 종심={self._fmt_num(long_score, 3)}, "
-                f"수렴습윤={self._fmt_num(wet_score, 3)}, TPI={self._fmt_num(tpi_norm, 4)}, "
-                f"수렴도={self._fmt_num(conv_score, 3)}, 기복={self._fmt_num(relief, 1)}m, "
-                f"고도={self._fmt_num(center_elev, 2)}m, 기준치>={context['hyeol_threshold']:.3f} 충족."
+            hyeol_reason = self._compose_hyeol_reason(
+                rank=rank,
+                selected_total=selected_total,
+                base_score=base_score,
+                form_score=form_score,
+                long_score=long_score,
+                wet_score=wet_score,
+                tpi_norm=tpi_norm,
+                conv_score=conv_score,
+                relief=relief,
+                center_elev=center_elev,
+                threshold=context["hyeol_threshold"],
             )
             add_term(
                 term_id="hyeol",

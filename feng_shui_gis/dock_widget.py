@@ -10,6 +10,7 @@ from qgis.PyQt.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -68,6 +69,37 @@ HYDRO_CLASS_KO = {
     "minor": "미소 수로",
 }
 
+METRIC_HELP_ITEMS = [
+    (
+        "점수(score/fs_score)",
+        "0~1 범위 점수입니다. 1에 가까울수록 현재 지형이 기준 패턴과 더 잘 맞습니다.",
+    ),
+    (
+        "형국(form_score)",
+        "주변 지형의 기본 형태 적합도입니다. 높을수록 혈 주변 형세가 안정적입니다.",
+    ),
+    (
+        "종심(long_score)",
+        "앞뒤 깊이감(종방향) 점수입니다. 높을수록 뒤는 받치고 앞은 트인 구조에 가깝습니다.",
+    ),
+    (
+        "수렴습윤(dem_water_score)",
+        "DEM 기반 수분/수계 수렴 가능성을 반영한 점수입니다. 높을수록 물길이 모이기 쉬운 지형입니다.",
+    ),
+    (
+        "TPI",
+        "지형 곡률 지표입니다. 0에 가까우면 평탄, 음수면 오목, 양수면 볼록한 경향을 의미합니다.",
+    ),
+    (
+        "수렴도(convergence)",
+        "주변 경사 방향이 중심으로 모이는 정도입니다. 높을수록 기운이 모이는 형세로 봅니다.",
+    ),
+    (
+        "기복(relief_m)",
+        "주변 고도 범위(최고-최저)입니다. 너무 작으면 단조롭고 너무 크면 거칠 수 있습니다.",
+    ),
+]
+
 
 class FengShuiHelpDialog(QDialog):
     def __init__(self, parent=None):
@@ -84,6 +116,7 @@ class FengShuiHelpDialog(QDialog):
         tabs = QTabWidget(self)
         tabs.setDocumentMode(True)
         tabs.addTab(self._browser(self._overview_html()), tr("help_tab_overview"))
+        tabs.addTab(self._browser(self._quick_terms_html()), "숫자 해석")
         tabs.addTab(self._browser(self._symbols_html()), tr("help_tab_symbols"))
         tabs.addTab(self._browser(self._refs_html()), tr("help_tab_references"))
         layout.addWidget(tabs)
@@ -220,7 +253,29 @@ class FengShuiHelpDialog(QDialog):
             <p><b>4) 고급 분석 모드</b>: 후보지 점 레이어가 있을 때만 입지 점수(<code>fs_score</code>)를 계산합니다.</p>
             <p><b>클릭 설명</b>: 레이어 피처를 식별(Identify)하거나 선택하면 <code>reason_ko</code> 또는
             <code>fs_reason</code> 필드에서 해당 결과의 근거(점수, 임계치, 거리/방위 등)를 확인할 수 있습니다.</p>
+            <p><b>쉽게 읽기</b>: 최근 버전은 <code>reason_ko</code>를
+            <i>'한 줄 해석 + 세부 수치'</i> 형식으로 제공합니다. 숫자를 몰라도 먼저 의미를 파악할 수 있습니다.</p>
             <p><b>권장</b>: 거리 해석이 필요한 분석이므로 투영좌표계(UTM/TM, meter 단위)를 권장합니다.</p>
+        """
+
+    @staticmethod
+    def _quick_terms_html():
+        return """
+            <h3>숫자 해석 빠른 가이드</h3>
+            <p><b>예시 문장</b></p>
+            <p><code>혈 후보 #4/4 ... 기준치>=0.660</code></p>
+            <p>뜻: 네 번째 후보가 최소 기준(0.660)을 넘어서 최종 후보로 남았다는 의미입니다.</p>
+            <table border="1" cellspacing="0" cellpadding="4">
+                <tr><th>항목</th><th>쉽게 말하면</th><th>읽는 방향</th></tr>
+                <tr><td>점수</td><td>종합 적합도</td><td>높을수록 좋음 (0~1)</td></tr>
+                <tr><td>형국</td><td>전체 지형 형태 안정성</td><td>높을수록 좋음</td></tr>
+                <tr><td>종심</td><td>앞뒤 깊이감</td><td>중간~높음 권장</td></tr>
+                <tr><td>수렴습윤</td><td>물길/습윤이 모이기 쉬운 정도</td><td>높을수록 좋음</td></tr>
+                <tr><td>TPI</td><td>오목/평탄/볼록 경향</td><td>0 근처 평탄, 음수 오목, 양수 볼록</td></tr>
+                <tr><td>수렴도</td><td>주변 경사가 중심으로 모이는 정도</td><td>높을수록 모임이 강함</td></tr>
+                <tr><td>기복</td><td>주변 고도 차</td><td>너무 작거나 너무 크면 불리할 수 있음</td></tr>
+            </table>
+            <p><small>팁: 먼저 한 줄 해석을 읽고, 필요할 때만 세부 수치를 확인하면 이해가 빠릅니다.</small></p>
         """
 
     def _symbols_html(self):
@@ -424,12 +479,14 @@ class FengShuiDockWidget(QWidget):
         self.context_param_combo.currentIndexChanged.connect(self._update_selected_param_evidence_hint)
         self._update_context_evidence_hint()
 
-        tabs = QTabWidget(self)
-        tabs.setDocumentMode(True)
-        tabs.setObjectName("modeTabs")
-        tabs.addTab(self._build_landscape_tab(), tr("tab_landscape"))
-        tabs.addTab(self._build_analysis_tab(), tr("tab_analysis"))
-        layout.addWidget(tabs)
+        self.mode_tabs = QTabWidget(self)
+        self.mode_tabs.setDocumentMode(True)
+        self.mode_tabs.setObjectName("modeTabs")
+        self.mode_tabs.addTab(self._build_landscape_tab(), tr("tab_landscape"))
+        self.mode_tabs.addTab(self._build_analysis_tab(), tr("tab_analysis"))
+        layout.addWidget(self.mode_tabs)
+
+        layout.addWidget(self._build_workflow_guide_card())
 
         self.status_label = QLabel(tr("status_idle"), self)
         self.status_label.setObjectName("statusPill")
@@ -444,6 +501,76 @@ class FengShuiDockWidget(QWidget):
         help_row.addWidget(self.help_button)
         help_row.addStretch(1)
         layout.addLayout(help_row)
+
+        self.sites_combo.layerChanged.connect(self._refresh_progress_guide)
+        self.dem_combo.layerChanged.connect(self._refresh_progress_guide)
+        self.water_combo.layerChanged.connect(self._refresh_progress_guide)
+        self.mode_tabs.currentChanged.connect(self._refresh_progress_guide)
+        self.landscape_auto_hydro_checkbox.toggled.connect(self._refresh_progress_guide)
+        self.include_terms_checkbox.toggled.connect(self._refresh_progress_guide)
+        self.analysis_auto_hydro_checkbox.toggled.connect(self._refresh_progress_guide)
+        self.profile_combo.currentIndexChanged.connect(self._refresh_progress_guide)
+        self.culture_combo.currentIndexChanged.connect(self._refresh_progress_guide)
+        self.period_combo.currentIndexChanged.connect(self._refresh_progress_guide)
+        self.hemisphere_combo.currentIndexChanged.connect(self._refresh_progress_guide)
+
+        self._update_metric_help_hint()
+        self._refresh_progress_guide()
+
+    def _build_workflow_guide_card(self):
+        card = QFrame(self)
+        card.setObjectName("guideCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 10, 12, 12)
+        card_layout.setSpacing(6)
+
+        title = QLabel("진행 가이드", card)
+        title.setObjectName("guideTitle")
+        card_layout.addWidget(title)
+
+        self.progress_summary_label = QLabel("", card)
+        self.progress_summary_label.setObjectName("guideSummary")
+        self.progress_summary_label.setWordWrap(True)
+        card_layout.addWidget(self.progress_summary_label)
+
+        self.workflow_progress = QProgressBar(card)
+        self.workflow_progress.setObjectName("workflowProgress")
+        self.workflow_progress.setRange(0, 100)
+        self.workflow_progress.setValue(0)
+        self.workflow_progress.setFormat("%p% 준비")
+        card_layout.addWidget(self.workflow_progress)
+
+        self.next_step_label = QLabel("", card)
+        self.next_step_label.setObjectName("guideNext")
+        self.next_step_label.setWordWrap(True)
+        card_layout.addWidget(self.next_step_label)
+
+        self.checklist_label = QLabel("", card)
+        self.checklist_label.setObjectName("guideChecklist")
+        self.checklist_label.setWordWrap(True)
+        self.checklist_label.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.checklist_label)
+
+        metric_row = QHBoxLayout()
+        metric_label = QLabel("지표 빠른 설명", card)
+        self.metric_help_combo = QComboBox(card)
+        for label, description in METRIC_HELP_ITEMS:
+            self.metric_help_combo.addItem(label, description)
+        self.metric_help_combo.currentIndexChanged.connect(self._update_metric_help_hint)
+        metric_row.addWidget(metric_label)
+        metric_row.addWidget(self.metric_help_combo, 1)
+        card_layout.addLayout(metric_row)
+
+        self.metric_help_hint = QLabel("", card)
+        self.metric_help_hint.setObjectName("metricHint")
+        self.metric_help_hint.setWordWrap(True)
+        card_layout.addWidget(self.metric_help_hint)
+
+        self.workflow_status_label = QLabel("", card)
+        self.workflow_status_label.setObjectName("guideStatus")
+        self.workflow_status_label.setWordWrap(True)
+        card_layout.addWidget(self.workflow_status_label)
+        return card
 
     def _build_landscape_tab(self):
         tab = QWidget(self)
@@ -619,8 +746,71 @@ class FengShuiDockWidget(QWidget):
             f"값={value_text} | 근거수준={level} | DOI={doi_text} | 메모={note}"
         )
 
+    def _update_metric_help_hint(self, *_args):
+        description = self.metric_help_combo.currentData()
+        if description in (None, ""):
+            description = "선택한 지표에 대한 설명이 없습니다."
+        self.metric_help_hint.setText(str(description))
+
+    def _workflow_checks(self):
+        dem_ready = self.dem_combo.currentLayer() is not None
+        sites_ready = self.sites_combo.currentLayer() is not None
+        water_ready = self.water_combo.currentLayer() is not None
+
+        if self.mode_tabs.currentIndex() == 1:
+            hydro_ready = water_ready or self.analysis_auto_hydro_checkbox.isChecked()
+            checks = [
+                ("DEM 레이어 선택", dem_ready),
+                ("후보지 포인트 선택", sites_ready),
+                ("수계 조건 확인(수계 레이어 또는 DEM 자동 수문)", hydro_ready),
+                ("분석 실행 준비", dem_ready and sites_ready and hydro_ready),
+            ]
+            mode_name = tr("tab_analysis")
+            action_name = tr("run_button")
+        else:
+            hydro_ready = water_ready or self.landscape_auto_hydro_checkbox.isChecked()
+            checks = [
+                ("DEM 레이어 선택", dem_ready),
+                ("수계 조건 확인(수계 레이어 또는 DEM 자동 수문)", hydro_ready),
+                ("용어 포인트/연결선 옵션 확인", True),
+                ("추출 실행 준비", dem_ready and hydro_ready),
+            ]
+            mode_name = tr("tab_landscape")
+            action_name = tr("extract_landscape_button")
+        return mode_name, action_name, checks
+
+    def _refresh_progress_guide(self, *_args):
+        if not hasattr(self, "workflow_progress"):
+            return
+
+        mode_name, action_name, checks = self._workflow_checks()
+        completed = sum(1 for _, done in checks if done)
+        total = max(1, len(checks))
+        percent = int(round((completed / total) * 100.0))
+        self.workflow_progress.setValue(percent)
+        self.progress_summary_label.setText(f"현재 모드: {mode_name} | 준비도 {percent}%")
+
+        pending = next((label for label, done in checks if not done), None)
+        if pending:
+            self.next_step_label.setText(f"다음 단계: {pending}")
+        else:
+            self.next_step_label.setText(f"다음 단계: '{action_name}' 버튼으로 실행하세요.")
+
+        rows = []
+        for label, done in checks:
+            state = "완료" if done else "대기"
+            color = "#1f6255" if done else "#8a6d3b"
+            rows.append(
+                f"<span style='color:{color};'><b>{state}</b></span> · {escape(label)}"
+            )
+        self.checklist_label.setText("<br/>".join(rows))
+        self.workflow_status_label.setText(f"최근 상태: {self.status_label.text()}")
+
     def set_status(self, text):
         self.status_label.setText(text)
+        if hasattr(self, "workflow_status_label"):
+            self.workflow_status_label.setText(f"최근 상태: {text}")
+        self._refresh_progress_guide()
 
     def _emit_run_requested(self):
         self.run_requested.emit(
@@ -699,6 +889,45 @@ class FengShuiDockWidget(QWidget):
                 background: #fffdf9;
                 border: 1px solid #ddd2bf;
                 border-radius: 10px;
+            }
+            QFrame#guideCard {
+                background: #f7f1e6;
+                border: 1px solid #d6cab3;
+                border-radius: 11px;
+            }
+            QLabel#guideTitle {
+                color: #173736;
+                font-size: 13px;
+                font-weight: 700;
+            }
+            QLabel#guideSummary {
+                color: #2a413b;
+            }
+            QLabel#guideNext {
+                color: #204f45;
+                font-weight: 600;
+            }
+            QLabel#guideChecklist {
+                color: #2f3a38;
+            }
+            QLabel#metricHint {
+                color: #2f3a38;
+                font-size: 11px;
+            }
+            QLabel#guideStatus {
+                color: #38534c;
+                font-size: 11px;
+            }
+            QProgressBar#workflowProgress {
+                border: 1px solid #c8b89e;
+                border-radius: 6px;
+                background: #fffaf1;
+                text-align: center;
+                min-height: 20px;
+            }
+            QProgressBar#workflowProgress::chunk {
+                background: #2d6258;
+                border-radius: 5px;
             }
             QLabel#statusPill {
                 background: #edf5f2;
