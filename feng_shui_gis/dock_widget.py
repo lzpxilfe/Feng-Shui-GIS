@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from html import escape
 
 from qgis.PyQt.QtCore import Qt, pyqtSignal
@@ -35,20 +35,20 @@ from .profile_catalog import (
 
 
 TERM_MEANINGS_KO = {
-    "jusan": "혈 뒤쪽 중심 주봉(배산의 핵심)",
-    "jojongsan": "멀리 연결되는 조상산 계열 능선",
-    "dunoe": "주산에서 혈로 이어지는 맥의 중간 마디",
-    "naecheongnyong": "혈 좌측 가까운 내청룡",
-    "oecheongnyong": "혈 좌측 바깥 외청룡",
-    "naebaekho": "혈 우측 가까운 내백호",
-    "oebaekho": "혈 우측 바깥 외백호",
-    "ansan": "혈 전면 가까운 안산",
-    "josan": "혈 전면 원경의 조산",
-    "naesugu": "혈 전면 가까운 내수구(수로 축)",
-    "oesugu": "혈 전면 외곽의 외수구(배수 출구 축)",
-    "ipsu": "수맥/수계 유입 축",
-    "myeongdang": "혈 전면 완경사·평탄 후보 축",
-    "misa": "완만하게 감싸는 미사(곡선형) 축",
+    "jusan": "주산: 혈 뒤편의 중심 산",
+    "jojongsan": "조종산: 계통의 상위 산줄기",
+    "dunoe": "두뇌: 주산에서 이어지는 마디",
+    "naecheongnyong": "내청룡: 좌측의 가까운 지지 능선",
+    "oecheongnyong": "외청룡: 좌측의 바깥 지지 능선",
+    "naebaekho": "내백호: 우측의 가까운 지지 능선",
+    "oebaekho": "외백호: 우측의 바깥 지지 능선",
+    "ansan": "안산: 전면의 가까운 받침 산",
+    "josan": "조산: 전면의 원거리 받침 산",
+    "naesugu": "내수구: 전면의 가까운 수구",
+    "oesugu": "외수구: 전면의 원거리 수구",
+    "ipsu": "입수: 유입 수로 지점",
+    "myeongdang": "명당: 중심의 완만한 평탄부",
+    "misa": "미사: 전면의 완경사 지대",
 }
 
 RIDGE_CLASS_KO = {
@@ -210,14 +210,14 @@ class FengShuiHelpDialog(QDialog):
     @staticmethod
     def _overview_html():
         return """
-            <h3>기본 워크플로우</h3>
-            <p><b>1) 기본 지형 모드</b>: DEM(+선택 수계)에서 능선/수계 네트워크를 먼저 추출합니다.</p>
-            <p><b>2) 수계 미입력 시</b>: DEM 기반 자동 수문 추출을 실행합니다.</p>
-            <p><b>3) 상세 용어</b>: 필요 시 혈/명당/청룡/백호 등 용어 포인트/구조 연결선을 추가합니다.</p>
-            <p><b>4) 고급 분석 모드</b>: 후보지 포인트가 있을 때 점수 분석(<code>fs_score</code>)을 실행합니다.</p>
-            <p><b>클릭 설명</b>: 각 레이어의 피처를 식별(Identify)하면 <code>reason_ko</code> 또는 <code>fs_reason</code> 필드에서
-            왜 해당 분류/점수가 나왔는지 상세 근거를 확인할 수 있습니다.</p>
-            <p><b>권장</b>: 경위도 대신 미터 단위 투영 좌표계(UTM/TM) 사용.</p>
+            <h3>湲곕낯 ?뚰겕?뚮줈??/h3>
+            <p><b>1) 湲곕낯 吏??紐⑤뱶</b>: DEM(+?좏깮 ?섍퀎)?먯꽌 ?μ꽑/?섍퀎 ?ㅽ듃?뚰겕瑜?癒쇱? 異붿텧?⑸땲??</p>
+            <p><b>2) ?섍퀎 誘몄엯????/b>: DEM 湲곕컲 ?먮룞 ?섎Ц 異붿텧???ㅽ뻾?⑸땲??</p>
+            <p><b>3) ?곸꽭 ?⑹뼱</b>: ?꾩슂 ????紐낅떦/泥?！/諛깊샇 ???⑹뼱 ?ъ씤??援ъ“ ?곌껐?좎쓣 異붽??⑸땲??</p>
+            <p><b>4) 怨좉툒 遺꾩꽍 紐⑤뱶</b>: ?꾨낫吏 ?ъ씤?멸? ?덉쓣 ???먯닔 遺꾩꽍(<code>fs_score</code>)???ㅽ뻾?⑸땲??</p>
+            <p><b>?대┃ ?ㅻ챸</b>: 媛??덉씠?댁쓽 ?쇱쿂瑜??앸퀎(Identify)?섎㈃ <code>reason_ko</code> ?먮뒗 <code>fs_reason</code> ?꾨뱶?먯꽌
+            ???대떦 遺꾨쪟/?먯닔媛 ?섏솕?붿? ?곸꽭 洹쇨굅瑜??뺤씤?????덉뒿?덈떎.</p>
+            <p><b>沅뚯옣</b>: 寃쎌쐞?????誘명꽣 ?⑥쐞 ?ъ쁺 醫뚰몴怨?UTM/TM) ?ъ슜.</p>
         """
 
     def _symbols_html(self):
@@ -225,22 +225,22 @@ class FengShuiHelpDialog(QDialog):
         ridge_rows = self._ridge_legend_rows()
         hydro_rows = self._hydro_legend_rows()
         return f"""
-            <h3>심볼과 의미</h3>
-            <p><b>풍수 구조 연결선</b> (방사형이 아닌 구조형 연결)</p>
+            <h3>?щ낵怨??섎?</h3>
+            <p><b>?띿닔 援ъ“ ?곌껐??/b> (諛⑹궗?뺤씠 ?꾨땶 援ъ“???곌껐)</p>
             <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>용어</th><th>의미</th><th>색</th><th>두께</th></tr>
+                <tr><th>?⑹뼱</th><th>?섎?</th><th>??/th><th>?먭퍡</th></tr>
                 {line_rows}
             </table>
             <br>
-            <p><b>산맥 계층(산경표식)</b></p>
+            <p><b>?곕㎘ 怨꾩링(?곌꼍?쒖떇)</b></p>
             <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>계층</th><th>색</th><th>두께</th><th>투명도</th></tr>
+                <tr><th>怨꾩링</th><th>??/th><th>?먭퍡</th><th>?щ챸??/th></tr>
                 {ridge_rows}
             </table>
             <br>
-            <p><b>수계 계층</b></p>
+            <p><b>?섍퀎 怨꾩링</b></p>
             <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>계층</th><th>색</th><th>두께</th></tr>
+                <tr><th>怨꾩링</th><th>??/th><th>?먭퍡</th></tr>
                 {hydro_rows}
             </table>
         """
@@ -248,11 +248,26 @@ class FengShuiHelpDialog(QDialog):
     @staticmethod
     def _refs_html():
         return """
-            <h3>연구 참고</h3>
-            <p>- Han et al. 2021 (GIS 풍수 지표): <a href="https://www.mdpi.com/2071-1050/13/15/8532">link</a></p>
-            <p>- Sun et al. 2024 (왕릉 수문/풍수): <a href="https://doi.org/10.1038/s40494-024-01301-1">link</a></p>
-            <p>- IJGI 2025 APM review: <a href="https://www.mdpi.com/2220-9964/14/4/133">link</a></p>
-            <p><small>자동 결과는 연구용 후보이며 최종 판정이 아닙니다.</small></p>
+            <h3>연구 참고 (검증된 DOI, 2026-02-23 재점검)</h3>
+            <p><b>직접 근거: 풍수 + 공간/GIS 정량</b></p>
+            <p>- Um (2009), IJGIS:
+               <a href="https://doi.org/10.1080/13658810802055954">10.1080/13658810802055954</a></p>
+            <p>- Tung Fung &amp; Marafa (2002), IGARSS:
+               <a href="https://doi.org/10.1109/IGARSS.2002.1027144">10.1109/IGARSS.2002.1027144</a></p>
+            <p>- Whang &amp; Lee (2006), Landscape and Ecological Engineering:
+               <a href="https://doi.org/10.1007/s11355-006-0014-8">10.1007/s11355-006-0014-8</a></p>
+            <p>- Kim (2016), Journal of Koreanology:
+               <a href="https://doi.org/10.15299/jk.2016.8.60.203">10.15299/jk.2016.8.60.203</a></p>
+            <p><b>맥락 근거: 지역별 해석 전통</b></p>
+            <p>- Ryukyu/Okinawa 사례:
+               <a href="https://doi.org/10.1163/156853508X276824">10.1163/156853508X276824</a>,
+               <a href="https://doi.org/10.1163/156853511X577475">10.1163/156853511X577475</a>,
+               <a href="https://doi.org/10.1016/j.ufug.2007.10.001">10.1016/j.ufug.2007.10.001</a></p>
+            <p>- Choson geomancy/architecture:
+               <a href="https://doi.org/10.1515/9781438468716-011">10.1515/9781438468716-011</a>,
+               <a href="https://doi.org/10.1515/9781438468716-009">10.1515/9781438468716-009</a></p>
+            <p><small>주의: 국가/시대 파라미터는 위 문헌의 직접 근거 + 연구 가설 초기값 조합입니다.
+               현장 유적 데이터로 재보정이 필요합니다.</small></p>
         """
 
 
@@ -594,3 +609,4 @@ class FengShuiDockWidget(QWidget):
                 width: 0px;
             }
         """
+
