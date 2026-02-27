@@ -116,6 +116,7 @@ class FengShuiGisPlugin:
 
         if self.dock:
             self.dock.set_status(tr("status_running"))
+        label_lang = self._label_language()
         self._warn_if_geographic(dem_layer)
 
         try:
@@ -144,7 +145,7 @@ class FengShuiGisPlugin:
             )
             output_layer.setName(f"{site_layer.name()}_fengshui")
             QgsProject.instance().addMapLayer(output_layer)
-            self._configure_layer_click_info(output_layer)
+            self._configure_layer_click_info(output_layer, label_lang)
 
         except Exception as exc:  # pylint: disable=broad-except
             self.iface.messageBar().pushCritical(
@@ -183,6 +184,7 @@ class FengShuiGisPlugin:
 
         if self.dock:
             self.dock.set_status(tr("status_terms_running"))
+        label_lang = self._label_language()
         self._warn_if_geographic(dem_layer)
 
         try:
@@ -223,7 +225,7 @@ class FengShuiGisPlugin:
             if hydro_layer:
                 layers_top_to_bottom.append(hydro_layer)
             layers_top_to_bottom.append(ridge_layer)
-            self._insert_output_layers(layers_top_to_bottom)
+            self._insert_output_layers(layers_top_to_bottom, label_lang)
         except Exception as exc:  # pylint: disable=broad-except
             self.iface.messageBar().pushCritical(
                 tr("warn_failed"),
@@ -271,6 +273,7 @@ class FengShuiGisPlugin:
 
         if self.dock:
             self.dock.set_status("캘리브레이션 실행 중...")
+        label_lang = self._label_language()
         self._warn_if_geographic(dem_layer)
 
         calibration_culture = "korea"
@@ -307,7 +310,7 @@ class FengShuiGisPlugin:
             )
             scored_layer.setName(f"{site_layer.name()}_calibration")
             QgsProject.instance().addMapLayer(scored_layer)
-            self._configure_layer_click_info(scored_layer)
+            self._configure_layer_click_info(scored_layer, label_lang)
 
             json_path, md_path = self._write_calibration_report(report)
             self._show_report_popup(report, json_path, md_path)
@@ -338,7 +341,14 @@ class FengShuiGisPlugin:
                 tr("warn_geographic_crs"),
             )
 
-    def _insert_output_layers(self, layers_top_to_bottom):
+    def _label_language(self):
+        if self.dock and hasattr(self.dock, "label_language"):
+            code = self.dock.label_language()
+            if code in ("ko", "en"):
+                return code
+        return "ko"
+
+    def _insert_output_layers(self, layers_top_to_bottom, label_lang="ko"):
         project = QgsProject.instance()
         root = project.layerTreeRoot()
         for index, layer in enumerate(layers_top_to_bottom):
@@ -346,9 +356,9 @@ class FengShuiGisPlugin:
                 continue
             project.addMapLayer(layer, False)
             root.insertLayer(index, layer)
-            self._configure_layer_click_info(layer)
+            self._configure_layer_click_info(layer, label_lang)
 
-    def _configure_layer_click_info(self, layer):
+    def _configure_layer_click_info(self, layer, label_lang="ko"):
         if not isinstance(layer, QgsVectorLayer):
             return
 
@@ -364,11 +374,21 @@ class FengShuiGisPlugin:
             layer.setFieldAlias(fs_reason_index, "입지근거")
 
         if "src_id" in field_names and "dst_id" in field_names:
+            term_field = "term_ko"
+            src_field = "src_ko" if "src_ko" in field_names else "src_id"
+            dst_field = "dst_ko" if "dst_ko" in field_names else "dst_id"
+            if label_lang == "en":
+                if "term_en" in field_names:
+                    term_field = "term_en"
+                if "src_en" in field_names:
+                    src_field = "src_en"
+                if "dst_en" in field_names:
+                    dst_field = "dst_en"
             layer.setDisplayExpression(
-                "\"term_ko\" || ' ' || \"src_id\" || '→' || \"dst_id\""
+                f"\"{term_field}\" || ' ' || \"{src_field}\" || '→' || \"{dst_field}\""
             )
             layer.setMapTipTemplate(
-                "<h3>[% \"term_ko\" %] [% \"src_id\" %]→[% \"dst_id\" %]</h3>"
+                f"<h3>[% \"{term_field}\" %] [% \"{src_field}\" %]→[% \"{dst_field}\" %]</h3>"
                 "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
                 "<p><b>score</b>: [% \"score\" %], <b>len(m)</b>: [% \"len_m\" %], <b>azimuth</b>: [% \"azimuth\" %]</p>"
             )
@@ -376,17 +396,20 @@ class FengShuiGisPlugin:
             return
 
         if "term_ko" in field_names:
-            layer.setDisplayExpression("\"term_ko\"")
+            term_field = "term_ko"
+            if label_lang == "en" and "term_name" in field_names:
+                term_field = "term_name"
+            layer.setDisplayExpression(f"\"{term_field}\"")
             if "fit_sc" in field_names:
                 layer.setMapTipTemplate(
-                    "<h3>[% \"term_ko\" %]</h3>"
+                    f"<h3>[% \"{term_field}\" %]</h3>"
                     "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
                     "<p><b>score</b>: [% \"score\" %], <b>rank</b>: [% \"rank\" %], <b>fit</b>: [% \"fit_sc\" %]</p>"
                     "<p><b>delta</b>: [% \"delta_rel\" %], <b>target</b>: [% \"target_rel\" %], <b>radius(m)</b>: [% \"radius_m\" %]</p>"
                 )
             else:
                 layer.setMapTipTemplate(
-                    "<h3>[% \"term_ko\" %]</h3>"
+                    f"<h3>[% \"{term_field}\" %]</h3>"
                     "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
                     "<p><b>score</b>: [% \"score\" %], <b>rank</b>: [% \"rank\" %]</p>"
                 )
@@ -394,9 +417,14 @@ class FengShuiGisPlugin:
             return
 
         if "ridge_class" in field_names:
-            layer.setDisplayExpression("\"ridge_class\" || ' #' || \"ridge_rank\"")
+            ridge_label_field = "ridge_ko" if "ridge_ko" in field_names else "ridge_class"
+            if label_lang == "en" and "ridge_en" in field_names:
+                ridge_label_field = "ridge_en"
+            layer.setDisplayExpression(
+                f"\"{ridge_label_field}\" || ' #' || \"ridge_rank\""
+            )
             layer.setMapTipTemplate(
-                "<h3>[% \"ridge_class\" %] / #% \"ridge_rank\"</h3>"
+                f"<h3>[% \"{ridge_label_field}\" %] / #% \"ridge_rank\"</h3>"
                 "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
                 "<p><b>strength</b>: [% \"strength\" %], <b>len</b>: [% \"len\" %]</p>"
             )

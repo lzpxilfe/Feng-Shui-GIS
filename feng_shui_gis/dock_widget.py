@@ -56,10 +56,8 @@ TERM_MEANINGS_KO = {
 }
 
 RIDGE_CLASS_KO = {
-    "daegan": "대간",
-    "jeongmaek": "정맥",
-    "gimaek": "기맥",
-    "jimaek": "지맥",
+    "major": "대간·정맥",
+    "minor": "기맥·지맥",
 }
 
 HYDRO_CLASS_KO = {
@@ -203,10 +201,8 @@ class FengShuiHelpDialog(QDialog):
     @staticmethod
     def _ridge_legend_rows():
         specs = [
-            ("daegan", "#000000", 3.8, 0.55),
-            ("jeongmaek", "#171717", 3.0, 0.45),
-            ("gimaek", "#292929", 2.2, 0.36),
-            ("jimaek", "#404040", 1.5, 0.28),
+            ("major", "#273331", 1.25, 0.52),
+            ("minor", "#4b5a57", 0.72, 0.28),
         ]
         rows = []
         for class_id, color, width, opacity in specs:
@@ -290,7 +286,7 @@ class FengShuiHelpDialog(QDialog):
                 {line_rows}
             </table>
             <br>
-            <p><b>능선 계층(산경표식)</b></p>
+            <p><b>능선 계층(2단계 통합: 대간·정맥 / 기맥·지맥)</b></p>
             <table border="1" cellspacing="0" cellpadding="4">
                 <tr><th>계층</th><th>색</th><th>선폭</th><th>투명도</th></tr>
                 {ridge_rows}
@@ -428,6 +424,12 @@ class FengShuiDockWidget(QWidget):
         self.hemisphere_combo.addItem(tr("hemisphere_south"), "south")
         form.addRow(tr("hemisphere_label"), self.hemisphere_combo)
 
+        self.label_language_combo = QComboBox(self)
+        self.label_language_combo.addItem("한국어", "ko")
+        self.label_language_combo.addItem("English", "en")
+        self.label_language_combo.setCurrentIndex(0)
+        form.addRow("용어 언어", self.label_language_combo)
+
         lang = language_code()
         self.profile_combo = QComboBox(self)
         profile_keys = list(available_profiles()) or ["general"]
@@ -513,6 +515,7 @@ class FengShuiDockWidget(QWidget):
         self.culture_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.period_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.hemisphere_combo.currentIndexChanged.connect(self._refresh_progress_guide)
+        self.label_language_combo.currentIndexChanged.connect(self._refresh_progress_guide)
 
         self._update_metric_help_hint()
         self._refresh_progress_guide()
@@ -788,7 +791,10 @@ class FengShuiDockWidget(QWidget):
         total = max(1, len(checks))
         percent = int(round((completed / total) * 100.0))
         self.workflow_progress.setValue(percent)
-        self.progress_summary_label.setText(f"현재 모드: {mode_name} | 준비도 {percent}%")
+        lang_name = "한국어" if self.label_language() == "ko" else "English"
+        self.progress_summary_label.setText(
+            f"현재 모드: {mode_name} | 용어 언어: {lang_name} | 준비도 {percent}%"
+        )
 
         pending = next((label for label, done in checks if not done), None)
         if pending:
@@ -811,6 +817,12 @@ class FengShuiDockWidget(QWidget):
         if hasattr(self, "workflow_status_label"):
             self.workflow_status_label.setText(f"최근 상태: {text}")
         self._refresh_progress_guide()
+
+    def label_language(self):
+        if not hasattr(self, "label_language_combo"):
+            return "ko"
+        code = self.label_language_combo.currentData()
+        return code if code in ("ko", "en") else "ko"
 
     def _emit_run_requested(self):
         self.run_requested.emit(

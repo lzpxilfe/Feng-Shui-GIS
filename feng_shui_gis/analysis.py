@@ -35,11 +35,9 @@ from .profile_catalog import (
     term_specs,
 )
 
-RIDGE_CLASS_LABELS_KO = {
-    "daegan": "대간",
-    "jeongmaek": "정맥",
-    "gimaek": "기맥",
-    "jimaek": "지맥",
+RIDGE_CLASS_LABELS = {
+    "major": {"ko": "대간·정맥", "en": "Daegan+Jeongmaek"},
+    "minor": {"ko": "기맥·지맥", "en": "Gimaek+Jimaek"},
 }
 
 HYDRO_CLASS_LABELS_KO = {
@@ -824,6 +822,13 @@ class FengShuiAnalyzer:
         idx = int(((azimuth % 360.0) + 22.5) // 45.0) % 8
         return directions[idx]
 
+    @staticmethod
+    def _ridge_label(class_id, language="ko"):
+        labels = RIDGE_CLASS_LABELS.get(class_id, {})
+        if language == "en":
+            return labels.get("en") or class_id
+        return labels.get("ko") or class_id
+
     def _compose_term_reason(
         self,
         term_id,
@@ -1437,13 +1442,19 @@ class FengShuiAnalyzer:
         fields = QgsFields()
         fields.append(QgsField("term_id", QVariant.String, "string", 28))
         fields.append(QgsField("term_ko", QVariant.String, "string", 28))
+        fields.append(QgsField("term_en", QVariant.String, "string", 28))
         fields.append(QgsField("parent_id", QVariant.Int))
         fields.append(QgsField("rank", QVariant.Int))
         fields.append(QgsField("score", QVariant.Double, "double", 7, 3))
         fields.append(QgsField("culture", QVariant.String, "string", 20))
         fields.append(QgsField("period", QVariant.String, "string", 20))
         fields.append(QgsField("src_id", QVariant.String, "string", 28))
+        fields.append(QgsField("src_ko", QVariant.String, "string", 28))
+        fields.append(QgsField("src_en", QVariant.String, "string", 28))
         fields.append(QgsField("dst_id", QVariant.String, "string", 28))
+        fields.append(QgsField("dst_ko", QVariant.String, "string", 28))
+        fields.append(QgsField("dst_en", QVariant.String, "string", 28))
+        fields.append(QgsField("link_type", QVariant.String, "string", 20))
         fields.append(QgsField("len_m", QVariant.Double, "double", 12, 3))
         fields.append(QgsField("azimuth", QVariant.Double, "double", 7, 2))
         fields.append(QgsField("curved", QVariant.Int))
@@ -1451,16 +1462,32 @@ class FengShuiAnalyzer:
         data.addAttributes(fields)
         link_layer.updateFields()
 
-        # Keep structural links but remove center-radial spokes from hyeol/myeongdang.
-        link_plan = [
-            ("jusan", "dunoe", "jusan"),
-            ("dunoe", "jojongsan", "dunoe"),
-            ("naecheongnyong", "oecheongnyong", "naecheongnyong"),
-            ("naebaekho", "oebaekho", "naebaekho"),
-            ("ansan", "josan", "ansan"),
-            ("myeongdang", "misa", "myeongdang"),
-            ("naesugu", "oesugu", "naesugu"),
-            ("naesugu", "ipsu", "naesugu"),
+        # Build enclosure-style paths around myeongdang instead of center-radial spokes.
+        path_plan = [
+            {
+                "node_ids": ["jusan", "dunoe", "jojongsan"],
+                "style_term": "jusan",
+                "link_type": "backbone",
+                "label": "배후 축선",
+            },
+            {
+                "node_ids": ["oecheongnyong", "josan", "oebaekho"],
+                "style_term": "oecheongnyong",
+                "link_type": "outer_wrap",
+                "label": "외곽 감싸기",
+            },
+            {
+                "node_ids": ["naecheongnyong", "ansan", "naebaekho"],
+                "style_term": "myeongdang",
+                "link_type": "inner_wrap",
+                "label": "내곽 감싸기",
+            },
+            {
+                "node_ids": ["naesugu", "oesugu", "ipsu"],
+                "style_term": "naesugu",
+                "link_type": "water_flow",
+                "label": "수구 흐름",
+            },
         ]
 
         grouped = defaultdict(dict)
@@ -1474,46 +1501,49 @@ class FengShuiAnalyzer:
             grouped[parent_id][term_id] = feature
 
         link_features = []
-        seen_edges = set()
-        min_link_score = 0.48
+        min_link_score = 0.44
         for parent_id, terms in grouped.items():
-            hyeol_feature = terms.get("hyeol")
-            hyeol_point = None
-            if hyeol_feature is not None and hyeol_feature.hasGeometry():
-                hyeol_point = hyeol_feature.geometry().asPoint()
-            for source_id, target_id, style_term in link_plan:
-                source = terms.get(source_id)
-                target = terms.get(target_id)
-                if source is None or target is None:
+            for spec in path_plan:
+                nodes = []
+                points = []
+                missing = False
+                for node_id in spec["node_ids"]:
+                    feature = terms.get(node_id)
+                    if feature is None or not feature.hasGeometry():
+                        missing = True
+                        break
+                    nodes.append(feature)
+                    points.append(feature.geometry().asPoint())
+                if missing:
                     continue
 
-                pair_key = tuple(sorted((source_id, target_id)))
-                edge_key = (parent_id, pair_key, style_term)
-                if edge_key in seen_edges:
-                    continue
-                seen_edges.add(edge_key)
-
-                origin = source.geometry().asPoint()
-                destination = target.geometry().asPoint()
-                if origin.x() == destination.x() and origin.y() == destination.y():
+                distinct_points = self._distinct_points(points, min_distance=0.2)
+                if len(distinct_points) < 2:
                     continue
 
-                use_bend = True
-                path_points = self._link_path_points(
-                    origin=origin,
-                    destination=destination,
-                    center=hyeol_point,
-                    use_bend=use_bend,
-                )
-                score = self._mean_scores(
-                    self._to_float(source["score"]),
-                    self._to_float(target["score"]),
-                )
-                if score is not None and score < min_link_score:
+                smoothed_points = self._smooth_polyline(distinct_points, passes=2)
+                if len(smoothed_points) < 2:
                     continue
+
+                source = nodes[0]
+                target = nodes[-1]
+                source_id = source["term_id"]
+                target_id = target["term_id"]
+                style_term = spec["style_term"]
+
+                score = self._path_mean_score(nodes)
+                if (
+                    score is not None
+                    and score < min_link_score
+                    and spec["link_type"] != "backbone"
+                ):
+                    continue
+
+                origin = smoothed_points[0]
+                destination = smoothed_points[-1]
                 dx = destination.x() - origin.x()
                 dy = destination.y() - origin.y()
-                length_m = math.hypot(dx, dy)
+                length_m = self._polyline_length(smoothed_points)
                 if length_m <= 0:
                     continue
                 azimuth = (math.degrees(math.atan2(dx, dy)) + 360.0) % 360.0
@@ -1522,28 +1552,31 @@ class FengShuiAnalyzer:
                 )
 
                 line_feature = QgsFeature(link_layer.fields())
-                line_feature.setGeometry(
-                    QgsGeometry.fromPolylineXY(path_points)
-                )
+                line_feature.setGeometry(QgsGeometry.fromPolylineXY(smoothed_points))
                 line_feature["term_id"] = style_term
                 line_feature["term_ko"] = term_label_ko(style_term)
+                line_feature["term_en"] = term_label(style_term, "en")
                 line_feature["parent_id"] = parent_id
                 line_feature["rank"] = rank_value
                 line_feature["score"] = score
                 line_feature["culture"] = source["culture"] or target["culture"]
                 line_feature["period"] = source["period"] or target["period"]
                 line_feature["src_id"] = source_id
+                line_feature["src_ko"] = term_label_ko(source_id)
+                line_feature["src_en"] = term_label(source_id, "en")
                 line_feature["dst_id"] = target_id
+                line_feature["dst_ko"] = term_label_ko(target_id)
+                line_feature["dst_en"] = term_label(target_id, "en")
+                line_feature["link_type"] = spec["link_type"]
                 line_feature["len_m"] = length_m
                 line_feature["azimuth"] = azimuth
-                line_feature["curved"] = 1 if use_bend else 0
+                line_feature["curved"] = 1
                 score_text = "n/a" if score is None else f"{score:.3f}"
-                bend_text = "곡선 보정" if use_bend else "직결"
                 line_feature["reason_ko"] = (
-                    f"구조 연결 {term_label_ko(source_id)}→{term_label_ko(target_id)}. "
-                    f"표현={term_label_ko(style_term)}, 형태={bend_text}, 평균점수={score_text}, "
+                    f"{spec['label']} 경로 {term_label_ko(source_id)}→{term_label_ko(target_id)}. "
+                    f"표현={term_label_ko(style_term)}, 형태=완만 곡선, 평균점수={score_text}, "
                     f"거리={length_m:.1f}m, 방위={azimuth:.1f}°({self._azimuth_label(azimuth)}), "
-                    "중심 방사 연결 제외."
+                    "명당 중심 방사 연결 대신 감싸는 구조를 우선 적용."
                 )
                 link_features.append(line_feature)
 
@@ -1553,18 +1586,65 @@ class FengShuiAnalyzer:
         return link_layer
 
     @staticmethod
-    def _link_path_points(origin, destination, center=None, use_bend=False):
-        origin_xy = QgsPointXY(origin.x(), origin.y())
-        dest_xy = QgsPointXY(destination.x(), destination.y())
-        if not use_bend or center is None:
-            return [origin_xy, dest_xy]
+    def _path_mean_score(features):
+        values = []
+        for feature in features:
+            value = FengShuiAnalyzer._to_float(feature["score"])
+            if value is not None:
+                values.append(value)
+        if not values:
+            return None
+        return sum(values) / len(values)
 
-        mid_x = (origin.x() + destination.x()) / 2.0
-        mid_y = (origin.y() + destination.y()) / 2.0
-        ctrl_x = mid_x + ((center.x() - mid_x) * 0.35)
-        ctrl_y = mid_y + ((center.y() - mid_y) * 0.35)
-        control_xy = QgsPointXY(ctrl_x, ctrl_y)
-        return [origin_xy, control_xy, dest_xy]
+    @staticmethod
+    def _polyline_length(points):
+        length = 0.0
+        for idx in range(1, len(points)):
+            prev = points[idx - 1]
+            curr = points[idx]
+            length += math.hypot(curr.x() - prev.x(), curr.y() - prev.y())
+        return length
+
+    @staticmethod
+    def _distinct_points(points, min_distance=0.1):
+        if not points:
+            return []
+        clean = [QgsPointXY(points[0].x(), points[0].y())]
+        min_sq = max(1e-6, float(min_distance) * float(min_distance))
+        for point in points[1:]:
+            prev = clean[-1]
+            dx = point.x() - prev.x()
+            dy = point.y() - prev.y()
+            if (dx * dx) + (dy * dy) < min_sq:
+                continue
+            clean.append(QgsPointXY(point.x(), point.y()))
+        if len(clean) == 1 and len(points) > 1:
+            tail = points[-1]
+            clean.append(QgsPointXY(tail.x(), tail.y()))
+        return clean
+
+    @staticmethod
+    def _smooth_polyline(points, passes=1):
+        if len(points) < 3 or passes <= 0:
+            return [QgsPointXY(point.x(), point.y()) for point in points]
+
+        current = [QgsPointXY(point.x(), point.y()) for point in points]
+        for _ in range(passes):
+            if len(current) < 3:
+                break
+            smoothed = [QgsPointXY(current[0].x(), current[0].y())]
+            for idx in range(len(current) - 1):
+                point_a = current[idx]
+                point_b = current[idx + 1]
+                qx = (0.75 * point_a.x()) + (0.25 * point_b.x())
+                qy = (0.75 * point_a.y()) + (0.25 * point_b.y())
+                rx = (0.25 * point_a.x()) + (0.75 * point_b.x())
+                ry = (0.25 * point_a.y()) + (0.75 * point_b.y())
+                smoothed.append(QgsPointXY(qx, qy))
+                smoothed.append(QgsPointXY(rx, ry))
+            smoothed.append(QgsPointXY(current[-1].x(), current[-1].y()))
+            current = smoothed
+        return current
 
     def style_term_points(self, term_layer):
         style_map = point_styles()
@@ -1615,26 +1695,26 @@ class FengShuiAnalyzer:
             symbol = QgsLineSymbol.createSimple(
                 {
                     "line_color": color,
-                    "line_width": str(max(0.55, float(width) * 0.56)),
+                    "line_width": str(max(0.38, float(width) * 0.42)),
                     "line_style": "solid",
                     "capstyle": "round",
                     "joinstyle": "round",
                 }
             )
-            symbol.setOpacity(0.38)
+            symbol.setOpacity(0.32)
             categories.append(QgsRendererCategory(term_id, symbol, term_id))
 
         renderer = QgsCategorizedSymbolRenderer("term_id", categories)
         default_symbol = QgsLineSymbol.createSimple(
             {
                 "line_color": "#777777",
-                "line_width": "0.65",
+                "line_width": "0.50",
                 "line_style": "solid",
                 "capstyle": "round",
                 "joinstyle": "round",
             }
         )
-        default_symbol.setOpacity(0.26)
+        default_symbol.setOpacity(0.20)
         renderer.setSourceSymbol(default_symbol)
         link_layer.setRenderer(renderer)
         link_layer.triggerRepaint()
@@ -1919,6 +1999,8 @@ class FengShuiAnalyzer:
         fields.append(QgsField("strength", QVariant.Double, "double", 7, 3))
         fields.append(QgsField("ridge_rank", QVariant.Int))
         fields.append(QgsField("ridge_class", QVariant.String, "string", 16))
+        fields.append(QgsField("ridge_ko", QVariant.String, "string", 20))
+        fields.append(QgsField("ridge_en", QVariant.String, "string", 28))
         fields.append(QgsField("ridge_score", QVariant.Double, "double", 7, 3))
         fields.append(QgsField("elev_a", QVariant.Double, "double", 12, 3))
         fields.append(QgsField("elev_b", QVariant.Double, "double", 12, 3))
@@ -2105,6 +2187,10 @@ class FengShuiAnalyzer:
                 }
             )
 
+        diag = math.hypot(extent.width(), extent.height())
+        min_path_len = max(spacing * 2.4, diag * 0.008)
+        raw_paths = [item for item in raw_paths if item["len"] >= min_path_len]
+
         if not raw_paths:
             return ridge_layer
 
@@ -2112,11 +2198,14 @@ class FengShuiAnalyzer:
         features = []
         for item in ranked_paths:
             feature = QgsFeature(ridge_layer.fields())
-            feature.setGeometry(QgsGeometry.fromPolylineXY(item["points"]))
+            smoothed_points = self._smooth_polyline(item["points"], passes=2)
+            feature.setGeometry(QgsGeometry.fromPolylineXY(smoothed_points))
             feature["ridge_id"] = item["ridge_id"]
             feature["strength"] = item["strength"]
             feature["ridge_rank"] = item["ridge_rank"]
             feature["ridge_class"] = item["ridge_class"]
+            feature["ridge_ko"] = self._ridge_label(item["ridge_class"], "ko")
+            feature["ridge_en"] = self._ridge_label(item["ridge_class"], "en")
             feature["ridge_score"] = item["ridge_score"]
             feature["elev_a"] = item["elev_a"]
             feature["elev_b"] = item["elev_b"]
@@ -2125,7 +2214,7 @@ class FengShuiAnalyzer:
                 f"능선 점수={item['ridge_score']:.3f} (길이+능선성 결합), "
                 f"순위={item['ridge_rank']}/{item['total_count']}, "
                 f"상위백분위={item['percentile']*100:.1f}%, "
-                f"분류={RIDGE_CLASS_LABELS_KO.get(item['ridge_class'], item['ridge_class'])}, "
+                f"분류={self._ridge_label(item['ridge_class'], 'ko')}, "
                 f"연결기준=거리<= {max_segment_distance:.1f}m · 고도차<= {max_segment_drop:.1f}m, "
                 f"보정연결={bridged_count}개."
             )
@@ -2139,10 +2228,8 @@ class FengShuiAnalyzer:
     @staticmethod
     def style_ridge_network(ridge_layer):
         class_styles = {
-            "daegan": ("#000000", 3.8, 0.55),
-            "jeongmaek": ("#171717", 3.0, 0.45),
-            "gimaek": ("#292929", 2.2, 0.36),
-            "jimaek": ("#404040", 1.5, 0.28),
+            "major": ("#273331", 1.25, 0.52),
+            "minor": ("#4b5a57", 0.72, 0.28),
         }
         categories = []
         for class_id, (color, width, opacity) in class_styles.items():
@@ -2156,32 +2243,38 @@ class FengShuiAnalyzer:
                 }
             )
             symbol.setOpacity(opacity)
-            categories.append(QgsRendererCategory(class_id, symbol, class_id))
+            categories.append(
+                QgsRendererCategory(
+                    class_id,
+                    symbol,
+                    FengShuiAnalyzer._ridge_label(class_id, "ko"),
+                )
+            )
 
         renderer = QgsCategorizedSymbolRenderer("ridge_class", categories)
         fallback = QgsLineSymbol.createSimple(
             {
                 "line_color": "#3d3d3d",
-                "line_width": "1.3",
+                "line_width": "0.70",
                 "line_style": "solid",
             }
         )
-        fallback.setOpacity(0.24)
+        fallback.setOpacity(0.18)
         renderer.setSourceSymbol(fallback)
         ridge_layer.setRenderer(renderer)
         ridge_layer.triggerRepaint()
 
     def _ridge_spacing(self, dem_layer, dem_step):
         coarse = self._adaptive_spacing(dem_layer, dem_step)
-        spacing = max(dem_step * 4.0, coarse * 0.70)
+        spacing = max(dem_step * 5.8, coarse * 0.92)
         if spacing <= 0:
-            spacing = max(dem_step * 4.0, 1.0)
+            spacing = max(dem_step * 5.8, 1.0)
 
         extent = dem_layer.extent()
         cols = max(1, int(extent.width() / spacing) + 1)
         rows = max(1, int(extent.height() / spacing) + 1)
         total = cols * rows
-        max_points = 22000
+        max_points = 12000
         if total > max_points:
             spacing *= math.sqrt(total / max_points)
         return spacing
@@ -2197,9 +2290,9 @@ class FengShuiAnalyzer:
         if len(endpoints) > 1800:
             return 0
 
-        max_distance = spacing * 3.6
+        max_distance = spacing * 2.0
         max_distance_sq = max_distance * max_distance
-        elev_tolerance = max(2.0, elev_range * 0.16)
+        elev_tolerance = max(1.5, elev_range * 0.10)
         used = set()
         bridged = 0
 
@@ -2231,8 +2324,8 @@ class FengShuiAnalyzer:
                 distance_ratio = math.sqrt(distance_sq) / max_distance
                 elev_ratio = abs(elev - other_elev) / elev_tolerance
                 strength_ratio = abs(strength - ridge_nodes[other]["strength"])
-                score = (distance_ratio * 0.55) + (elev_ratio * 0.25) + (
-                    strength_ratio * 0.20
+                score = (distance_ratio * 0.62) + (elev_ratio * 0.25) + (
+                    strength_ratio * 0.13
                 )
                 if best is None or score < best_score:
                     best = other
@@ -2307,18 +2400,26 @@ class FengShuiAnalyzer:
             scored.append((score, item))
         scored.sort(key=lambda pair: pair[0], reverse=True)
 
+        total_candidates = len(scored)
+        if total_candidates >= 220:
+            keep_ratio = 0.38
+        elif total_candidates >= 120:
+            keep_ratio = 0.45
+        elif total_candidates >= 70:
+            keep_ratio = 0.56
+        else:
+            keep_ratio = 0.70
+        keep_count = max(12, int(total_candidates * keep_ratio))
+        scored = scored[:keep_count]
+
         ranked = []
         total = len(scored)
         for index, (score_value, item) in enumerate(scored, start=1):
             percentile = index / total
-            if percentile <= 0.05:
-                ridge_class = "daegan"
-            elif percentile <= 0.22:
-                ridge_class = "jeongmaek"
-            elif percentile <= 0.52:
-                ridge_class = "gimaek"
+            if percentile <= 0.30:
+                ridge_class = "major"
             else:
-                ridge_class = "jimaek"
+                ridge_class = "minor"
             ranked.append(
                 {
                     "ridge_id": index,
