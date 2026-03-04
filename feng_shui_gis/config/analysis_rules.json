@@ -143,9 +143,9 @@
     "min_keep_count": 8,
     "major_percentile_threshold": 0.3,
     "keep_ratio_rules": [
-      { "min_candidates": 220, "ratio": 0.28 },
-      { "min_candidates": 120, "ratio": 0.34 },
-      { "min_candidates": 70, "ratio": 0.42 }
+      { "min_nodes": 220, "ratio": 0.28 },
+      { "min_nodes": 120, "ratio": 0.34 },
+      { "min_nodes": 70, "ratio": 0.42 }
     ]
   },
   "hydro_network": {

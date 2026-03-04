@@ -132,6 +132,7 @@ class FengShuiGisPlugin:
         )
         self._warn_low_evidence_context(culture_key, period_key, hemisphere)
         self._warn_if_geographic(dem_layer)
+        self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
 
         try:
             context = QgsProcessingContext()
@@ -217,6 +218,7 @@ class FengShuiGisPlugin:
         )
         self._warn_low_evidence_context(culture_key, period_key, hemisphere)
         self._warn_if_geographic(dem_layer)
+        self._warn_if_crs_mismatch(dem_layer, water_layer)
 
         try:
             context = QgsProcessingContext()
@@ -332,6 +334,7 @@ class FengShuiGisPlugin:
         calibration_culture = calibration_culture.strip().lower()
         self._warn_low_evidence_context(calibration_culture, period_key, hemisphere)
         self._warn_if_geographic(dem_layer)
+        self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
         if culture_key != calibration_culture:
             self.iface.messageBar().pushWarning(
                 tr("plugin_title"),
@@ -416,6 +419,36 @@ class FengShuiGisPlugin:
                 tr("plugin_title"),
                 tr("warn_geographic_crs"),
             )
+
+    def _warn_if_crs_mismatch(self, dem_layer, *other_layers):
+        if dem_layer is None:
+            return
+        dem_crs = dem_layer.crs()
+        if dem_crs is None or not dem_crs.isValid():
+            return
+
+        mismatched = []
+        for layer in other_layers:
+            if layer is None:
+                continue
+            layer_crs = layer.crs()
+            if layer_crs is None or not layer_crs.isValid():
+                continue
+            if layer_crs != dem_crs:
+                mismatched.append(layer.name())
+
+        if not mismatched:
+            return
+
+        text_lang = self._label_language()
+        message = ui_text(
+            "warn_crs_mismatch_template",
+            text_lang,
+            default=(
+                "DEM과 다른 CRS 레이어를 DEM CRS로 변환해 계산합니다: {layers}."
+            ),
+        ).format(layers=", ".join(mismatched))
+        self.iface.messageBar().pushWarning(tr("plugin_title"), message)
 
     def _label_language(self):
         if self.dock and hasattr(self.dock, "label_language"):
