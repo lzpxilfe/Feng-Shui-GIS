@@ -1,0 +1,756 @@
+{
+  "texts": {
+    "help_tab_quick_terms": {
+      "ko": "숫자 해석",
+      "en": "Number Guide"
+    },
+    "context_evidence_title": {
+      "ko": "컨텍스트 근거",
+      "en": "Context Evidence"
+    },
+    "label_language": {
+      "ko": "용어 언어",
+      "en": "Label Language"
+    },
+    "context_param_label": {
+      "ko": "근거 파라미터",
+      "en": "Evidence Parameter"
+    },
+    "context_evidence_button": {
+      "ko": "컨텍스트 근거 보기",
+      "en": "View Context Evidence"
+    },
+    "guide_title": {
+      "ko": "진행 가이드",
+      "en": "Progress Guide"
+    },
+    "guide_metric_label": {
+      "ko": "지표 빠른 설명",
+      "en": "Metric Help"
+    },
+    "workflow_progress_format": {
+      "ko": "%p% 준비",
+      "en": "%p% ready"
+    },
+    "negative_ratio_label": {
+      "ko": "음성 샘플 배수",
+      "en": "Negative Ratio"
+    },
+    "negative_ratio_recommended_suffix": {
+      "ko": "(권장)",
+      "en": "(Recommended)"
+    },
+    "seed_label": {
+      "ko": "랜덤 시드",
+      "en": "Random Seed"
+    },
+    "calibration_button": {
+      "ko": "한국 SHP 캘리브레이션 (ROC/AUC 리포트)",
+      "en": "Korea SHP Calibration (ROC/AUC Report)"
+    },
+    "context_hint_template": {
+      "ko": "현재 프로필 근거: {culture} / {period} (상세는 '{button}').",
+      "en": "Current profile evidence: {culture} / {period} (details: '{button}')."
+    },
+    "context_hint_doi_prefix": {
+      "ko": " 대표 DOI: ",
+      "en": " Representative DOI: "
+    },
+    "context_no_params": {
+      "ko": "선택 가능한 파라미터 근거가 없습니다.",
+      "en": "No selectable parameter evidence."
+    },
+    "context_no_doi": {
+      "ko": "DOI 없음",
+      "en": "No DOI"
+    },
+    "context_no_note": {
+      "ko": "설명 없음",
+      "en": "No note"
+    },
+    "context_param_template": {
+      "ko": "[{group}.{name}] 값={value} | 근거수준={level} | DOI={doi} | 메모={note}",
+      "en": "[{group}.{name}] value={value} | evidence={level} | DOI={doi} | note={note}"
+    },
+    "metric_help_empty": {
+      "ko": "선택한 지표에 대한 설명이 없습니다.",
+      "en": "No description available for the selected metric."
+    },
+    "workflow_check_dem": {
+      "ko": "DEM 레이어 선택",
+      "en": "Select DEM layer"
+    },
+    "workflow_check_sites": {
+      "ko": "후보지 포인트 선택",
+      "en": "Select candidate point layer"
+    },
+    "workflow_check_hydro": {
+      "ko": "수계 조건 확인(수계 레이어 또는 DEM 자동 수문)",
+      "en": "Confirm hydro source (water layer or DEM auto-hydro)"
+    },
+    "workflow_check_analysis_ready": {
+      "ko": "분석 실행 준비",
+      "en": "Ready to run analysis"
+    },
+    "workflow_check_terms_option": {
+      "ko": "용어 포인트/연결선 옵션 확인",
+      "en": "Check term point/link options"
+    },
+    "workflow_check_extract_ready": {
+      "ko": "추출 실행 준비",
+      "en": "Ready to run extraction"
+    },
+    "workflow_lang_ko": {
+      "ko": "한국어",
+      "en": "Korean"
+    },
+    "workflow_lang_en": {
+      "ko": "English",
+      "en": "English"
+    },
+    "workflow_summary_template": {
+      "ko": "현재 모드: {mode} | 용어 언어: {lang} | 준비도 {percent}%",
+      "en": "Mode: {mode} | Label language: {lang} | Readiness {percent}%"
+    },
+    "workflow_next_template": {
+      "ko": "다음 단계: {pending}",
+      "en": "Next step: {pending}"
+    },
+    "workflow_next_action_template": {
+      "ko": "다음 단계: '{action}' 버튼으로 실행하세요.",
+      "en": "Next step: run with '{action}' button."
+    },
+    "workflow_state_done": {
+      "ko": "완료",
+      "en": "Done"
+    },
+    "workflow_state_pending": {
+      "ko": "대기",
+      "en": "Pending"
+    },
+    "workflow_recent_status_template": {
+      "ko": "최근 상태: {text}",
+      "en": "Recent status: {text}"
+    },
+    "reason_alias": {
+      "ko": "설명",
+      "en": "Reason"
+    },
+    "fs_reason_alias": {
+      "ko": "입지근거",
+      "en": "Site Reason"
+    },
+    "reason_label": {
+      "ko": "이유",
+      "en": "Reason"
+    },
+    "reason_empty": {
+      "ko": "설명 없음",
+      "en": "No description"
+    },
+    "fs_score_title": {
+      "ko": "입지 점수",
+      "en": "Site Score"
+    },
+    "feature_reason_title": {
+      "ko": "피처 근거",
+      "en": "Feature Reason"
+    },
+    "calibration_report_title": {
+      "ko": "캘리브레이션 리포트",
+      "en": "Calibration Report"
+    },
+    "calibration_report_heading": {
+      "ko": "한국 SHP 캘리브레이션 결과",
+      "en": "Korea SHP Calibration Result"
+    },
+    "link_arrow": {
+      "ko": "→",
+      "en": "->"
+    },
+    "calibration_status_running": {
+      "ko": "캘리브레이션 실행 중...",
+      "en": "Calibration in progress..."
+    },
+    "calibration_status_done": {
+      "ko": "캘리브레이션 완료.",
+      "en": "Calibration completed."
+    },
+    "calibration_warning_template": {
+      "ko": "캘리브레이션은 SHP 기준으로 {culture} 컨텍스트를 사용합니다.",
+      "en": "Calibration uses SHP baseline context: {culture}."
+    },
+    "calibration_success_template": {
+      "ko": "캘리브레이션 완료: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}",
+      "en": "Calibration done: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}"
+    },
+    "language_ko": {
+      "ko": "한국어",
+      "en": "Korean"
+    },
+    "language_en": {
+      "ko": "English",
+      "en": "English"
+    },
+    "maptip_score_label": {
+      "en": "score"
+    },
+    "maptip_len_m_label": {
+      "en": "len(m)"
+    },
+    "maptip_azimuth_label": {
+      "en": "azimuth"
+    },
+    "maptip_rank_label": {
+      "en": "rank"
+    },
+    "maptip_fit_label": {
+      "en": "fit"
+    },
+    "maptip_delta_label": {
+      "en": "delta"
+    },
+    "maptip_target_label": {
+      "en": "target"
+    },
+    "maptip_radius_m_label": {
+      "en": "radius(m)"
+    },
+    "maptip_strength_label": {
+      "en": "strength"
+    },
+    "maptip_len_label": {
+      "en": "len"
+    },
+    "maptip_order_label": {
+      "en": "order"
+    },
+    "maptip_flow_acc_label": {
+      "en": "flow_acc"
+    },
+    "maptip_confidence_label": {
+      "en": "confidence"
+    },
+    "maptip_components_label": {
+      "en": "Component fits"
+    },
+    "maptip_terrain_label": {
+      "en": "Terrain metrics"
+    },
+    "maptip_dem_water_label": {
+      "en": "dem_water"
+    },
+    "maptip_distance_water_label": {
+      "en": "distance_to_water(m)"
+    },
+    "maptip_link_note": {
+      "en": "score=overall structural fit (0-1). Higher is stronger."
+    },
+    "maptip_term_note": {
+      "en": "fit=how close delta is to target. score=overall term suitability."
+    },
+    "maptip_ridge_note": {
+      "en": "strength reflects local prominence and connectivity."
+    },
+    "maptip_hydro_note": {
+      "en": "order=hierarchy in drainage graph, flow_acc=upstream support."
+    },
+    "maptip_site_note": {
+      "en": "0-1 fits: higher is better. TPI near 0 is flatter; negative is concave; positive is convex."
+    },
+    "mountain_attach_success_template": {
+      "en": "Attached mountain names to {count} features ({source})."
+    },
+    "mountain_alias_name": {
+      "en": "Nearby mountain"
+    },
+    "mountain_alias_dist": {
+      "en": "Mountain distance (m)"
+    },
+    "mountain_alias_source": {
+      "en": "Mountain source"
+    },
+    "mountain_alias_lang": {
+      "en": "Mountain name language"
+    },
+    "mountain_prefix_label": {
+      "en": "Nearby mountain"
+    },
+    "mountain_lang_inline_label": {
+      "en": "lang"
+    },
+    "link_alias_score": {
+      "en": "Link score (0-1)"
+    },
+    "link_alias_len_m": {
+      "en": "Link length (m)"
+    },
+    "link_alias_azimuth": {
+      "en": "Direction (deg)"
+    },
+    "link_alias_rank": {
+      "en": "Candidate rank"
+    },
+    "term_alias_score": {
+      "en": "Term score (0-1)"
+    },
+    "term_alias_fit": {
+      "en": "Shape fit (0-1)"
+    },
+    "term_alias_delta": {
+      "en": "Relative elevation delta"
+    },
+    "term_alias_target": {
+      "en": "Expected relative delta"
+    },
+    "term_alias_radius": {
+      "en": "Search radius (m)"
+    },
+    "term_alias_relief": {
+      "en": "Local relief (m)"
+    },
+    "term_alias_rank": {
+      "en": "Candidate rank"
+    },
+    "ridge_alias_strength": {
+      "en": "Ridge strength (0-1)"
+    },
+    "ridge_alias_score": {
+      "en": "Ridge rank score (0-1)"
+    },
+    "ridge_alias_len": {
+      "en": "Ridge length (map units)"
+    },
+    "hydro_alias_order": {
+      "en": "Stream order"
+    },
+    "hydro_alias_flow_acc": {
+      "en": "Flow accumulation proxy"
+    },
+    "hydro_alias_len": {
+      "en": "Stream length (map units)"
+    },
+    "site_alias_score": {
+      "en": "Site score (0-1)"
+    },
+    "site_alias_conf": {
+      "en": "Confidence (0-1)"
+    },
+    "site_alias_slope": {
+      "en": "Slope fit (0-1)"
+    },
+    "site_alias_aspect": {
+      "en": "Aspect fit (0-1)"
+    },
+    "site_alias_form": {
+      "en": "Form fit (0-1)"
+    },
+    "site_alias_long": {
+      "en": "Fore-aft fit (0-1)"
+    },
+    "site_alias_water": {
+      "en": "Water fit (0-1)"
+    },
+    "site_alias_dem_water": {
+      "en": "DEM wetness fit (0-1)"
+    },
+    "site_alias_tpi": {
+      "en": "Topographic position index"
+    },
+    "site_alias_conv": {
+      "en": "Convergence (0-1)"
+    },
+    "calibration_md_title_template": {
+      "en": "Feng Shui Calibration Report ({stamp})"
+    },
+    "calibration_md_positive_label": {
+      "en": "Positive samples"
+    },
+    "calibration_md_negative_label": {
+      "en": "Negative samples"
+    },
+    "calibration_md_valid_label": {
+      "en": "Valid scored samples"
+    },
+    "calibration_md_roc_auc_label": {
+      "en": "ROC AUC"
+    },
+    "calibration_md_pr_auc_label": {
+      "en": "PR AUC"
+    },
+    "calibration_md_best_f1_label": {
+      "en": "Best F1"
+    },
+    "calibration_md_best_youden_label": {
+      "en": "Best Youden J"
+    },
+    "calibration_md_threshold_label": {
+      "en": "threshold"
+    },
+    "calibration_md_context_title": {
+      "en": "Context"
+    },
+    "calibration_md_context_culture_label": {
+      "en": "culture"
+    },
+    "calibration_md_context_period_label": {
+      "en": "period"
+    },
+    "calibration_md_context_profile_label": {
+      "en": "profile"
+    },
+    "calibration_md_context_hemisphere_label": {
+      "en": "hemisphere"
+    },
+    "calibration_md_context_negative_ratio_label": {
+      "en": "negative_ratio"
+    },
+    "calibration_md_context_random_seed_label": {
+      "en": "random_seed"
+    },
+    "calibration_html_roc_auc_label": {
+      "en": "ROC AUC"
+    },
+    "calibration_html_pr_auc_label": {
+      "en": "PR AUC"
+    },
+    "calibration_html_positive_label": {
+      "en": "Positive"
+    },
+    "calibration_html_negative_label": {
+      "en": "Negative"
+    },
+    "calibration_html_valid_label": {
+      "en": "Valid"
+    },
+    "calibration_html_best_f1_label": {
+      "en": "Best F1"
+    },
+    "calibration_html_best_youden_label": {
+      "en": "Best Youden J"
+    },
+    "calibration_html_threshold_label": {
+      "en": "threshold"
+    },
+    "calibration_html_json_label": {
+      "en": "JSON"
+    },
+    "calibration_html_markdown_label": {
+      "en": "Markdown"
+    },
+    "context_evidence_html_title": {
+      "en": "Context Evidence"
+    },
+    "context_evidence_html_empty": {
+      "en": "No evidence information is available."
+    },
+    "context_evidence_group_parameter": {
+      "en": "parameter"
+    },
+    "context_evidence_group_weight_bias": {
+      "en": "weight bias"
+    },
+    "context_evidence_group_term_bias": {
+      "en": "term bias"
+    },
+    "context_evidence_meta_culture": {
+      "en": "culture"
+    },
+    "context_evidence_meta_period": {
+      "en": "period"
+    },
+    "context_evidence_meta_hemisphere": {
+      "en": "hemisphere"
+    },
+    "context_evidence_col_group": {
+      "en": "group"
+    },
+    "context_evidence_col_name": {
+      "en": "name"
+    },
+    "context_evidence_col_value": {
+      "en": "value"
+    },
+    "context_evidence_col_level": {
+      "en": "level"
+    },
+    "context_evidence_col_source_doi": {
+      "en": "source_doi"
+    },
+    "context_evidence_col_note": {
+      "en": "note"
+    },
+    "context_evidence_level_note": {
+      "en": "Evidence level: A=direct quantitative, B=case-study anchored, C=heuristic prior, U=unspecified."
+    }
+  },
+  "term_meanings": {
+    "ko": {
+      "jusan": "주산: 혈 뒤편의 중심 산",
+      "jojongsan": "조종산: 계통의 상위 산줄기",
+      "dunoe": "두뇌: 주산에서 이어지는 마디",
+      "naecheongnyong": "내청룡: 좌측의 가까운 지지 능선",
+      "oecheongnyong": "외청룡: 좌측의 바깥 지지 능선",
+      "naebaekho": "내백호: 우측의 가까운 지지 능선",
+      "oebaekho": "외백호: 우측의 바깥 지지 능선",
+      "ansan": "안산: 전면의 가까운 받침 산",
+      "josan": "조산: 전면의 원거리 받침 산",
+      "naesugu": "내수구: 전면의 가까운 수구",
+      "oesugu": "외수구: 전면의 원거리 수구",
+      "ipsu": "입수: 유입 수로 지점",
+      "myeongdang": "명당: 중심의 완만한 평탄부",
+      "misa": "미사: 전면의 완경사 지대"
+    },
+    "en": {
+      "jusan": "Jusan: main mountain behind hyeol",
+      "jojongsan": "Jojongsan: upper trunk ridgeline",
+      "dunoe": "Dunoe: knuckle segment from Jusan",
+      "naecheongnyong": "Inner left support ridge",
+      "oecheongnyong": "Outer left support ridge",
+      "naebaekho": "Inner right support ridge",
+      "oebaekho": "Outer right support ridge",
+      "ansan": "Near frontal support hill",
+      "josan": "Far frontal support hill",
+      "naesugu": "Near water outlet",
+      "oesugu": "Far water outlet",
+      "ipsu": "Inflow point",
+      "myeongdang": "Core gentle flat zone",
+      "misa": "Front gentle slope area"
+    }
+  },
+  "metric_help_items": {
+    "ko": [
+      {
+        "label": "점수(score/fs_score)",
+        "description": "0~1 범위 점수입니다. 1에 가까울수록 현재 지형이 기준 패턴과 더 잘 맞습니다."
+      },
+      {
+        "label": "형국(form_score)",
+        "description": "주변 지형의 기본 형태 적합도입니다. 높을수록 혈 주변 형세가 안정적입니다."
+      },
+      {
+        "label": "종심(long_score)",
+        "description": "앞뒤 깊이감(종방향) 점수입니다. 높을수록 뒤는 받치고 앞은 트인 구조에 가깝습니다."
+      },
+      {
+        "label": "수렴습윤(dem_water_score)",
+        "description": "DEM 기반 수분/수계 수렴 가능성을 반영한 점수입니다. 높을수록 물길이 모이기 쉬운 지형입니다."
+      },
+      {
+        "label": "TPI",
+        "description": "지형 곡률 지표입니다. 0에 가까우면 평탄, 음수면 오목, 양수면 볼록한 경향을 의미합니다."
+      },
+      {
+        "label": "수렴도(convergence)",
+        "description": "주변 경사 방향이 중심으로 모이는 정도입니다. 높을수록 기운이 모이는 형세로 봅니다."
+      },
+      {
+        "label": "기복(relief_m)",
+        "description": "주변 고도 범위(최고-최저)입니다. 너무 작으면 단조롭고 너무 크면 거칠 수 있습니다."
+      }
+    ],
+    "en": [
+      {
+        "label": "score (fs_score)",
+        "description": "0-1 score; closer to 1 means better pattern fit."
+      },
+      {
+        "label": "form_score",
+        "description": "Base terrain-form suitability around candidate center."
+      },
+      {
+        "label": "long_score",
+        "description": "Fore-aft depth pattern suitability."
+      },
+      {
+        "label": "dem_water_score",
+        "description": "DEM-derived moisture/flow convergence suitability."
+      },
+      {
+        "label": "TPI",
+        "description": "Topographic position index: near 0 flat, negative concave, positive convex."
+      },
+      {
+        "label": "convergence",
+        "description": "How strongly nearby slopes converge to the center."
+      },
+      {
+        "label": "relief_m",
+        "description": "Local elevation range (max-min)."
+      }
+    ]
+  },
+  "ridge_legend": [
+    {
+      "id": "major",
+      "label": {
+        "ko": "대간·정맥",
+        "en": "Major Ridge"
+      },
+      "color": "#273331",
+      "width": 1.25,
+      "opacity": 0.52
+    },
+    {
+      "id": "minor",
+      "label": {
+        "ko": "기맥·지맥",
+        "en": "Minor Ridge"
+      },
+      "color": "#4b5a57",
+      "width": 0.72,
+      "opacity": 0.28
+    }
+  ],
+  "hydro_legend": [
+    {
+      "id": "main",
+      "label": {
+        "ko": "주수계",
+        "en": "Main"
+      },
+      "color": "#0b3d91",
+      "width": 1.6
+    },
+    {
+      "id": "secondary",
+      "label": {
+        "ko": "중간 수계",
+        "en": "Secondary"
+      },
+      "color": "#1456b8",
+      "width": 1.2
+    },
+    {
+      "id": "branch",
+      "label": {
+        "ko": "지류",
+        "en": "Branch"
+      },
+      "color": "#2b7bd8",
+      "width": 0.9
+    },
+    {
+      "id": "minor",
+      "label": {
+        "ko": "미소 수로",
+        "en": "Minor"
+      },
+      "color": "#63a5ff",
+      "width": 0.7
+    }
+  ],
+  "help_html": {
+    "overview": {
+      "ko": [
+        "<h3>기본 워크플로우</h3>",
+        "<p><b>1) 기본 지형 모드</b>: DEM(+선택 수계)에서 능선/수계 흐름을 먼저 추출합니다.</p>",
+        "<p><b>2) 수계가 없을 때</b>: DEM 기반 자동 수문 추출을 실행합니다.</p>",
+        "<p><b>3) 상세 용어</b>: 필요할 때만 혈/명당/청룡/백호 등 용어 포인트와 구조 연결을 생성합니다.</p>",
+        "<p><b>4) 고급 분석 모드</b>: 후보지 점 레이어가 있을 때만 입지 점수(<code>fs_score</code>)를 계산합니다.</p>",
+        "<p><b>클릭 설명</b>: 레이어 피처를 식별(Identify)하거나 선택하면 <code>reason_ko</code> 또는 <code>fs_reason</code> 필드에서 근거를 확인할 수 있습니다.</p>",
+        "<p><b>권장</b>: 거리 해석을 위해 투영좌표계(UTM/TM, meter 단위)를 권장합니다.</p>"
+      ],
+      "en": [
+        "<h3>Workflow</h3>",
+        "<p><b>1) Landscape mode</b>: extract ridge/hydro first from DEM (+ optional water layer).</p>",
+        "<p><b>2) If water is missing</b>: run DEM-based hydro extraction.</p>",
+        "<p><b>3) Term detail</b>: create term points/links only when needed.</p>",
+        "<p><b>4) Advanced analysis</b>: compute <code>fs_score</code> when candidate point layer exists.</p>",
+        "<p><b>Click explanation</b>: inspect feature to see <code>reason_ko</code> or <code>fs_reason</code>.</p>",
+        "<p><b>Recommended</b>: projected CRS in meters (UTM/TM).</p>"
+      ]
+    },
+    "quick_terms": {
+      "ko": [
+        "<h3>숫자 해석 빠른 가이드</h3>",
+        "<p><b>예시 문장</b></p>",
+        "<p><code>혈 후보 #4/4 ... 기준치&gt;=0.660</code></p>",
+        "<p>뜻: 네 번째 후보가 최소 기준을 넘어서 최종 후보로 남았다는 의미입니다.</p>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>항목</th><th>쉽게 말하면</th><th>읽는 방향</th></tr>",
+        "<tr><td>점수</td><td>종합 적합도</td><td>높을수록 좋음 (0~1)</td></tr>",
+        "<tr><td>형국</td><td>전체 지형 형태 안정성</td><td>높을수록 좋음</td></tr>",
+        "<tr><td>종심</td><td>앞뒤 깊이감</td><td>중간~높음 권장</td></tr>",
+        "<tr><td>수렴습윤</td><td>물길/습윤 모임 가능성</td><td>높을수록 좋음</td></tr>",
+        "<tr><td>TPI</td><td>오목/평탄/볼록 경향</td><td>0 근처 평탄, 음수 오목, 양수 볼록</td></tr>",
+        "<tr><td>수렴도</td><td>경사 방향의 모임 강도</td><td>높을수록 모임이 강함</td></tr>",
+        "<tr><td>기복</td><td>주변 고도 차</td><td>너무 작거나 너무 크면 불리할 수 있음</td></tr>",
+        "</table>"
+      ],
+      "en": [
+        "<h3>Quick Number Guide</h3>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>Metric</th><th>Meaning</th><th>Interpretation</th></tr>",
+        "<tr><td>score</td><td>overall suitability</td><td>higher is better (0~1)</td></tr>",
+        "<tr><td>form</td><td>terrain form stability</td><td>higher is better</td></tr>",
+        "<tr><td>long</td><td>fore-aft depth</td><td>mid-high preferred</td></tr>",
+        "<tr><td>dem_water</td><td>moisture/flow convergence</td><td>higher is better</td></tr>",
+        "<tr><td>TPI</td><td>concave/flat/convex tendency</td><td>near 0 flat</td></tr>",
+        "<tr><td>convergence</td><td>slope convergence strength</td><td>higher means stronger convergence</td></tr>",
+        "<tr><td>relief</td><td>local elevation range</td><td>avoid too low or too high</td></tr>",
+        "</table>"
+      ]
+    },
+    "symbols": {
+      "ko": [
+        "<h3>결과 심볼 안내</h3>",
+        "<p><b>풍수 구조 연결선</b> (중심 방사형이 아닌 구조-구조 연결)</p>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>용어</th><th>의미</th><th>색</th><th>선폭</th></tr>",
+        "{line_rows}",
+        "</table>",
+        "<br>",
+        "<p><b>능선 계층(2단계 통합)</b></p>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>계층</th><th>색</th><th>선폭</th><th>투명도</th></tr>",
+        "{ridge_rows}",
+        "</table>",
+        "<br>",
+        "<p><b>수계 계층</b></p>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>계층</th><th>색</th><th>선폭</th></tr>",
+        "{hydro_rows}",
+        "</table>"
+      ],
+      "en": [
+        "<h3>Result Symbology</h3>",
+        "<p><b>Structural links</b> (structure-to-structure, not radial spokes)</p>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>Term</th><th>Meaning</th><th>Color</th><th>Width</th></tr>",
+        "{line_rows}",
+        "</table>",
+        "<br>",
+        "<p><b>Ridge hierarchy</b></p>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>Class</th><th>Color</th><th>Width</th><th>Opacity</th></tr>",
+        "{ridge_rows}",
+        "</table>",
+        "<br>",
+        "<p><b>Hydro hierarchy</b></p>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>Class</th><th>Color</th><th>Width</th></tr>",
+        "{hydro_rows}",
+        "</table>"
+      ]
+    },
+    "references": {
+      "ko": [
+        "<h3>연구 참고</h3>",
+        "<p>- Um (2009): <a href=\"https://doi.org/10.1080/13658810802055954\">10.1080/13658810802055954</a></p>",
+        "<p>- Tung Fung &amp; Marafa (2002): <a href=\"https://doi.org/10.1109/IGARSS.2002.1027144\">10.1109/IGARSS.2002.1027144</a></p>",
+        "<p>- Whang &amp; Lee (2006): <a href=\"https://doi.org/10.1007/s11355-006-0014-8\">10.1007/s11355-006-0014-8</a></p>",
+        "<p>- Kim (2016): <a href=\"https://doi.org/10.15299/jk.2016.8.60.203\">10.15299/jk.2016.8.60.203</a></p>",
+        "<p><small>국가/시대 파라미터는 지역 데이터로 재보정이 필요합니다.</small></p>"
+      ],
+      "en": [
+        "<h3>References</h3>",
+        "<p>- Um (2009): <a href=\"https://doi.org/10.1080/13658810802055954\">10.1080/13658810802055954</a></p>",
+        "<p>- Tung Fung &amp; Marafa (2002): <a href=\"https://doi.org/10.1109/IGARSS.2002.1027144\">10.1109/IGARSS.2002.1027144</a></p>",
+        "<p>- Whang &amp; Lee (2006): <a href=\"https://doi.org/10.1007/s11355-006-0014-8\">10.1007/s11355-006-0014-8</a></p>",
+        "<p>- Kim (2016): <a href=\"https://doi.org/10.15299/jk.2016.8.60.203\">10.15299/jk.2016.8.60.203</a></p>",
+        "<p><small>Country/period parameters still need local calibration.</small></p>"
+      ]
+    }
+  }
+}

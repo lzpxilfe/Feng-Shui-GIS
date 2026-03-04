@@ -3,19 +3,28 @@ import json
 import os
 from datetime import datetime
 
+from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QDialog, QVBoxLayout, QTextBrowser
 from qgis.core import (
     QgsFeatureRequest,
+    QgsField,
     QgsProject,
     QgsProcessingContext,
     QgsProcessingFeedback,
+    QgsWkbTypes,
     QgsVectorLayer,
+    edit,
 )
 
 from .analysis import FengShuiAnalyzer
+from .cultural_context import context_evidence_records, neutral_context_key
 from .dock_widget import FengShuiDockWidget
 from .locale import tr
+from .mountain_lookup import MountainNameService
+from .mountain_options import mountain_options
+from .profile_catalog import analysis_rules
+from .ui_catalog import ui_text
 
 
 class FengShuiGisPlugin:
@@ -30,6 +39,7 @@ class FengShuiGisPlugin:
         self._reason_browser = None
         self._report_dialog = None
         self._report_browser = None
+        self._context_warning_cache = set()
 
     def initGui(self):
         icon_path = os.path.join(self.plugin_dir, "yingyang.png")
@@ -117,6 +127,10 @@ class FengShuiGisPlugin:
         if self.dock:
             self.dock.set_status(tr("status_running"))
         label_lang = self._label_language()
+        mountain_enabled, mountain_radius_m, mountain_max_features, mountain_lang = (
+            self._mountain_name_options()
+        )
+        self._warn_low_evidence_context(culture_key, period_key, hemisphere)
         self._warn_if_geographic(dem_layer)
 
         try:
@@ -144,6 +158,14 @@ class FengShuiGisPlugin:
                 period_key=period_key,
             )
             output_layer.setName(f"{site_layer.name()}_fengshui")
+            mountain_updated = 0
+            if mountain_enabled:
+                mountain_updated = self._enrich_layer_with_mountain_names(
+                    output_layer,
+                    radius_m=mountain_radius_m,
+                    max_features=mountain_max_features,
+                    preferred_language=mountain_lang,
+                )
             QgsProject.instance().addMapLayer(output_layer)
             self._configure_layer_click_info(output_layer, label_lang)
 
@@ -160,6 +182,11 @@ class FengShuiGisPlugin:
             tr("plugin_title"),
             f"{tr('ok_finished')}: {output_layer.name()}",
         )
+        if mountain_enabled and mountain_updated > 0:
+            self.iface.messageBar().pushInfo(
+                tr("plugin_title"),
+                self._mountain_attached_message(mountain_updated),
+            )
         if self.dock:
             self.dock.set_status(tr("status_done"))
 
@@ -185,6 +212,10 @@ class FengShuiGisPlugin:
         if self.dock:
             self.dock.set_status(tr("status_terms_running"))
         label_lang = self._label_language()
+        mountain_enabled, mountain_radius_m, mountain_max_features, mountain_lang = (
+            self._mountain_name_options()
+        )
+        self._warn_low_evidence_context(culture_key, period_key, hemisphere)
         self._warn_if_geographic(dem_layer)
 
         try:
@@ -225,6 +256,15 @@ class FengShuiGisPlugin:
             if hydro_layer:
                 layers_top_to_bottom.append(hydro_layer)
             layers_top_to_bottom.append(ridge_layer)
+            mountain_total = 0
+            if mountain_enabled:
+                for target_layer in layers_top_to_bottom:
+                    mountain_total += self._enrich_layer_with_mountain_names(
+                        target_layer,
+                        radius_m=mountain_radius_m,
+                        max_features=mountain_max_features,
+                        preferred_language=mountain_lang,
+                    )
             self._insert_output_layers(layers_top_to_bottom, label_lang)
         except Exception as exc:  # pylint: disable=broad-except
             self.iface.messageBar().pushCritical(
@@ -246,6 +286,11 @@ class FengShuiGisPlugin:
             tr("plugin_title"),
             f"{tr(message_key)}: " + ", ".join(created),
         )
+        if mountain_enabled and mountain_total > 0:
+            self.iface.messageBar().pushInfo(
+                tr("plugin_title"),
+                self._mountain_attached_message(mountain_total),
+            )
         if self.dock:
             self.dock.set_status(tr("status_done"))
 
@@ -272,15 +317,28 @@ class FengShuiGisPlugin:
             return
 
         if self.dock:
-            self.dock.set_status("캘리브레이션 실행 중...")
+            self.dock.set_status(
+                ui_text("calibration_status_running", default="Calibration in progress...")
+            )
         label_lang = self._label_language()
-        self._warn_if_geographic(dem_layer)
+        mountain_enabled, mountain_radius_m, mountain_max_features, mountain_lang = (
+            self._mountain_name_options()
+        )
 
-        calibration_culture = "korea"
-        if culture_key != "korea":
+        calibration_rules = analysis_rules().get("calibration", {})
+        calibration_culture = calibration_rules.get("default_culture", "korea")
+        if not isinstance(calibration_culture, str) or not calibration_culture.strip():
+            calibration_culture = "korea"
+        calibration_culture = calibration_culture.strip().lower()
+        self._warn_low_evidence_context(calibration_culture, period_key, hemisphere)
+        self._warn_if_geographic(dem_layer)
+        if culture_key != calibration_culture:
             self.iface.messageBar().pushWarning(
                 tr("plugin_title"),
-                "캘리브레이션은 한국 SHP 기준으로 korea 컨텍스트를 사용합니다.",
+                ui_text(
+                    "calibration_warning_template",
+                    default="Calibration uses SHP baseline context: {culture}.",
+                ).format(culture=calibration_culture),
             )
 
         try:
@@ -309,6 +367,14 @@ class FengShuiGisPlugin:
                 random_seed=random_seed,
             )
             scored_layer.setName(f"{site_layer.name()}_calibration")
+            mountain_updated = 0
+            if mountain_enabled:
+                mountain_updated = self._enrich_layer_with_mountain_names(
+                    scored_layer,
+                    radius_m=mountain_radius_m,
+                    max_features=mountain_max_features,
+                    preferred_language=mountain_lang,
+                )
             QgsProject.instance().addMapLayer(scored_layer)
             self._configure_layer_click_info(scored_layer, label_lang)
 
@@ -326,13 +392,23 @@ class FengShuiGisPlugin:
 
         self.iface.messageBar().pushSuccess(
             tr("plugin_title"),
-            (
-                f"캘리브레이션 완료: ROC_AUC={report.get('roc_auc', 0):.4f}, "
-                f"PR_AUC={report.get('pr_auc', 0):.4f}"
+            ui_text(
+                "calibration_success_template",
+                default="Calibration done: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}",
+            ).format(
+                roc_auc=report.get("roc_auc", 0),
+                pr_auc=report.get("pr_auc", 0),
             ),
         )
+        if mountain_enabled and mountain_updated > 0:
+            self.iface.messageBar().pushInfo(
+                tr("plugin_title"),
+                self._mountain_attached_message(mountain_updated),
+            )
         if self.dock:
-            self.dock.set_status("캘리브레이션 완료.")
+            self.dock.set_status(
+                ui_text("calibration_status_done", default="Calibration completed.")
+            )
 
     def _warn_if_geographic(self, layer):
         if layer and layer.crs().isGeographic():
@@ -347,6 +423,381 @@ class FengShuiGisPlugin:
             if code in ("ko", "en"):
                 return code
         return "ko"
+
+    def _mountain_name_options(self):
+        options = mountain_options()
+        if not self.dock:
+            return (
+                False,
+                options["radius_default_m"],
+                options["max_features_default"],
+                options["language_default"],
+            )
+        enabled = bool(options["enabled_default"])
+        radius_m = int(options["radius_default_m"])
+        max_features = int(options["max_features_default"])
+        preferred_language = str(options["language_default"])
+        if hasattr(self.dock, "mountain_name_enrichment_enabled"):
+            enabled = bool(self.dock.mountain_name_enrichment_enabled())
+        if hasattr(self.dock, "mountain_name_radius_m"):
+            try:
+                radius_m = int(self.dock.mountain_name_radius_m())
+            except (TypeError, ValueError):
+                radius_m = int(options["radius_default_m"])
+        if hasattr(self.dock, "mountain_name_max_features"):
+            try:
+                max_features = int(self.dock.mountain_name_max_features())
+            except (TypeError, ValueError):
+                max_features = int(options["max_features_default"])
+        if hasattr(self.dock, "mountain_name_language_preference"):
+            preferred_language = str(self.dock.mountain_name_language_preference())
+        if preferred_language not in ("local", "ko", "en"):
+            preferred_language = options["language_default"]
+        radius_m = max(
+            int(options["radius_min_m"]),
+            min(int(options["radius_max_m"]), int(radius_m)),
+        )
+        max_features = max(
+            int(options["max_features_min"]),
+            min(int(options["max_features_max"]), int(max_features)),
+        )
+        return enabled, radius_m, max_features, preferred_language
+
+    def _mountain_attached_message(self, count):
+        text_lang = self._label_language()
+        options = mountain_options()
+        source = str(options.get("source_label", "OSM/Overpass")).strip() or "OSM/Overpass"
+        template = ui_text(
+            "mountain_attach_success_template",
+            text_lang,
+            default="Attached mountain names to {count} features ({source}).",
+        )
+        return template.format(count=max(0, int(count)), source=source)
+
+    @staticmethod
+    def _feature_anchor_point(feature):
+        if feature is None or not feature.hasGeometry():
+            return None
+        geom = feature.geometry()
+        if geom is None or geom.isEmpty():
+            return None
+
+        if geom.type() == QgsWkbTypes.PointGeometry:
+            point = geom.asPoint()
+            return point if point is not None else None
+
+        centroid = geom.centroid()
+        if centroid is not None and not centroid.isEmpty():
+            point = centroid.asPoint()
+            if point is not None:
+                return point
+
+        surface = geom.pointOnSurface()
+        if surface is not None and not surface.isEmpty():
+            point = surface.asPoint()
+            if point is not None:
+                return point
+        return None
+
+    @staticmethod
+    def _feature_priority(feature, field_names):
+        def _safe_int(value):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        def _safe_float(value):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        if "rank" in field_names:
+            rank_value = _safe_int(feature["rank"])
+            if rank_value is not None:
+                return (0, rank_value, int(feature.id()))
+        if "ridge_rank" in field_names:
+            rank_value = _safe_int(feature["ridge_rank"])
+            if rank_value is not None:
+                return (1, rank_value, int(feature.id()))
+        if "stream_id" in field_names:
+            stream_id = _safe_int(feature["stream_id"])
+            if stream_id is not None:
+                return (2, stream_id, int(feature.id()))
+        if "fs_score" in field_names:
+            fs_score = _safe_float(feature["fs_score"])
+            if fs_score is not None:
+                return (3, -fs_score, int(feature.id()))
+        return (9, int(feature.id()), 0)
+
+    def _enrich_layer_with_mountain_names(
+        self,
+        layer,
+        radius_m=None,
+        max_features=None,
+        preferred_language=None,
+    ):
+        if not isinstance(layer, QgsVectorLayer):
+            return 0
+        if layer.wkbType() == QgsWkbTypes.NoGeometry:
+            return 0
+        if layer.featureCount() <= 0:
+            return 0
+
+        options = mountain_options()
+        if radius_m is None:
+            radius_m = options["radius_default_m"]
+        if max_features is None:
+            max_features = options["max_features_default"]
+        if preferred_language is None:
+            preferred_language = options["language_default"]
+        if preferred_language not in ("local", "ko", "en"):
+            preferred_language = options["language_default"]
+        radius_m = max(
+            int(options["radius_min_m"]),
+            min(int(options["radius_max_m"]), int(radius_m)),
+        )
+        max_features = max(
+            int(options["max_features_min"]),
+            min(int(options["max_features_max"]), int(max_features)),
+        )
+
+        service = MountainNameService(project=QgsProject.instance())
+        candidates = service.fetch_candidates_for_extent(layer.extent(), layer.crs())
+        if not candidates:
+            return 0
+
+        field_names = {field.name() for field in layer.fields()}
+        to_add = []
+        if "mt_name" not in field_names:
+            to_add.append(QgsField("mt_name", QVariant.String, "string", 96))
+        if "mt_dist_m" not in field_names:
+            to_add.append(QgsField("mt_dist_m", QVariant.Double, "double", 12, 1))
+        if "mt_source" not in field_names:
+            to_add.append(QgsField("mt_source", QVariant.String, "string", 24))
+        if "mt_lang" not in field_names:
+            to_add.append(QgsField("mt_lang", QVariant.String, "string", 10))
+        if to_add:
+            layer.dataProvider().addAttributes(to_add)
+            layer.updateFields()
+            field_names = {field.name() for field in layer.fields()}
+
+        features = [feature for feature in layer.getFeatures() if feature.hasGeometry()]
+        features.sort(key=lambda feature: self._feature_priority(feature, field_names))
+        selected = features[: max(1, int(max_features))]
+
+        updated = 0
+        with edit(layer):
+            for feature in selected:
+                point = self._feature_anchor_point(feature)
+                nearest = service.nearest_name(
+                    point=point,
+                    source_crs=layer.crs(),
+                    candidates=candidates,
+                    max_distance_m=radius_m,
+                    preferred_language=preferred_language,
+                )
+                if nearest is None:
+                    continue
+                feature["mt_name"] = nearest.get("name")
+                feature["mt_dist_m"] = nearest.get("distance_m")
+                feature["mt_source"] = nearest.get("source")
+                feature["mt_lang"] = nearest.get("name_language")
+                layer.updateFeature(feature)
+                updated += 1
+        return updated
+
+    @staticmethod
+    def _score_band_expr(field_name):
+        return (
+            f"CASE "
+            f"WHEN \"{field_name}\" IS NULL THEN 'n/a' "
+            f"WHEN \"{field_name}\" >= 0.80 THEN 'strong' "
+            f"WHEN \"{field_name}\" >= 0.65 THEN 'good' "
+            f"WHEN \"{field_name}\" >= 0.50 THEN 'moderate' "
+            f"ELSE 'weak' END"
+        )
+
+    def _set_field_aliases(self, layer, alias_map):
+        for field_name, alias in alias_map.items():
+            if not alias:
+                continue
+            index = layer.fields().indexFromName(field_name)
+            if index >= 0:
+                layer.setFieldAlias(index, alias)
+
+    @staticmethod
+    def _safe_float(value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _term_display_name(self, feature, text_lang):
+        fields = {field.name() for field in feature.fields()}
+        if text_lang == "en":
+            for key in ("term_name", "term_en", "term_id", "term_ko"):
+                if key in fields and feature[key] not in (None, ""):
+                    return str(feature[key])
+        for key in ("term_ko", "term_name", "term_id", "term_en"):
+            if key in fields and feature[key] not in (None, ""):
+                return str(feature[key])
+        return "term"
+
+    def _feature_mountain_text(self, feature, text_lang):
+        fields = {field.name() for field in feature.fields()}
+        if "mt_name" not in fields or feature["mt_name"] in (None, ""):
+            return ""
+        name = str(feature["mt_name"])
+        distance_text = ""
+        if "mt_dist_m" in fields:
+            distance = self._safe_float(feature["mt_dist_m"])
+            if distance is not None:
+                if text_lang == "en":
+                    distance_text = f", {distance:.0f}m"
+                else:
+                    distance_text = f", 약 {distance:.0f}m"
+        return f"{name}{distance_text}"
+
+    def _term_component_text(self, feature, text_lang):
+        name = self._term_display_name(feature, text_lang)
+        score = self._safe_float(feature["score"]) if "score" in feature.fields().names() else None
+        score_text = f"{score:.3f}" if score is not None else "n/a"
+        mountain = self._feature_mountain_text(feature, text_lang)
+        if mountain:
+            if text_lang == "en":
+                return f"{name}(score={score_text}, mountain={mountain})"
+            return f"{name}(점수={score_text}, 산명={mountain})"
+        if text_lang == "en":
+            return f"{name}(score={score_text})"
+        return f"{name}(점수={score_text})"
+
+    def _collect_term_cluster(self, layer, parent_id):
+        if parent_id in (None, ""):
+            return {}
+        field_names = {field.name() for field in layer.fields()}
+        if "term_id" not in field_names or "parent_id" not in field_names:
+            return {}
+
+        picked = {}
+        for item in layer.getFeatures():
+            if item["parent_id"] != parent_id:
+                continue
+            term_id = str(item["term_id"]).strip()
+            if not term_id:
+                continue
+            current = picked.get(term_id)
+            if current is None:
+                picked[term_id] = item
+                continue
+            current_score = self._safe_float(current["score"]) if "score" in field_names else None
+            next_score = self._safe_float(item["score"]) if "score" in field_names else None
+            if next_score is None:
+                continue
+            if current_score is None or next_score > current_score:
+                picked[term_id] = item
+        return picked
+
+    def _term_cluster_reason(self, layer, feature, text_lang):
+        field_names = {field.name() for field in layer.fields()}
+        if "term_id" not in field_names or "parent_id" not in field_names:
+            return ""
+        term_id = str(feature["term_id"]).strip() if feature["term_id"] is not None else ""
+        parent_id = feature["parent_id"]
+        cluster = self._collect_term_cluster(layer, parent_id)
+        if len(cluster) < 2:
+            return ""
+
+        def _group(term_ids):
+            parts = []
+            for key in term_ids:
+                node = cluster.get(key)
+                if node is not None:
+                    parts.append(self._term_component_text(node, text_lang))
+            return parts
+
+        core = _group(["hyeol", "myeongdang"])
+        rear = _group(["jusan", "dunoe", "jojongsan"])
+        left = _group(["naecheongnyong", "oecheongnyong"])
+        right = _group(["naebaekho", "oebaekho"])
+        front = _group(["ansan", "josan", "misa"])
+        water = _group(["naesugu", "oesugu", "ipsu"])
+        missing_count = max(0, 14 - len(cluster))
+
+        if text_lang == "en":
+            lines = [
+                "Morphology hierarchy (same parent cluster)",
+                f"- core: {', '.join(core) if core else 'insufficient'}",
+                f"- rear spine: {', '.join(rear) if rear else 'insufficient'}",
+                f"- left support (cheongnyong): {', '.join(left) if left else 'insufficient'}",
+                f"- right support (baekho): {', '.join(right) if right else 'insufficient'}",
+                f"- frontal guard: {', '.join(front) if front else 'insufficient'}",
+                f"- water gates/flow: {', '.join(water) if water else 'insufficient'}",
+                f"- missing components: {missing_count}",
+            ]
+            if term_id == "hyeol":
+                lines.append(
+                    "- hyeol is explained from the full hierarchy above; "
+                    "support terms can be sparse if local topography is weak."
+                )
+            return "\n".join(lines)
+
+        lines = [
+            "형국 계층 요약(같은 parent 묶음)",
+            f"- 핵심(혈/명당): {', '.join(core) if core else '정보 부족'}",
+            f"- 배후 축선(주산/둔뇌/조종산): {', '.join(rear) if rear else '정보 부족'}",
+            f"- 좌청룡 계열: {', '.join(left) if left else '정보 부족'}",
+            f"- 우백호 계열: {', '.join(right) if right else '정보 부족'}",
+            f"- 전면 방어(안산/조산/미사): {', '.join(front) if front else '정보 부족'}",
+            f"- 수구/입수 계열: {', '.join(water) if water else '정보 부족'}",
+            f"- 미검출 항목 수: {missing_count}",
+        ]
+        if term_id == "hyeol":
+            lines.append(
+                "- 혈은 상위/하위 형국을 종합해서 판정하므로, "
+                "내청룡·외백호 같은 단일 항목보다 설명이 길게 제공됩니다."
+            )
+        return "\n".join(lines)
+
+    def _warn_low_evidence_context(self, culture_key, period_key, hemisphere):
+        neutral_key = neutral_context_key()
+        if culture_key == neutral_key or period_key == neutral_key:
+            return
+
+        warning_key = f"{culture_key}|{period_key}|{hemisphere}"
+        if warning_key in self._context_warning_cache:
+            return
+
+        records = context_evidence_records(culture_key, period_key, hemisphere)
+        if not records:
+            return
+
+        counts = {"A": 0, "B": 0, "C": 0, "U": 0}
+        for item in records:
+            level = str(item.get("evidence_level", "U")).upper()
+            if level not in counts:
+                level = "U"
+            counts[level] += 1
+
+        total = max(1, sum(counts.values()))
+        low_count = counts["C"] + counts["U"]
+        low_ratio = low_count / total
+        if low_count <= 0 or low_ratio < 0.25:
+            self._context_warning_cache.add(warning_key)
+            return
+
+        text_lang = self._label_language()
+        warning = ui_text(
+            "context_quality_warning",
+            text_lang,
+            default=(
+                "Context evidence includes heuristic priors (C/U): {low}/{total}. "
+                "Treat this run as exploratory and validate with local calibration."
+            ),
+        ).format(low=low_count, total=total)
+        self.iface.messageBar().pushWarning(tr("plugin_title"), warning)
+        self._context_warning_cache.add(warning_key)
 
     def _insert_output_layers(self, layers_top_to_bottom, label_lang="ko"):
         project = QgsProject.instance()
@@ -366,12 +817,121 @@ class FengShuiGisPlugin:
         if "reason_ko" not in field_names and "fs_reason" not in field_names:
             return
 
-        reason_index = layer.fields().indexFromName("reason_ko")
-        if reason_index >= 0:
-            layer.setFieldAlias(reason_index, "설명")
-        fs_reason_index = layer.fields().indexFromName("fs_reason")
-        if fs_reason_index >= 0:
-            layer.setFieldAlias(fs_reason_index, "입지근거")
+        text_lang = label_lang if label_lang in ("ko", "en") else "ko"
+        reason_alias = ui_text("reason_alias", text_lang, default="Reason")
+        fs_reason_alias = ui_text("fs_reason_alias", text_lang, default="Site Reason")
+        reason_label = ui_text("reason_label", text_lang, default="Reason")
+        reason_empty = ui_text("reason_empty", text_lang, default="No description")
+        fs_score_title = ui_text("fs_score_title", text_lang, default="Site Score")
+        link_arrow = ui_text("link_arrow", text_lang, default="->")
+        maptip_score = ui_text("maptip_score_label", text_lang, default="score")
+        maptip_len_m = ui_text("maptip_len_m_label", text_lang, default="len(m)")
+        maptip_azimuth = ui_text("maptip_azimuth_label", text_lang, default="azimuth")
+        maptip_rank = ui_text("maptip_rank_label", text_lang, default="rank")
+        maptip_fit = ui_text("maptip_fit_label", text_lang, default="fit")
+        maptip_delta = ui_text("maptip_delta_label", text_lang, default="delta")
+        maptip_target = ui_text("maptip_target_label", text_lang, default="target")
+        maptip_radius_m = ui_text("maptip_radius_m_label", text_lang, default="radius(m)")
+        maptip_strength = ui_text("maptip_strength_label", text_lang, default="strength")
+        maptip_len = ui_text("maptip_len_label", text_lang, default="len")
+        maptip_order = ui_text("maptip_order_label", text_lang, default="order")
+        maptip_flow_acc = ui_text("maptip_flow_acc_label", text_lang, default="flow_acc")
+        maptip_mountain = ui_text("maptip_mountain_label", text_lang, default="mountain")
+        maptip_mountain_dist = ui_text("maptip_mountain_dist_label", text_lang, default="mountain_dist(m)")
+        maptip_mountain_lang = ui_text("maptip_mountain_lang_label", text_lang, default="mountain_lang")
+        alias_mountain_name = ui_text("mountain_alias_name", text_lang, default="Nearby mountain")
+        alias_mountain_dist = ui_text("mountain_alias_dist", text_lang, default="Mountain distance (m)")
+        alias_mountain_source = ui_text("mountain_alias_source", text_lang, default="Mountain source")
+        alias_mountain_lang = ui_text("mountain_alias_lang", text_lang, default="Mountain name language")
+        link_alias_score = ui_text("link_alias_score", text_lang, default="Link score (0-1)")
+        link_alias_len_m = ui_text("link_alias_len_m", text_lang, default="Link length (m)")
+        link_alias_azimuth = ui_text("link_alias_azimuth", text_lang, default="Direction (deg)")
+        link_alias_rank = ui_text("link_alias_rank", text_lang, default="Candidate rank")
+        term_alias_score = ui_text("term_alias_score", text_lang, default="Term score (0-1)")
+        term_alias_fit = ui_text("term_alias_fit", text_lang, default="Shape fit (0-1)")
+        term_alias_delta = ui_text("term_alias_delta", text_lang, default="Relative elevation delta")
+        term_alias_target = ui_text("term_alias_target", text_lang, default="Expected relative delta")
+        term_alias_radius = ui_text("term_alias_radius", text_lang, default="Search radius (m)")
+        term_alias_relief = ui_text("term_alias_relief", text_lang, default="Local relief (m)")
+        term_alias_rank = ui_text("term_alias_rank", text_lang, default="Candidate rank")
+        ridge_alias_strength = ui_text("ridge_alias_strength", text_lang, default="Ridge strength (0-1)")
+        ridge_alias_score = ui_text("ridge_alias_score", text_lang, default="Ridge rank score (0-1)")
+        ridge_alias_len = ui_text("ridge_alias_len", text_lang, default="Ridge length (map units)")
+        hydro_alias_order = ui_text("hydro_alias_order", text_lang, default="Stream order")
+        hydro_alias_flow_acc = ui_text("hydro_alias_flow_acc", text_lang, default="Flow accumulation proxy")
+        hydro_alias_len = ui_text("hydro_alias_len", text_lang, default="Stream length (map units)")
+        site_alias_score = ui_text("site_alias_score", text_lang, default="Site score (0-1)")
+        site_alias_conf = ui_text("site_alias_conf", text_lang, default="Confidence (0-1)")
+        site_alias_slope = ui_text("site_alias_slope", text_lang, default="Slope fit (0-1)")
+        site_alias_aspect = ui_text("site_alias_aspect", text_lang, default="Aspect fit (0-1)")
+        site_alias_form = ui_text("site_alias_form", text_lang, default="Form fit (0-1)")
+        site_alias_long = ui_text("site_alias_long", text_lang, default="Fore-aft fit (0-1)")
+        site_alias_water = ui_text("site_alias_water", text_lang, default="Water fit (0-1)")
+        site_alias_dem_water = ui_text("site_alias_dem_water", text_lang, default="DEM wetness fit (0-1)")
+        site_alias_tpi = ui_text("site_alias_tpi", text_lang, default="Topographic position index")
+        site_alias_conv = ui_text("site_alias_conv", text_lang, default="Convergence (0-1)")
+        maptip_confidence = ui_text("maptip_confidence_label", text_lang, default="confidence")
+        maptip_components = ui_text("maptip_components_label", text_lang, default="Component fits")
+        maptip_terrain = ui_text("maptip_terrain_label", text_lang, default="Terrain metrics")
+        maptip_dem_water = ui_text("maptip_dem_water_label", text_lang, default="dem_water")
+        maptip_distance_water = ui_text(
+            "maptip_distance_water_label",
+            text_lang,
+            default="distance_to_water(m)",
+        )
+        maptip_link_note = ui_text(
+            "maptip_link_note",
+            text_lang,
+            default="score=overall structural fit (0-1). Higher is stronger.",
+        )
+        maptip_term_note = ui_text(
+            "maptip_term_note",
+            text_lang,
+            default="fit=how close delta is to target. score=overall term suitability.",
+        )
+        maptip_ridge_note = ui_text(
+            "maptip_ridge_note",
+            text_lang,
+            default="strength reflects local prominence and connectivity.",
+        )
+        maptip_hydro_note = ui_text(
+            "maptip_hydro_note",
+            text_lang,
+            default="order=hierarchy in drainage graph, flow_acc=upstream support.",
+        )
+        maptip_site_note = ui_text(
+            "maptip_site_note",
+            text_lang,
+            default=(
+                "0-1 fits: higher is better. TPI near 0 is flatter; "
+                "negative is concave; positive is convex."
+            ),
+        )
+        reason_empty_lit = reason_empty.replace("'", "''")
+        score_band_expr = self._score_band_expr("score")
+        fs_score_band_expr = self._score_band_expr("fs_score")
+        fs_conf_band_expr = self._score_band_expr("fs_conf")
+        has_mountain_name = "mt_name" in field_names
+        mountain_tip = ""
+        if has_mountain_name:
+            mountain_tip = (
+                f"<p><b>{maptip_mountain}</b>: [% coalesce(\"mt_name\", 'n/a') %], "
+                f"<b>{maptip_mountain_dist}</b>: "
+                "[% CASE WHEN \"mt_dist_m\" IS NULL THEN 'n/a' ELSE to_string(round(\"mt_dist_m\", 1)) END %], "
+                f"<b>{maptip_mountain_lang}</b>: [% coalesce(\"mt_lang\", 'n/a') %]</p>"
+            )
+
+        self._set_field_aliases(
+            layer,
+            {
+                "reason_ko": reason_alias,
+                "fs_reason": fs_reason_alias,
+                "mt_name": alias_mountain_name,
+                "mt_dist_m": alias_mountain_dist,
+                "mt_source": alias_mountain_source,
+                "mt_lang": alias_mountain_lang,
+            },
+        )
 
         if "src_id" in field_names and "dst_id" in field_names:
             term_field = "term_ko"
@@ -384,13 +944,26 @@ class FengShuiGisPlugin:
                     src_field = "src_en"
                 if "dst_en" in field_names:
                     dst_field = "dst_en"
+            self._set_field_aliases(
+                layer,
+                {
+                    "score": link_alias_score,
+                    "len_m": link_alias_len_m,
+                    "azimuth": link_alias_azimuth,
+                    "rank": link_alias_rank,
+                },
+            )
             layer.setDisplayExpression(
-                f"\"{term_field}\" || ' ' || \"{src_field}\" || '→' || \"{dst_field}\""
+                f"\"{term_field}\" || ' ' || \"{src_field}\" || ' {link_arrow} ' || \"{dst_field}\""
             )
             layer.setMapTipTemplate(
-                f"<h3>[% \"{term_field}\" %] [% \"{src_field}\" %]→[% \"{dst_field}\" %]</h3>"
-                "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
-                "<p><b>score</b>: [% \"score\" %], <b>len(m)</b>: [% \"len_m\" %], <b>azimuth</b>: [% \"azimuth\" %]</p>"
+                f"<h3>[% \"{term_field}\" %] [% \"{src_field}\" %] {link_arrow} [% \"{dst_field}\" %]</h3>"
+                f"<p><b>{reason_label}</b>: [% coalesce(\"reason_ko\",'{reason_empty_lit}') %]</p>"
+                f"<p><b>{maptip_score}</b>: [% round(\"score\", 3) %] ([% {score_band_expr} %]), "
+                f"<b>{maptip_len_m}</b>: [% round(\"len_m\", 1) %], "
+                f"<b>{maptip_azimuth}</b>: [% round(\"azimuth\", 1) %]</p>"
+                f"{mountain_tip}"
+                f"<p><small>{maptip_link_note}</small></p>"
             )
             self._bind_reason_on_selection(layer, "reason_ko")
             return
@@ -399,19 +972,39 @@ class FengShuiGisPlugin:
             term_field = "term_ko"
             if label_lang == "en" and "term_name" in field_names:
                 term_field = "term_name"
+            self._set_field_aliases(
+                layer,
+                {
+                    "score": term_alias_score,
+                    "fit_sc": term_alias_fit,
+                    "delta_rel": term_alias_delta,
+                    "target_rel": term_alias_target,
+                    "radius_m": term_alias_radius,
+                    "relief_m": term_alias_relief,
+                    "rank": term_alias_rank,
+                },
+            )
             layer.setDisplayExpression(f"\"{term_field}\"")
             if "fit_sc" in field_names:
                 layer.setMapTipTemplate(
                     f"<h3>[% \"{term_field}\" %]</h3>"
-                    "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
-                    "<p><b>score</b>: [% \"score\" %], <b>rank</b>: [% \"rank\" %], <b>fit</b>: [% \"fit_sc\" %]</p>"
-                    "<p><b>delta</b>: [% \"delta_rel\" %], <b>target</b>: [% \"target_rel\" %], <b>radius(m)</b>: [% \"radius_m\" %]</p>"
+                    f"<p><b>{reason_label}</b>: [% coalesce(\"reason_ko\",'{reason_empty_lit}') %]</p>"
+                    f"<p><b>{maptip_score}</b>: [% round(\"score\", 3) %] ([% {score_band_expr} %]), "
+                    f"<b>{maptip_rank}</b>: [% \"rank\" %], "
+                    f"<b>{maptip_fit}</b>: [% round(\"fit_sc\", 3) %]</p>"
+                    f"<p><b>{maptip_delta}</b>: [% round(\"delta_rel\", 4) %], "
+                    f"<b>{maptip_target}</b>: [% round(\"target_rel\", 4) %], "
+                    f"<b>{maptip_radius_m}</b>: [% round(\"radius_m\", 1) %]</p>"
+                    f"{mountain_tip}"
+                    f"<p><small>{maptip_term_note}</small></p>"
                 )
             else:
                 layer.setMapTipTemplate(
                     f"<h3>[% \"{term_field}\" %]</h3>"
-                    "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
-                    "<p><b>score</b>: [% \"score\" %], <b>rank</b>: [% \"rank\" %]</p>"
+                    f"<p><b>{reason_label}</b>: [% coalesce(\"reason_ko\",'{reason_empty_lit}') %]</p>"
+                    f"<p><b>{maptip_score}</b>: [% round(\"score\", 3) %] ([% {score_band_expr} %]), "
+                    f"<b>{maptip_rank}</b>: [% \"rank\" %]</p>"
+                    f"{mountain_tip}"
                 )
             self._bind_reason_on_selection(layer, "reason_ko")
             return
@@ -420,38 +1013,98 @@ class FengShuiGisPlugin:
             ridge_label_field = "ridge_ko" if "ridge_ko" in field_names else "ridge_class"
             if label_lang == "en" and "ridge_en" in field_names:
                 ridge_label_field = "ridge_en"
+            self._set_field_aliases(
+                layer,
+                {
+                    "strength": ridge_alias_strength,
+                    "ridge_score": ridge_alias_score,
+                    "len": ridge_alias_len,
+                },
+            )
             layer.setDisplayExpression(
                 f"\"{ridge_label_field}\" || ' #' || \"ridge_rank\""
             )
             layer.setMapTipTemplate(
                 f"<h3>[% \"{ridge_label_field}\" %] / #% \"ridge_rank\"</h3>"
-                "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
-                "<p><b>strength</b>: [% \"strength\" %], <b>len</b>: [% \"len\" %]</p>"
+                f"<p><b>{reason_label}</b>: [% coalesce(\"reason_ko\",'{reason_empty_lit}') %]</p>"
+                f"<p><b>{maptip_strength}</b>: [% round(\"strength\", 3) %], "
+                f"<b>ridge_score</b>: [% round(\"ridge_score\", 3) %], "
+                f"<b>{maptip_len}</b>: [% round(\"len\", 1) %]</p>"
+                f"{mountain_tip}"
+                f"<p><small>{maptip_ridge_note}</small></p>"
             )
             self._bind_reason_on_selection(layer, "reason_ko")
             return
 
         if "stream_class" in field_names:
+            self._set_field_aliases(
+                layer,
+                {
+                    "order": hydro_alias_order,
+                    "flow_acc": hydro_alias_flow_acc,
+                    "len": hydro_alias_len,
+                },
+            )
             layer.setDisplayExpression("\"stream_class\" || ' #' || \"stream_id\"")
             layer.setMapTipTemplate(
                 "<h3>[% \"stream_class\" %] / #% \"stream_id\"</h3>"
-                "<p><b>이유</b>: [% coalesce(\"reason_ko\",'설명 없음') %]</p>"
-                "<p><b>order</b>: [% \"order\" %], <b>flow_acc</b>: [% \"flow_acc\" %]</p>"
+                f"<p><b>{reason_label}</b>: [% coalesce(\"reason_ko\",'{reason_empty_lit}') %]</p>"
+                f"<p><b>{maptip_order}</b>: [% \"order\" %], "
+                f"<b>{maptip_flow_acc}</b>: [% round(\"flow_acc\", 2) %], "
+                f"<b>{maptip_len}</b>: [% round(\"len\", 1) %]</p>"
+                f"{mountain_tip}"
+                f"<p><small>{maptip_hydro_note}</small></p>"
             )
             self._bind_reason_on_selection(layer, "reason_ko")
             return
 
         if "fs_reason" in field_names:
-            layer.setDisplayExpression("'fs_score=' || to_string(\"fs_score\")")
+            self._set_field_aliases(
+                layer,
+                {
+                    "fs_score": site_alias_score,
+                    "fs_conf": site_alias_conf,
+                    "fs_slope": site_alias_slope,
+                    "fs_aspect": site_alias_aspect,
+                    "fs_form": site_alias_form,
+                    "fs_long": site_alias_long,
+                    "fs_water": site_alias_water,
+                    "fs_demwtr": site_alias_dem_water,
+                    "fs_tpi": site_alias_tpi,
+                    "fs_conv": site_alias_conv,
+                },
+            )
+            layer.setDisplayExpression("'fs_score=' || to_string(round(\"fs_score\", 3))")
             layer.setMapTipTemplate(
-                "<h3>입지 점수</h3>"
-                "<p><b>이유</b>: [% coalesce(\"fs_reason\",'설명 없음') %]</p>"
+                f"<h3>{fs_score_title}</h3>"
+                f"<p><b>{maptip_score}</b>: [% round(\"fs_score\", 3) %] ([% {fs_score_band_expr} %]), "
+                f"<b>{maptip_confidence}</b>: [% round(\"fs_conf\", 3) %] ([% {fs_conf_band_expr} %])</p>"
+                f"<p><b>{maptip_components}</b>: "
+                "slope=[% round(\"fs_slope\", 3) %], "
+                "aspect=[% round(\"fs_aspect\", 3) %], "
+                "form=[% round(\"fs_form\", 3) %], "
+                "long=[% round(\"fs_long\", 3) %], "
+                "water=[% round(\"fs_water\", 3) %]</p>"
+                f"<p><b>{maptip_terrain}</b>: "
+                "TPI=[% round(\"fs_tpi\", 4) %], "
+                "convergence=[% round(\"fs_conv\", 3) %], "
+                f"{maptip_dem_water}=[% round(\"fs_demwtr\", 3) %], "
+                f"{maptip_distance_water}=[% round(\"fs_water_m\", 1) %]</p>"
+                f"{mountain_tip}"
+                f"<p><small>{maptip_site_note}</small></p>"
+                f"<p><b>{reason_label}</b>: [% coalesce(\"fs_reason\",'{reason_empty_lit}') %]</p>"
             )
             self._bind_reason_on_selection(layer, "fs_reason")
 
     def _bind_reason_on_selection(self, layer, reason_field):
         if layer is None or layer.id() in self._selection_hooks:
             return
+
+        text_lang = self._label_language()
+        reason_empty = ui_text("reason_empty", text_lang, default="No description")
+        reason_title = ui_text("reason_alias", text_lang, default="Reason")
+        mountain_prefix = ui_text("mountain_prefix_label", text_lang, default="Nearby mountain")
+        mountain_lang_label = ui_text("mountain_lang_inline_label", text_lang, default="lang")
 
         def _on_selection(selected, _deselected, _clear):
             if not selected:
@@ -462,11 +1115,35 @@ class FengShuiGisPlugin:
                 return
 
             value = feature[reason_field] if reason_field in feature.fields().names() else None
-            message = str(value).strip() if value not in (None, "") else "설명 없음"
-            if len(message) > 900:
-                message = f"{message[:897]}..."
-            self._show_reason_popup(f"{layer.name()} 설명", message)
-            self.iface.messageBar().pushInfo(f"{layer.name()} 설명", message)
+            message = str(value).strip() if value not in (None, "") else reason_empty
+            if "mt_name" in feature.fields().names():
+                mountain_name = feature["mt_name"]
+                if mountain_name not in (None, ""):
+                    dist_text = ""
+                    if "mt_dist_m" in feature.fields().names():
+                        try:
+                            dist_value = float(feature["mt_dist_m"])
+                            dist_text = f" ({dist_value:.1f}m)"
+                        except (TypeError, ValueError):
+                            dist_text = ""
+                    source_text = ""
+                    if "mt_source" in feature.fields().names() and feature["mt_source"] not in (None, ""):
+                        source_text = f", {feature['mt_source']}"
+                    lang_text = ""
+                    if "mt_lang" in feature.fields().names() and feature["mt_lang"] not in (None, ""):
+                        lang_text = f", {mountain_lang_label}={feature['mt_lang']}"
+                    message = (
+                        f"[{mountain_prefix}] {mountain_name}{dist_text}{lang_text}{source_text}\n"
+                        f"{message}"
+                    )
+            cluster_reason = self._term_cluster_reason(layer, feature, text_lang)
+            if cluster_reason:
+                message = f"{message}\n\n{cluster_reason}"
+            if len(message) > 1800:
+                message = f"{message[:1797]}..."
+            title = f"{layer.name()} {reason_title}"
+            self._show_reason_popup(title, message)
+            self.iface.messageBar().pushInfo(title, message)
 
         layer.selectionChanged.connect(_on_selection)
         self._selection_hooks[layer.id()] = _on_selection
@@ -474,7 +1151,9 @@ class FengShuiGisPlugin:
     def _show_reason_popup(self, title, message):
         if self._reason_dialog is None:
             self._reason_dialog = QDialog(self.iface.mainWindow())
-            self._reason_dialog.setWindowTitle("피처 근거")
+            self._reason_dialog.setWindowTitle(
+                ui_text("feature_reason_title", self._label_language(), default="Feature Reason")
+            )
             self._reason_dialog.resize(640, 420)
             layout = QVBoxLayout(self._reason_dialog)
             self._reason_browser = QTextBrowser(self._reason_dialog)
@@ -508,22 +1187,60 @@ class FengShuiGisPlugin:
         with open(json_path, "w", encoding="utf-8") as handle:
             json.dump(report, handle, ensure_ascii=False, indent=2)
 
+        text_lang = self._label_language()
+        md_title = ui_text(
+            "calibration_md_title_template",
+            text_lang,
+            default="Feng Shui Calibration Report ({stamp})",
+        ).format(stamp=stamp)
+        md_positive = ui_text("calibration_md_positive_label", text_lang, default="Positive samples")
+        md_negative = ui_text("calibration_md_negative_label", text_lang, default="Negative samples")
+        md_valid = ui_text("calibration_md_valid_label", text_lang, default="Valid scored samples")
+        md_roc_auc = ui_text("calibration_md_roc_auc_label", text_lang, default="ROC AUC")
+        md_pr_auc = ui_text("calibration_md_pr_auc_label", text_lang, default="PR AUC")
+        md_best_f1 = ui_text("calibration_md_best_f1_label", text_lang, default="Best F1")
+        md_best_youden = ui_text(
+            "calibration_md_best_youden_label",
+            text_lang,
+            default="Best Youden J",
+        )
+        md_threshold = ui_text("calibration_md_threshold_label", text_lang, default="threshold")
+        md_context_title = ui_text("calibration_md_context_title", text_lang, default="Context")
+        md_culture = ui_text("calibration_md_context_culture_label", text_lang, default="culture")
+        md_period = ui_text("calibration_md_context_period_label", text_lang, default="period")
+        md_profile = ui_text("calibration_md_context_profile_label", text_lang, default="profile")
+        md_hemisphere = ui_text(
+            "calibration_md_context_hemisphere_label",
+            text_lang,
+            default="hemisphere",
+        )
+        md_negative_ratio = ui_text(
+            "calibration_md_context_negative_ratio_label",
+            text_lang,
+            default="negative_ratio",
+        )
+        md_random_seed = ui_text(
+            "calibration_md_context_random_seed_label",
+            text_lang,
+            default="random_seed",
+        )
+
         markdown = (
-            f"# Feng Shui Calibration Report ({stamp})\n\n"
-            f"- Positive samples: {report.get('positive_count')}\n"
-            f"- Negative samples: {report.get('negative_count')}\n"
-            f"- Valid scored samples: {report.get('valid_count')}\n"
-            f"- ROC AUC: {report.get('roc_auc', 0):.6f}\n"
-            f"- PR AUC: {report.get('pr_auc', 0):.6f}\n"
-            f"- Best F1: {report.get('best_f1', 0):.6f} @ threshold {report.get('best_f1_threshold', 0):.6f}\n"
-            f"- Best Youden J: {report.get('best_youden_j', 0):.6f} @ threshold {report.get('best_youden_threshold', 0):.6f}\n\n"
-            "## Context\n\n"
-            f"- culture: {report.get('culture_key')}\n"
-            f"- period: {report.get('period_key')}\n"
-            f"- profile: {report.get('profile_key')}\n"
-            f"- hemisphere: {report.get('hemisphere')}\n"
-            f"- negative_ratio: {report.get('negative_ratio')}\n"
-            f"- random_seed: {report.get('random_seed')}\n"
+            f"# {md_title}\n\n"
+            f"- {md_positive}: {report.get('positive_count')}\n"
+            f"- {md_negative}: {report.get('negative_count')}\n"
+            f"- {md_valid}: {report.get('valid_count')}\n"
+            f"- {md_roc_auc}: {report.get('roc_auc', 0):.6f}\n"
+            f"- {md_pr_auc}: {report.get('pr_auc', 0):.6f}\n"
+            f"- {md_best_f1}: {report.get('best_f1', 0):.6f} @ {md_threshold} {report.get('best_f1_threshold', 0):.6f}\n"
+            f"- {md_best_youden}: {report.get('best_youden_j', 0):.6f} @ {md_threshold} {report.get('best_youden_threshold', 0):.6f}\n\n"
+            f"## {md_context_title}\n\n"
+            f"- {md_culture}: {report.get('culture_key')}\n"
+            f"- {md_period}: {report.get('period_key')}\n"
+            f"- {md_profile}: {report.get('profile_key')}\n"
+            f"- {md_hemisphere}: {report.get('hemisphere')}\n"
+            f"- {md_negative_ratio}: {report.get('negative_ratio')}\n"
+            f"- {md_random_seed}: {report.get('random_seed')}\n"
         )
         with open(md_path, "w", encoding="utf-8") as handle:
             handle.write(markdown)
@@ -531,9 +1248,16 @@ class FengShuiGisPlugin:
         return json_path, md_path
 
     def _show_report_popup(self, report, json_path, md_path):
+        text_lang = self._label_language()
         if self._report_dialog is None:
             self._report_dialog = QDialog(self.iface.mainWindow())
-            self._report_dialog.setWindowTitle("캘리브레이션 리포트")
+            self._report_dialog.setWindowTitle(
+                ui_text(
+                    "calibration_report_title",
+                    text_lang,
+                    default="Calibration Report",
+                )
+            )
             self._report_dialog.resize(760, 520)
             layout = QVBoxLayout(self._report_dialog)
             self._report_browser = QTextBrowser(self._report_dialog)
@@ -541,20 +1265,44 @@ class FengShuiGisPlugin:
             self._report_browser.setReadOnly(True)
             layout.addWidget(self._report_browser)
 
+        roc_auc_label = ui_text("calibration_html_roc_auc_label", text_lang, default="ROC AUC")
+        pr_auc_label = ui_text("calibration_html_pr_auc_label", text_lang, default="PR AUC")
+        positive_label = ui_text("calibration_html_positive_label", text_lang, default="Positive")
+        negative_label = ui_text("calibration_html_negative_label", text_lang, default="Negative")
+        valid_label = ui_text("calibration_html_valid_label", text_lang, default="Valid")
+        best_f1_label = ui_text("calibration_html_best_f1_label", text_lang, default="Best F1")
+        best_youden_label = ui_text(
+            "calibration_html_best_youden_label",
+            text_lang,
+            default="Best Youden J",
+        )
+        threshold_label = ui_text(
+            "calibration_html_threshold_label",
+            text_lang,
+            default="threshold",
+        )
+        json_label = ui_text("calibration_html_json_label", text_lang, default="JSON")
+        markdown_label = ui_text(
+            "calibration_html_markdown_label",
+            text_lang,
+            default="Markdown",
+        )
+
         html = (
-            "<h3>한국 SHP 캘리브레이션 결과</h3>"
-            f"<p><b>ROC AUC</b>: {report.get('roc_auc', 0):.4f}<br/>"
-            f"<b>PR AUC</b>: {report.get('pr_auc', 0):.4f}<br/>"
-            f"<b>Positive</b>: {report.get('positive_count')} / "
-            f"<b>Negative</b>: {report.get('negative_count')} / "
-            f"<b>Valid</b>: {report.get('valid_count')}</p>"
-            f"<p><b>Best F1</b>: {report.get('best_f1', 0):.4f} "
-            f"(threshold={report.get('best_f1_threshold', 0):.4f})<br/>"
-            f"<b>Best Youden J</b>: {report.get('best_youden_j', 0):.4f} "
-            f"(threshold={report.get('best_youden_threshold', 0):.4f})</p>"
-            f"<p><b>JSON</b>: {json_path}<br/><b>Markdown</b>: {md_path}</p>"
+            f"<h3>{ui_text('calibration_report_heading', text_lang, default='Calibration Result')}</h3>"
+            f"<p><b>{roc_auc_label}</b>: {report.get('roc_auc', 0):.4f}<br/>"
+            f"<b>{pr_auc_label}</b>: {report.get('pr_auc', 0):.4f}<br/>"
+            f"<b>{positive_label}</b>: {report.get('positive_count')} / "
+            f"<b>{negative_label}</b>: {report.get('negative_count')} / "
+            f"<b>{valid_label}</b>: {report.get('valid_count')}</p>"
+            f"<p><b>{best_f1_label}</b>: {report.get('best_f1', 0):.4f} "
+            f"({threshold_label}={report.get('best_f1_threshold', 0):.4f})<br/>"
+            f"<b>{best_youden_label}</b>: {report.get('best_youden_j', 0):.4f} "
+            f"({threshold_label}={report.get('best_youden_threshold', 0):.4f})</p>"
+            f"<p><b>{json_label}</b>: {json_path}<br/><b>{markdown_label}</b>: {md_path}</p>"
         )
         self._report_browser.setHtml(html)
         self._report_dialog.show()
         self._report_dialog.raise_()
         self._report_dialog.activateWindow()
+

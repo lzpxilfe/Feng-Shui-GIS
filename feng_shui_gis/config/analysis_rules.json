@@ -19,5 +19,196 @@
     "tpi_max": 0.35,
     "tpi_target": -0.08,
     "tpi_sigma": 0.3
+  },
+  "adaptive_spacing": {
+    "base_step_factor": 10.0,
+    "min_span_divisor": 180.0,
+    "fallback_min_spacing": 1.0,
+    "max_points": 12000
+  },
+  "hyeol_selection": {
+    "low_keep_count_threshold": 3,
+    "suppress_multiplier_high": 10.5,
+    "suppress_multiplier_low": 9.0,
+    "min_score_floor": 0.42,
+    "context_threshold_multiplier": 0.72,
+    "recommended_count_thresholds": [
+      { "min_nodes": 22000, "count": 2 },
+      { "min_nodes": 12000, "count": 3 },
+      { "min_nodes": 5000, "count": 4 }
+    ],
+    "default_recommended_count": 5
+  },
+  "term_links": {
+    "min_link_score": 0.44,
+    "distinct_min_distance": 0.2,
+    "smooth_passes": 2,
+    "path_plan": [
+      {
+        "node_ids": ["jusan", "dunoe", "jojongsan"],
+        "style_term": "jusan",
+        "link_type": "backbone",
+        "label": "Backbone"
+      },
+      {
+        "node_ids": ["oecheongnyong", "josan", "oebaekho"],
+        "style_term": "oecheongnyong",
+        "link_type": "outer_wrap",
+        "label": "Outer Wrap"
+      },
+      {
+        "node_ids": ["naecheongnyong", "ansan", "naebaekho"],
+        "style_term": "myeongdang",
+        "link_type": "inner_wrap",
+        "label": "Inner Wrap"
+      },
+      {
+        "node_ids": ["jusan", "myeongdang", "ansan"],
+        "style_term": "myeongdang",
+        "link_type": "core_axis",
+        "label": "Core Axis"
+      },
+      {
+        "node_ids": ["naesugu", "ansan", "oesugu"],
+        "style_term": "naesugu",
+        "link_type": "front_arc",
+        "label": "Front Arc"
+      },
+      {
+        "node_ids": ["naesugu", "oesugu", "ipsu"],
+        "style_term": "naesugu",
+        "link_type": "water_flow",
+        "label": "Water Flow"
+      }
+    ]
+  },
+  "ridge_network": {
+    "spacing_step_factor": 5.8,
+    "spacing_coarse_factor": 0.92,
+    "spacing_fallback": 1.0,
+    "spacing_max_points": 12000,
+    "prominence_min_floor": 0.6,
+    "prominence_min_ratio": 0.01,
+    "neighbor_delta_floor": 0.05,
+    "neighbor_delta_ratio": 0.0022,
+    "required_neighbor_ratio": 0.55,
+    "soft_required_neighbor_ratio": 0.45,
+    "soft_prominence_ratio": 0.78,
+    "max_segment_distance_factor": 2.9,
+    "max_segment_drop_floor": 2.0,
+    "max_segment_drop_ratio": 0.14,
+    "min_path_spacing_factor": 2.4,
+    "min_path_diag_ratio": 0.008,
+    "max_node_degree": 3,
+    "orphan_extra_degree": 4,
+    "orphan_strength_min": 0.64,
+    "segment_offsets": [
+      [1, 0],
+      [0, 1],
+      [1, 1],
+      [1, -1],
+      [2, 0],
+      [2, 1],
+      [1, 2],
+      [0, 2]
+    ]
+  },
+  "ridge_bridge": {
+    "max_endpoint_count": 1400,
+    "max_bridge_pairs": 12,
+    "max_distance_factor": 2.0,
+    "elev_tolerance_floor": 1.5,
+    "elev_tolerance_ratio": 0.1,
+    "distance_weight": 0.5,
+    "elev_weight": 0.22,
+    "strength_weight": 0.1,
+    "direction_weight": 0.18,
+    "max_direction_penalty": 0.65
+  },
+  "ridge_path": {
+    "turn_weight": 0.66,
+    "length_weight": 0.22,
+    "strength_weight": 0.12
+  },
+  "ridge_rendering": {
+    "densify_step_factor": 0.5,
+    "densify_min_step": 1.0,
+    "smooth_passes": 4,
+    "distinct_min_distance_factor": 0.05
+  },
+  "ridge_ranking": {
+    "score_length_weight": 0.62,
+    "score_strength_weight": 0.38,
+    "default_keep_ratio": 0.52,
+    "min_keep_count": 8,
+    "major_percentile_threshold": 0.3,
+    "keep_ratio_rules": [
+      { "min_candidates": 220, "ratio": 0.28 },
+      { "min_candidates": 120, "ratio": 0.34 },
+      { "min_candidates": 70, "ratio": 0.42 }
+    ]
+  },
+  "hydro_network": {
+    "spacing_step_factor": 2.8,
+    "spacing_coarse_factor": 0.52,
+    "spacing_fallback": 1.0,
+    "spacing_max_points": 26000,
+    "min_drop_floor": 0.15,
+    "min_drop_ratio": 0.0012,
+    "acc_threshold_floor": 8.0,
+    "secondary_keep_order_floor": 2,
+    "secondary_keep_order_delta": 1,
+    "secondary_keep_acc_ratio": 0.78
+  },
+  "hydro_rendering": {
+    "densify_step_factor": 0.72,
+    "densify_min_step": 1.0,
+    "smooth_passes": 2,
+    "distinct_min_distance_factor": 0.03
+  },
+  "hydro_keep_quantile_rules": [
+    { "min_nodes": 20000, "quantile": 0.95 },
+    { "min_nodes": 12000, "quantile": 0.93 },
+    { "min_nodes": 7000, "quantile": 0.91 },
+    { "min_nodes": 3000, "quantile": 0.89 }
+  ],
+  "hydro_min_order_rules": [
+    { "min_nodes": 18000, "order": 4 },
+    { "min_nodes": 4000, "order": 3 }
+  ],
+  "hydro_min_path_rules": {
+    "base_spacing_factor": 4.0,
+    "base_diag_ratio": 0.006,
+    "size_rules": [
+      { "min_nodes": 18000, "spacing_factor": 10.0 },
+      { "min_nodes": 9000, "spacing_factor": 7.0 },
+      { "min_nodes": 4000, "spacing_factor": 5.5 }
+    ]
+  },
+  "mountain_lookup": {
+    "enabled_default": false,
+    "radius_min_m": 500,
+    "radius_max_m": 20000,
+    "radius_step_m": 250,
+    "radius_default_m": 3500,
+    "max_features_min": 5,
+    "max_features_max": 500,
+    "max_features_step": 5,
+    "max_features_default": 40,
+    "language_default": "local",
+    "overpass_url": "https://overpass-api.de/api/interpreter",
+    "request_timeout_sec": 18,
+    "bbox_limit_deg": 3.5,
+    "query_timeout_sec": 25,
+    "user_agent": "FengShuiGIS-Plugin/1.0 (QGIS)",
+    "source_label": "OSM/Overpass"
+  },
+  "calibration": {
+    "default_culture": "korea",
+    "negative_ratio_options": [1, 2, 3, 4],
+    "default_negative_ratio": 3,
+    "seed_min": 1,
+    "seed_max": 999999,
+    "seed_default": 42
   }
 }
