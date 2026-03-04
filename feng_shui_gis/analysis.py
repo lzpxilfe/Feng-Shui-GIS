@@ -7,6 +7,7 @@ from qgis import processing
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import (
     QgsCategorizedSymbolRenderer,
+    QgsCoordinateTransform,
     QgsFeature,
     QgsField,
     QgsFields,
@@ -17,6 +18,7 @@ from qgis.core import (
     QgsProcessingContext,
     QgsProcessingFeedback,
     QgsProcessingUtils,
+    QgsProject,
     QgsRendererCategory,
     QgsSpatialIndex,
     QgsVectorLayer,
@@ -104,7 +106,12 @@ class FengShuiAnalyzer:
             if not isinstance(item, dict):
                 continue
             try:
-                min_nodes = int(item.get("min_nodes", 0))
+                min_nodes = int(
+                    item.get(
+                        "min_nodes",
+                        item.get("min_candidates", item.get("min_count", 0)),
+                    )
+                )
                 value = item.get(value_key, default_value)
             except (TypeError, ValueError):
                 continue
@@ -203,7 +210,7 @@ class FengShuiAnalyzer:
         negative_ratio=3,
         random_seed=42,
     ):
-        positive_points = self._collect_points(site_layer)
+        positive_points = self._collect_points(site_layer, target_crs=dem_layer.crs())
         if len(positive_points) < 3:
             raise RuntimeError("Calibration requires at least 3 positive site points.")
 
@@ -367,7 +374,7 @@ class FengShuiAnalyzer:
         if layer.fields().indexFromName("fs_water") < 0:
             to_add.append(QgsField("fs_water", QVariant.Double, "double", 6, 3))
         if layer.fields().indexFromName("fs_score") < 0:
-            to_add.append(QgsField("fs_score", QVariant.Double, "double", 7, 2))
+            to_add.append(QgsField("fs_score", QVariant.Double, "double", 7, 3))
 
         if to_add:
             layer.dataProvider().addAttributes(to_add)
@@ -378,14 +385,37 @@ class FengShuiAnalyzer:
     ):
         slope_field = self._find_field(site_layer, "sl_")
         aspect_field = self._find_field(site_layer, "as_")
+        dem_crs = dem_layer.crs()
+        site_to_dem = self._build_transform(site_layer.crs(), dem_crs)
+        water_to_dem = (
+            self._build_transform(water_layer.crs(), dem_crs)
+            if water_layer is not None
+            else None
+        )
 
         water_index = None
         water_geoms = None
         if water_layer is not None:
-            water_features = [f for f in water_layer.getFeatures() if f.hasGeometry()]
-            if water_features:
-                water_index = QgsSpatialIndex(water_features)
-                water_geoms = {f.id(): f.geometry() for f in water_features}
+            indexed_features = []
+            transformed_geoms = {}
+            for src_feature in water_layer.getFeatures():
+                if not src_feature.hasGeometry():
+                    continue
+                transformed = self._transform_geometry(
+                    src_feature.geometry(),
+                    water_to_dem,
+                )
+                if transformed is None or transformed.isEmpty():
+                    continue
+                feature_id = int(src_feature.id())
+                indexed = QgsFeature()
+                indexed.setId(feature_id)
+                indexed.setGeometry(transformed)
+                indexed_features.append(indexed)
+                transformed_geoms[feature_id] = transformed
+            if indexed_features:
+                water_index = QgsSpatialIndex(indexed_features)
+                water_geoms = transformed_geoms
 
         dem_provider = dem_layer.dataProvider()
         dem_step = self._dem_step(dem_layer)
@@ -396,7 +426,9 @@ class FengShuiAnalyzer:
             for feature in site_layer.getFeatures():
                 slope_value = self._to_float(feature[slope_field]) if slope_field else None
                 aspect_value = self._to_float(feature[aspect_field]) if aspect_field else None
-                site_point = self._feature_point(feature)
+                feature_geom = feature.geometry() if feature.hasGeometry() else None
+                site_geom_dem = self._transform_geometry(feature_geom, site_to_dem)
+                site_point = self._geometry_point(site_geom_dem)
 
                 dem_metrics = self._compute_dem_metrics(
                     provider=dem_provider,
@@ -408,7 +440,7 @@ class FengShuiAnalyzer:
                 )
 
                 water_distance = self._nearest_water_distance(
-                    feature=feature,
+                    site_geom=site_geom_dem,
                     site_point=site_point,
                     water_index=water_index,
                     water_geoms=water_geoms,
@@ -506,26 +538,72 @@ class FengShuiAnalyzer:
         except (TypeError, ValueError):
             return None
 
+    def _build_transform(self, source_crs, target_crs):
+        if source_crs is None or target_crs is None:
+            return None
+        try:
+            if not source_crs.isValid() or not target_crs.isValid() or source_crs == target_crs:
+                return None
+            project = self.context.project() if self.context is not None else None
+            if project is None:
+                project = QgsProject.instance()
+            return QgsCoordinateTransform(source_crs, target_crs, project)
+        except Exception:
+            return None
+
     @staticmethod
-    def _feature_point(feature):
-        if not feature.hasGeometry():
+    def _transform_point(point, transformer):
+        if point is None:
+            return None
+        if transformer is None:
+            return QgsPointXY(point.x(), point.y())
+        try:
+            transformed = transformer.transform(QgsPointXY(point.x(), point.y()))
+            return QgsPointXY(transformed.x(), transformed.y())
+        except Exception:
             return None
 
-        geom = feature.geometry()
-        if geom.isEmpty():
+    @staticmethod
+    def _transform_geometry(geometry, transformer):
+        if geometry is None or geometry.isEmpty():
+            return None
+        cloned = QgsGeometry(geometry)
+        if transformer is None:
+            return cloned
+        try:
+            cloned.transform(transformer)
+            return cloned
+        except Exception:
             return None
 
-        centroid = geom.centroid()
-        if centroid.isEmpty():
+    @staticmethod
+    def _geometry_point(geometry):
+        if geometry is None or geometry.isEmpty():
+            return None
+
+        centroid = geometry.centroid()
+        if centroid is None or centroid.isEmpty():
             return None
 
         point = centroid.asPoint()
+        if point is None:
+            return None
         return QgsPointXY(point.x(), point.y())
 
-    def _collect_points(self, layer):
+    @staticmethod
+    def _feature_point(feature):
+        if feature is None or not feature.hasGeometry():
+            return None
+        return FengShuiAnalyzer._geometry_point(feature.geometry())
+
+    def _collect_points(self, layer, target_crs=None):
         points = []
+        transformer = None
+        if target_crs is not None and layer is not None and hasattr(layer, "crs"):
+            transformer = self._build_transform(layer.crs(), target_crs)
         for feature in layer.getFeatures():
             point = self._feature_point(feature)
+            point = self._transform_point(point, transformer)
             if point is not None:
                 points.append(point)
         return points
@@ -631,21 +709,26 @@ class FengShuiAnalyzer:
         step = max(x_res, y_res)
         return step if step > 0 else 1.0
 
-    def _nearest_water_distance(self, feature, site_point, water_index, water_geoms):
-        if site_point is None or water_index is None or not water_geoms:
+    def _nearest_water_distance(self, site_geom, site_point, water_index, water_geoms):
+        if (
+            site_geom is None
+            or site_geom.isEmpty()
+            or site_point is None
+            or water_index is None
+            or not water_geoms
+        ):
             return None
 
         candidate_ids = water_index.nearestNeighbor(site_point, 12)
         if not candidate_ids:
             return None
 
-        geom = feature.geometry()
         best = None
         for fid in candidate_ids:
             water_geom = water_geoms.get(fid)
             if water_geom is None:
                 continue
-            distance = geom.distance(water_geom)
+            distance = site_geom.distance(water_geom)
             if best is None or distance < best:
                 best = distance
         return best
@@ -3350,7 +3433,7 @@ class FengShuiAnalyzer:
             return None
         numerator = sum(weight * value for weight, value in weighted)
         denominator = sum(weight for weight, _ in weighted)
-        return (numerator / denominator) * 100.0
+        return numerator / denominator
 
     @staticmethod
     def _profile_confidence(indicators, profile):
@@ -3376,20 +3459,6 @@ class FengShuiAnalyzer:
             "tpi": "TPI",
         }
         return labels.get(key, key)
-
-    @staticmethod
-    def _score_band_100(score_value):
-        if score_value is None:
-            return "판정불가"
-        if score_value >= 80.0:
-            return "매우 양호"
-        if score_value >= 68.0:
-            return "양호"
-        if score_value >= 55.0:
-            return "보통"
-        if score_value >= 45.0:
-            return "주의"
-        return "낮음"
 
     @staticmethod
     def _indicator_contributions(indicators, profile):
@@ -3448,8 +3517,12 @@ class FengShuiAnalyzer:
             for item in weak_rows
         )
 
-        score_text = self._fmt_num(total_score, 2)
-        grade = self._score_band_100(total_score)
+        score_text = self._fmt_num(total_score, 3)
+        percent_text = self._fmt_num(
+            (total_score * 100.0) if total_score is not None else None,
+            1,
+        )
+        grade = self._score_band_label(total_score)
         slope_text = "n/a" if slope_value is None else f"{slope_value:.2f}°"
         if aspect_value is None:
             aspect_text = "n/a"
@@ -3472,7 +3545,7 @@ class FengShuiAnalyzer:
             f"모델={profile_key}"
         )
         parts = [
-            f"적합도 {score_text}/100 ({grade})",
+            f"적합도 {score_text} ({grade}, {percent_text}/100 환산)",
             f"상위기여: {top_text}" if top_text else "상위기여: n/a",
             f"보완요인: {weak_text}" if weak_text else "보완요인: n/a",
             f"현장값: 경사 {slope_text}, 향 {aspect_text}, 수계거리 {water_text} (목표 {target_text}±{sigma_text}m)",
