@@ -202,10 +202,10 @@ _MESSAGES = {
 
 
 def _language_code():
-    # Korean is the default UI language for this plugin.
+    # Prefer system locale when available, then fall back to Korean.
     code = QLocale.system().name().split("_", maxsplit=1)[0].lower()
-    if code == "ko":
-        return "ko"
+    if code in _MESSAGES:
+        return code
     return "ko"
 
 
@@ -215,6 +215,6 @@ def language_code():
 
 def tr(key):
     lang = _language_code()
-    if key in _MESSAGES[lang]:
+    if lang in _MESSAGES and key in _MESSAGES[lang]:
         return _MESSAGES[lang][key]
     return _MESSAGES["ko"].get(key, key)

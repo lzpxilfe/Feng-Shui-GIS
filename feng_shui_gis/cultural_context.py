@@ -5,9 +5,11 @@ from copy import deepcopy
 from html import escape
 
 from .config_loader import load_json
+from .ui_catalog import ui_text
 
 _CONFIG_FILE = "contexts.json"
 _LEVEL_ORDER = {"A": 0, "B": 1, "C": 2, "U": 3}
+_NEUTRAL_CONTEXT_KEY = "__neutral__"
 
 
 def _config():
@@ -24,6 +26,52 @@ def _periods():
 
 def _default_meta():
     return {"source_doi": [], "evidence_level": "U", "note": ""}
+
+
+def neutral_context_key():
+    return _NEUTRAL_CONTEXT_KEY
+
+
+def _neutral_context(hemisphere):
+    aspect_target = 180.0 if hemisphere == "north" else 0.0
+    neutral_note = "General principles mode: regional/period biases disabled."
+
+    def _entry(value):
+        return {
+            "value": float(value),
+            "source_doi": [],
+            "evidence_level": "U",
+            "note": neutral_note,
+        }
+
+    return {
+        "culture_key": _NEUTRAL_CONTEXT_KEY,
+        "period_key": _NEUTRAL_CONTEXT_KEY,
+        "aspect_target": float(aspect_target),
+        "aspect_sharpness": 1.0,
+        "water_distance_target": 220.0,
+        "water_distance_sigma": 350.0,
+        "macro_radius_multiplier": 1.0,
+        "micro_radius_multiplier": 1.0,
+        "hyeol_threshold": 0.62,
+        "weight_bias": {},
+        "term_bias": {},
+        "term_target_shift": 0.0,
+        "evidence": {
+            "parameters": {
+                "aspect_target": _entry(aspect_target),
+                "aspect_sharpness": _entry(1.0),
+                "water_distance_target": _entry(220.0),
+                "water_distance_sigma": _entry(350.0),
+                "macro_radius_multiplier": _entry(1.0),
+                "micro_radius_multiplier": _entry(1.0),
+                "hyeol_threshold": _entry(0.62),
+                "term_target_shift": _entry(0.0),
+            },
+            "weight_bias": {},
+            "term_bias": {},
+        },
+    }
 
 
 def _meta_from_node(node):
@@ -129,6 +177,12 @@ def period_label(period_key, language):
 
 
 def build_context(culture_key, period_key, hemisphere):
+    if (
+        str(culture_key).strip().lower() == _NEUTRAL_CONTEXT_KEY
+        or str(period_key).strip().lower() == _NEUTRAL_CONTEXT_KEY
+    ):
+        return _neutral_context(hemisphere)
+
     cultures = _cultures()
     periods = _periods()
 
@@ -367,13 +421,26 @@ def context_evidence_records(culture_key, period_key, hemisphere):
     return records
 
 
-def context_evidence_html(culture_key, period_key, hemisphere):
+def context_evidence_html(culture_key, period_key, hemisphere, language=None):
+    lang = language if language in ("ko", "en") else None
+    title = ui_text("context_evidence_html_title", lang, default="Context Evidence")
     records = context_evidence_records(culture_key, period_key, hemisphere)
     if not records:
-        return "<h3>컨텍스트 근거</h3><p>근거 정보가 없습니다.</p>"
+        empty_text = ui_text(
+            "context_evidence_html_empty",
+            lang,
+            default="No evidence information is available.",
+        )
+        return f"<h3>{escape(title)}</h3><p>{escape(empty_text)}</p>"
 
     rows = []
     for record in records:
+        group_name = str(record.get("group", "-"))
+        group_label = ui_text(
+            f"context_evidence_group_{group_name}",
+            lang,
+            default=group_name,
+        )
         doi_text = "<br/>".join(
             f'<a href="{escape(source)}">{escape(source)}</a>'
             for source in record.get("source_doi", [])
@@ -388,7 +455,7 @@ def context_evidence_html(culture_key, period_key, hemisphere):
             value_text = str(value)
         rows.append(
             "<tr>"
-            f"<td>{escape(record['group'])}</td>"
+            f"<td>{escape(group_label)}</td>"
             f"<td>{escape(record['name'])}</td>"
             f"<td>{escape(value_text)}</td>"
             f"<td>{escape(record.get('evidence_level', 'U'))}</td>"
@@ -398,15 +465,44 @@ def context_evidence_html(culture_key, period_key, hemisphere):
         )
 
     rows_html = "".join(rows)
+    meta_culture = ui_text("context_evidence_meta_culture", lang, default="culture")
+    meta_period = ui_text("context_evidence_meta_period", lang, default="period")
+    meta_hemisphere = ui_text(
+        "context_evidence_meta_hemisphere",
+        lang,
+        default="hemisphere",
+    )
+    col_group = ui_text("context_evidence_col_group", lang, default="group")
+    col_name = ui_text("context_evidence_col_name", lang, default="name")
+    col_value = ui_text("context_evidence_col_value", lang, default="value")
+    col_level = ui_text("context_evidence_col_level", lang, default="level")
+    col_doi = ui_text("context_evidence_col_source_doi", lang, default="source_doi")
+    col_note = ui_text("context_evidence_col_note", lang, default="note")
+    level_note = ui_text(
+        "context_evidence_level_note",
+        lang,
+        default=(
+            "Evidence level: A=direct quantitative, "
+            "B=case-study anchored, C=heuristic prior, U=unspecified."
+        ),
+    )
+
     return (
-        "<h3>컨텍스트 파라미터 근거</h3>"
-        f"<p><b>culture</b>: {escape(str(culture_key))}, "
-        f"<b>period</b>: {escape(str(period_key))}, "
-        f"<b>hemisphere</b>: {escape(str(hemisphere))}</p>"
+        f"<h3>{escape(title)}</h3>"
+        f"<p><b>{escape(meta_culture)}</b>: {escape(str(culture_key))}, "
+        f"<b>{escape(meta_period)}</b>: {escape(str(period_key))}, "
+        f"<b>{escape(meta_hemisphere)}</b>: {escape(str(hemisphere))}</p>"
         "<table border='1' cellspacing='0' cellpadding='4'>"
-        "<tr><th>group</th><th>name</th><th>value</th><th>level</th><th>source_doi</th><th>note</th></tr>"
+        "<tr>"
+        f"<th>{escape(col_group)}</th>"
+        f"<th>{escape(col_name)}</th>"
+        f"<th>{escape(col_value)}</th>"
+        f"<th>{escape(col_level)}</th>"
+        f"<th>{escape(col_doi)}</th>"
+        f"<th>{escape(col_note)}</th>"
+        "</tr>"
         f"{rows_html}</table>"
-        "<p><small>evidence level: A=direct quantitative, B=case-study anchored, C=heuristic prior, U=unspecified.</small></p>"
+        f"<p><small>{escape(level_note)}</small></p>"
     )
 
 

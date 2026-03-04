@@ -1,4 +1,4 @@
-﻿# Feng Shui GIS (QGIS Plugin) v0.1.0
+# Feng Shui GIS (QGIS Plugin) v0.1.1
 
 Feng Shui GIS is a DEM-first interpretation plugin for archaeology-oriented landscape reading.
 

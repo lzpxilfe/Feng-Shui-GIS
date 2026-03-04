@@ -12,9 +12,11 @@ from qgis.PyQt.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTabWidget,
     QTextBrowser,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -27,76 +29,26 @@ from .cultural_context import (
     culture_label,
     context_evidence_html,
     context_evidence_records,
+    neutral_context_key,
     period_label,
 )
 from .locale import language_code, tr
+from .mountain_options import mountain_options
 from .profile_catalog import (
+    analysis_rules,
     available_profiles,
     line_styles,
     profile_label,
     term_label_ko,
 )
-
-
-TERM_MEANINGS_KO = {
-    "jusan": "주산: 혈 뒤편의 중심 산",
-    "jojongsan": "조종산: 계통의 상위 산줄기",
-    "dunoe": "두뇌: 주산에서 이어지는 마디",
-    "naecheongnyong": "내청룡: 좌측의 가까운 지지 능선",
-    "oecheongnyong": "외청룡: 좌측의 바깥 지지 능선",
-    "naebaekho": "내백호: 우측의 가까운 지지 능선",
-    "oebaekho": "외백호: 우측의 바깥 지지 능선",
-    "ansan": "안산: 전면의 가까운 받침 산",
-    "josan": "조산: 전면의 원거리 받침 산",
-    "naesugu": "내수구: 전면의 가까운 수구",
-    "oesugu": "외수구: 전면의 원거리 수구",
-    "ipsu": "입수: 유입 수로 지점",
-    "myeongdang": "명당: 중심의 완만한 평탄부",
-    "misa": "미사: 전면의 완경사 지대",
-}
-
-RIDGE_CLASS_KO = {
-    "major": "대간·정맥",
-    "minor": "기맥·지맥",
-}
-
-HYDRO_CLASS_KO = {
-    "main": "주수계",
-    "secondary": "중간 수계",
-    "branch": "지류",
-    "minor": "미소 수로",
-}
-
-METRIC_HELP_ITEMS = [
-    (
-        "점수(score/fs_score)",
-        "0~1 범위 점수입니다. 1에 가까울수록 현재 지형이 기준 패턴과 더 잘 맞습니다.",
-    ),
-    (
-        "형국(form_score)",
-        "주변 지형의 기본 형태 적합도입니다. 높을수록 혈 주변 형세가 안정적입니다.",
-    ),
-    (
-        "종심(long_score)",
-        "앞뒤 깊이감(종방향) 점수입니다. 높을수록 뒤는 받치고 앞은 트인 구조에 가깝습니다.",
-    ),
-    (
-        "수렴습윤(dem_water_score)",
-        "DEM 기반 수분/수계 수렴 가능성을 반영한 점수입니다. 높을수록 물길이 모이기 쉬운 지형입니다.",
-    ),
-    (
-        "TPI",
-        "지형 곡률 지표입니다. 0에 가까우면 평탄, 음수면 오목, 양수면 볼록한 경향을 의미합니다.",
-    ),
-    (
-        "수렴도(convergence)",
-        "주변 경사 방향이 중심으로 모이는 정도입니다. 높을수록 기운이 모이는 형세로 봅니다.",
-    ),
-    (
-        "기복(relief_m)",
-        "주변 고도 범위(최고-최저)입니다. 너무 작으면 단조롭고 너무 크면 거칠 수 있습니다.",
-    ),
-]
+from .ui_catalog import (
+    ui_help_html,
+    ui_hydro_legend,
+    ui_metric_help_items,
+    ui_ridge_legend,
+    ui_term_meanings,
+    ui_text,
+)
 
 
 class FengShuiHelpDialog(QDialog):
@@ -114,7 +66,10 @@ class FengShuiHelpDialog(QDialog):
         tabs = QTabWidget(self)
         tabs.setDocumentMode(True)
         tabs.addTab(self._browser(self._overview_html()), tr("help_tab_overview"))
-        tabs.addTab(self._browser(self._quick_terms_html()), "숫자 해석")
+        tabs.addTab(
+            self._browser(self._quick_terms_html()),
+            ui_text("help_tab_quick_terms", default="Number Guide"),
+        )
         tabs.addTab(self._browser(self._symbols_html()), tr("help_tab_symbols"))
         tabs.addTab(self._browser(self._refs_html()), tr("help_tab_references"))
         layout.addWidget(tabs)
@@ -183,6 +138,7 @@ class FengShuiHelpDialog(QDialog):
 
     @staticmethod
     def _line_legend_rows():
+        meanings = ui_term_meanings("ko")
         rows = []
         for term_id, style in line_styles().items():
             color, width = style
@@ -190,7 +146,7 @@ class FengShuiHelpDialog(QDialog):
                 (
                     "<tr>"
                     f"<td>{escape(term_label_ko(term_id))}</td>"
-                    f"<td>{escape(TERM_MEANINGS_KO.get(term_id, ''))}</td>"
+                    f"<td>{escape(str(meanings.get(term_id, '')))}</td>"
                     f"<td><code>{escape(color)}</code></td>"
                     f"<td>{width:.1f}</td>"
                     "</tr>"
@@ -200,19 +156,15 @@ class FengShuiHelpDialog(QDialog):
 
     @staticmethod
     def _ridge_legend_rows():
-        specs = [
-            ("major", "#273331", 1.25, 0.52),
-            ("minor", "#4b5a57", 0.72, 0.28),
-        ]
         rows = []
-        for class_id, color, width, opacity in specs:
+        for item in ui_ridge_legend("ko"):
             rows.append(
                 (
                     "<tr>"
-                    f"<td>{escape(RIDGE_CLASS_KO[class_id])}</td>"
-                    f"<td><code>{escape(color)}</code></td>"
-                    f"<td>{width:.1f}</td>"
-                    f"<td>{opacity:.2f}</td>"
+                    f"<td>{escape(item.get('label', ''))}</td>"
+                    f"<td><code>{escape(item.get('color', ''))}</code></td>"
+                    f"<td>{float(item.get('width', 0.0)):.1f}</td>"
+                    f"<td>{float(item.get('opacity', 0.0)):.2f}</td>"
                     "</tr>"
                 )
             )
@@ -220,20 +172,14 @@ class FengShuiHelpDialog(QDialog):
 
     @staticmethod
     def _hydro_legend_rows():
-        specs = [
-            ("main", "#0b3d91", 1.6),
-            ("secondary", "#1456b8", 1.2),
-            ("branch", "#2b7bd8", 0.9),
-            ("minor", "#63a5ff", 0.7),
-        ]
         rows = []
-        for class_id, color, width in specs:
+        for item in ui_hydro_legend("ko"):
             rows.append(
                 (
                     "<tr>"
-                    f"<td>{escape(HYDRO_CLASS_KO[class_id])}</td>"
-                    f"<td><code>{escape(color)}</code></td>"
-                    f"<td>{width:.1f}</td>"
+                    f"<td>{escape(item.get('label', ''))}</td>"
+                    f"<td><code>{escape(item.get('color', ''))}</code></td>"
+                    f"<td>{float(item.get('width', 0.0)):.1f}</td>"
                     "</tr>"
                 )
             )
@@ -241,94 +187,32 @@ class FengShuiHelpDialog(QDialog):
 
     @staticmethod
     def _overview_html():
-        return """
-            <h3>기본 워크플로우</h3>
-            <p><b>1) 기본 지형 모드</b>: DEM(+선택 수계)에서 능선/수계 흐름을 먼저 추출합니다.</p>
-            <p><b>2) 수계가 없을 때</b>: DEM 기반 자동 수문 추출을 실행합니다.</p>
-            <p><b>3) 상세 용어</b>: 필요할 때만 혈/명당/청룡/백호 등 용어 포인트와 구조 연결을 생성합니다.</p>
-            <p><b>4) 고급 분석 모드</b>: 후보지 점 레이어가 있을 때만 입지 점수(<code>fs_score</code>)를 계산합니다.</p>
-            <p><b>클릭 설명</b>: 레이어 피처를 식별(Identify)하거나 선택하면 <code>reason_ko</code> 또는
-            <code>fs_reason</code> 필드에서 해당 결과의 근거(점수, 임계치, 거리/방위 등)를 확인할 수 있습니다.</p>
-            <p><b>쉽게 읽기</b>: 최근 버전은 <code>reason_ko</code>를
-            <i>'한 줄 해석 + 세부 수치'</i> 형식으로 제공합니다. 숫자를 몰라도 먼저 의미를 파악할 수 있습니다.</p>
-            <p><b>권장</b>: 거리 해석이 필요한 분석이므로 투영좌표계(UTM/TM, meter 단위)를 권장합니다.</p>
-        """
+        return ui_help_html("overview")
 
     @staticmethod
     def _quick_terms_html():
-        return """
-            <h3>숫자 해석 빠른 가이드</h3>
-            <p><b>예시 문장</b></p>
-            <p><code>혈 후보 #4/4 ... 기준치>=0.660</code></p>
-            <p>뜻: 네 번째 후보가 최소 기준(0.660)을 넘어서 최종 후보로 남았다는 의미입니다.</p>
-            <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>항목</th><th>쉽게 말하면</th><th>읽는 방향</th></tr>
-                <tr><td>점수</td><td>종합 적합도</td><td>높을수록 좋음 (0~1)</td></tr>
-                <tr><td>형국</td><td>전체 지형 형태 안정성</td><td>높을수록 좋음</td></tr>
-                <tr><td>종심</td><td>앞뒤 깊이감</td><td>중간~높음 권장</td></tr>
-                <tr><td>수렴습윤</td><td>물길/습윤이 모이기 쉬운 정도</td><td>높을수록 좋음</td></tr>
-                <tr><td>TPI</td><td>오목/평탄/볼록 경향</td><td>0 근처 평탄, 음수 오목, 양수 볼록</td></tr>
-                <tr><td>수렴도</td><td>주변 경사가 중심으로 모이는 정도</td><td>높을수록 모임이 강함</td></tr>
-                <tr><td>기복</td><td>주변 고도 차</td><td>너무 작거나 너무 크면 불리할 수 있음</td></tr>
-            </table>
-            <p><small>팁: 먼저 한 줄 해석을 읽고, 필요할 때만 세부 수치를 확인하면 이해가 빠릅니다.</small></p>
-        """
+        return ui_help_html("quick_terms")
 
     def _symbols_html(self):
         line_rows = self._line_legend_rows()
         ridge_rows = self._ridge_legend_rows()
         hydro_rows = self._hydro_legend_rows()
-        return f"""
-            <h3>결과 심볼 안내</h3>
-            <p><b>풍수 구조 연결선</b> (중심 방사형이 아닌 구조-구조 연결)</p>
-            <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>용어</th><th>의미</th><th>색</th><th>선폭</th></tr>
-                {line_rows}
-            </table>
-            <br>
-            <p><b>능선 계층(2단계 통합: 대간·정맥 / 기맥·지맥)</b></p>
-            <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>계층</th><th>색</th><th>선폭</th><th>투명도</th></tr>
-                {ridge_rows}
-            </table>
-            <br>
-            <p><b>수계 계층</b></p>
-            <table border="1" cellspacing="0" cellpadding="4">
-                <tr><th>계층</th><th>색</th><th>선폭</th></tr>
-                {hydro_rows}
-            </table>
-        """
+        return ui_help_html(
+            "symbols",
+            line_rows=line_rows,
+            ridge_rows=ridge_rows,
+            hydro_rows=hydro_rows,
+        )
 
     @staticmethod
     def _refs_html():
-        return """
-            <h3>연구 참고 (검증된 DOI, 2026-02-23 재점검)</h3>
-            <p><b>직접 근거: 풍수 + 공간/GIS 정량</b></p>
-            <p>- Um (2009), IJGIS:
-               <a href="https://doi.org/10.1080/13658810802055954">10.1080/13658810802055954</a></p>
-            <p>- Tung Fung &amp; Marafa (2002), IGARSS:
-               <a href="https://doi.org/10.1109/IGARSS.2002.1027144">10.1109/IGARSS.2002.1027144</a></p>
-            <p>- Whang &amp; Lee (2006), Landscape and Ecological Engineering:
-               <a href="https://doi.org/10.1007/s11355-006-0014-8">10.1007/s11355-006-0014-8</a></p>
-            <p>- Kim (2016), Journal of Koreanology:
-               <a href="https://doi.org/10.15299/jk.2016.8.60.203">10.15299/jk.2016.8.60.203</a></p>
-            <p><b>맥락 근거: 지역별 해석 전통</b></p>
-            <p>- Ryukyu/Okinawa 사례:
-               <a href="https://doi.org/10.1163/156853508X276824">10.1163/156853508X276824</a>,
-               <a href="https://doi.org/10.1163/156853511X577475">10.1163/156853511X577475</a>,
-               <a href="https://doi.org/10.1016/j.ufug.2007.10.001">10.1016/j.ufug.2007.10.001</a></p>
-            <p>- Choson geomancy/architecture:
-               <a href="https://doi.org/10.1515/9781438468716-011">10.1515/9781438468716-011</a>,
-               <a href="https://doi.org/10.1515/9781438468716-009">10.1515/9781438468716-009</a></p>
-            <p><small>주의: 국가/시대 파라미터는 위 문헌의 직접 근거 + 연구 가설 초기값 조합입니다.
-               현장 유적 데이터로 재보정이 필요합니다.</small></p>
-        """
+        return ui_help_html("references")
 
 
 class ContextEvidenceDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("컨텍스트 근거")
+        self.setWindowTitle(ui_text("context_evidence_title", default="Context Evidence"))
         self.resize(860, 620)
         self.setStyleSheet(FengShuiHelpDialog._dialog_stylesheet())
         layout = QVBoxLayout(self)
@@ -365,8 +249,8 @@ class FengShuiDockWidget(QWidget):
         super().__init__(parent)
         self.setWindowFlags(Qt.Window)
         self.setWindowTitle(tr("panel_title"))
-        self.resize(680, 820)
-        self.setMinimumSize(620, 760)
+        self.resize(640, 720)
+        self.setMinimumSize(540, 560)
         self._help_dialog = None
         self._context_evidence_dialog = None
         self._context_records = []
@@ -374,7 +258,22 @@ class FengShuiDockWidget(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        scroll = QScrollArea(self)
+        scroll.setObjectName("panelScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        root_layout.addWidget(scroll)
+
+        content = QWidget(scroll)
+        scroll.setWidget(content)
+
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
@@ -425,23 +324,122 @@ class FengShuiDockWidget(QWidget):
         form.addRow(tr("hemisphere_label"), self.hemisphere_combo)
 
         self.label_language_combo = QComboBox(self)
-        self.label_language_combo.addItem("한국어", "ko")
-        self.label_language_combo.addItem("English", "en")
+        self.label_language_combo.addItem(ui_text("language_ko", default="Korean"), "ko")
+        self.label_language_combo.addItem(ui_text("language_en", default="English"), "en")
         self.label_language_combo.setCurrentIndex(0)
-        form.addRow("용어 언어", self.label_language_combo)
+        form.addRow(ui_text("label_language", default="Label Language"), self.label_language_combo)
+
+        self.web_mountain_checkbox = QCheckBox(
+            ui_text(
+                "web_mountain_toggle_label",
+                default="Auto-attach nearby mountain names from web (OSM)",
+            ),
+            self,
+        )
+        mountain_cfg = mountain_options()
+        self.web_mountain_checkbox.setChecked(bool(mountain_cfg["enabled_default"]))
+        self.web_mountain_radius_spin = QSpinBox(self)
+        self.web_mountain_radius_spin.setRange(
+            int(mountain_cfg["radius_min_m"]),
+            int(mountain_cfg["radius_max_m"]),
+        )
+        self.web_mountain_radius_spin.setSingleStep(max(1, int(mountain_cfg["radius_step_m"])))
+        self.web_mountain_radius_spin.setValue(int(mountain_cfg["radius_default_m"]))
+        self.web_mountain_radius_spin.setSuffix(" m")
+        self.web_mountain_limit_spin = QSpinBox(self)
+        self.web_mountain_limit_spin.setRange(
+            int(mountain_cfg["max_features_min"]),
+            int(mountain_cfg["max_features_max"]),
+        )
+        self.web_mountain_limit_spin.setSingleStep(
+            max(1, int(mountain_cfg["max_features_step"]))
+        )
+        self.web_mountain_limit_spin.setValue(int(mountain_cfg["max_features_default"]))
+        self.web_mountain_lang_combo = QComboBox(self)
+        self.web_mountain_lang_combo.addItem(
+            ui_text("web_mountain_lang_local", default="Local name"),
+            "local",
+        )
+        self.web_mountain_lang_combo.addItem(
+            ui_text("web_mountain_lang_ko", default="Korean preferred"),
+            "ko",
+        )
+        self.web_mountain_lang_combo.addItem(
+            ui_text("web_mountain_lang_en", default="English preferred"),
+            "en",
+        )
+        default_lang = str(mountain_cfg.get("language_default", "local")).lower()
+        lang_index = self.web_mountain_lang_combo.findData(
+            default_lang if default_lang in ("local", "ko", "en") else "local"
+        )
+        self.web_mountain_lang_combo.setCurrentIndex(max(0, lang_index))
+        form.addRow(
+            ui_text("web_mountain_option_label", default="Mountain naming"),
+            self.web_mountain_checkbox,
+        )
+        form.addRow(
+            ui_text("web_mountain_lang_label", default="Mountain name language"),
+            self.web_mountain_lang_combo,
+        )
+        form.addRow(
+            ui_text("web_mountain_radius_label", default="Search radius"),
+            self.web_mountain_radius_spin,
+        )
+        form.addRow(
+            ui_text("web_mountain_limit_label", default="Max features"),
+            self.web_mountain_limit_spin,
+        )
+
+        controls_layout.addLayout(form)
+
+        self.advanced_options_button = QToolButton(self)
+        self.advanced_options_button.setObjectName("advancedToggle")
+        self.advanced_options_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.advanced_options_button.setCheckable(True)
+        self.advanced_options_button.setChecked(False)
+        self.advanced_options_button.setArrowType(Qt.RightArrow)
+        self.advanced_options_button.setText(
+            ui_text("advanced_options_button", default="Advanced Options")
+        )
+        controls_layout.addWidget(self.advanced_options_button)
+
+        self.advanced_options_panel = QFrame(self)
+        self.advanced_options_panel.setObjectName("advancedPanel")
+        advanced_layout = QVBoxLayout(self.advanced_options_panel)
+        advanced_layout.setContentsMargins(10, 8, 10, 8)
+        advanced_layout.setSpacing(8)
+
+        advanced_form = QFormLayout()
+        advanced_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        advanced_form.setFormAlignment(Qt.AlignTop)
+        advanced_form.setHorizontalSpacing(16)
+        advanced_form.setVerticalSpacing(8)
 
         lang = language_code()
         self.profile_combo = QComboBox(self)
         profile_keys = list(available_profiles()) or ["general"]
         for profile_key in profile_keys:
             self.profile_combo.addItem(profile_label(profile_key, lang), profile_key)
-        form.addRow(tr("model_label"), self.profile_combo)
+        advanced_form.addRow(tr("model_label"), self.profile_combo)
+
+        self.advanced_context_checkbox = QCheckBox(
+            ui_text(
+                "advanced_context_toggle_label",
+                default="Enable advanced context (country/period)",
+            ),
+            self,
+        )
+        self.advanced_context_checkbox.setChecked(False)
+        advanced_form.addRow(
+            ui_text("context_mode_label", default="Context Mode"),
+            self.advanced_context_checkbox,
+        )
 
         self.culture_combo = QComboBox(self)
         culture_keys = list(available_cultures()) or ["east_asia"]
         for culture_key in culture_keys:
             self.culture_combo.addItem(culture_label(culture_key, lang), culture_key)
-        form.addRow(tr("culture_label"), self.culture_combo)
+        advanced_form.addRow(tr("culture_label"), self.culture_combo)
 
         self.period_combo = QComboBox(self)
         period_keys = list(available_periods()) or ["early_modern"]
@@ -449,36 +447,51 @@ class FengShuiDockWidget(QWidget):
             self.period_combo.addItem(period_label(period_key, lang), period_key)
         if "early_modern" in period_keys:
             self.period_combo.setCurrentIndex(period_keys.index("early_modern"))
-        form.addRow(tr("period_label"), self.period_combo)
+        advanced_form.addRow(tr("period_label"), self.period_combo)
 
         self.context_param_combo = QComboBox(self)
-        form.addRow("근거 파라미터", self.context_param_combo)
+        advanced_form.addRow(
+            ui_text("context_param_label", default="Evidence Parameter"),
+            self.context_param_combo,
+        )
+        advanced_layout.addLayout(advanced_form)
 
         evidence_row = QHBoxLayout()
-        self.context_evidence_button = QPushButton("컨텍스트 근거 보기", self)
+        self.context_evidence_button = QPushButton(
+            ui_text("context_evidence_button", default="View Context Evidence"),
+            self,
+        )
         self.context_evidence_button.setObjectName("helpButton")
         self.context_evidence_button.clicked.connect(self._open_context_evidence_dialog)
         evidence_row.addWidget(self.context_evidence_button)
         evidence_row.addStretch(1)
+        advanced_layout.addLayout(evidence_row)
 
         self.context_evidence_hint = QLabel("", self)
         self.context_evidence_hint.setObjectName("contextHint")
         self.context_evidence_hint.setWordWrap(True)
+        advanced_layout.addWidget(self.context_evidence_hint)
 
         self.context_param_hint = QLabel("", self)
         self.context_param_hint.setObjectName("contextParamHint")
         self.context_param_hint.setWordWrap(True)
+        advanced_layout.addWidget(self.context_param_hint)
 
-        controls_layout.addLayout(form)
-        controls_layout.addLayout(evidence_row)
-        controls_layout.addWidget(self.context_evidence_hint)
-        controls_layout.addWidget(self.context_param_hint)
+        controls_layout.addWidget(self.advanced_options_panel)
         layout.addWidget(controls)
 
         self.culture_combo.currentIndexChanged.connect(self._update_context_evidence_hint)
         self.period_combo.currentIndexChanged.connect(self._update_context_evidence_hint)
         self.hemisphere_combo.currentIndexChanged.connect(self._update_context_evidence_hint)
         self.context_param_combo.currentIndexChanged.connect(self._update_selected_param_evidence_hint)
+        self.advanced_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
+        self.advanced_options_button.toggled.connect(self._toggle_advanced_options_panel)
+        self.advanced_options_button.toggled.connect(self._refresh_progress_guide)
+        self.web_mountain_checkbox.toggled.connect(self._toggle_web_mountain_controls)
+        self.web_mountain_checkbox.toggled.connect(self._refresh_progress_guide)
+        self.web_mountain_radius_spin.valueChanged.connect(self._refresh_progress_guide)
+        self.web_mountain_limit_spin.valueChanged.connect(self._refresh_progress_guide)
+        self.web_mountain_lang_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self._update_context_evidence_hint()
 
         self.mode_tabs = QTabWidget(self)
@@ -506,6 +519,7 @@ class FengShuiDockWidget(QWidget):
 
         self.sites_combo.layerChanged.connect(self._refresh_progress_guide)
         self.dem_combo.layerChanged.connect(self._refresh_progress_guide)
+        self.dem_combo.layerChanged.connect(self._update_dem_diagnostics_hint)
         self.water_combo.layerChanged.connect(self._refresh_progress_guide)
         self.mode_tabs.currentChanged.connect(self._refresh_progress_guide)
         self.landscape_auto_hydro_checkbox.toggled.connect(self._refresh_progress_guide)
@@ -516,8 +530,16 @@ class FengShuiDockWidget(QWidget):
         self.period_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.hemisphere_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.label_language_combo.currentIndexChanged.connect(self._refresh_progress_guide)
+        self.advanced_context_checkbox.toggled.connect(self._refresh_progress_guide)
+        self.label_language_combo.currentIndexChanged.connect(self._update_quick_number_widget)
 
+        self._toggle_advanced_options_panel(False)
+        self._toggle_advanced_context_controls()
+        self._toggle_web_mountain_controls()
         self._update_metric_help_hint()
+        self._update_quick_number_widget()
+        self._update_dem_diagnostics_hint()
+        self._update_evidence_summary_widget()
         self._refresh_progress_guide()
 
     def _build_workflow_guide_card(self):
@@ -527,7 +549,7 @@ class FengShuiDockWidget(QWidget):
         card_layout.setContentsMargins(12, 10, 12, 12)
         card_layout.setSpacing(6)
 
-        title = QLabel("진행 가이드", card)
+        title = QLabel(ui_text("guide_title", default="Progress Guide"), card)
         title.setObjectName("guideTitle")
         card_layout.addWidget(title)
 
@@ -540,7 +562,9 @@ class FengShuiDockWidget(QWidget):
         self.workflow_progress.setObjectName("workflowProgress")
         self.workflow_progress.setRange(0, 100)
         self.workflow_progress.setValue(0)
-        self.workflow_progress.setFormat("%p% 준비")
+        self.workflow_progress.setFormat(
+            ui_text("workflow_progress_format", default="%p% ready")
+        )
         card_layout.addWidget(self.workflow_progress)
 
         self.next_step_label = QLabel("", card)
@@ -555,9 +579,9 @@ class FengShuiDockWidget(QWidget):
         card_layout.addWidget(self.checklist_label)
 
         metric_row = QHBoxLayout()
-        metric_label = QLabel("지표 빠른 설명", card)
+        metric_label = QLabel(ui_text("guide_metric_label", default="Metric Help"), card)
         self.metric_help_combo = QComboBox(card)
-        for label, description in METRIC_HELP_ITEMS:
+        for label, description in ui_metric_help_items():
             self.metric_help_combo.addItem(label, description)
         self.metric_help_combo.currentIndexChanged.connect(self._update_metric_help_hint)
         metric_row.addWidget(metric_label)
@@ -568,6 +592,24 @@ class FengShuiDockWidget(QWidget):
         self.metric_help_hint.setObjectName("metricHint")
         self.metric_help_hint.setWordWrap(True)
         card_layout.addWidget(self.metric_help_hint)
+
+        self.quick_number_widget = QLabel("", card)
+        self.quick_number_widget.setObjectName("guideWidget")
+        self.quick_number_widget.setWordWrap(True)
+        self.quick_number_widget.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.quick_number_widget)
+
+        self.dem_diag_widget = QLabel("", card)
+        self.dem_diag_widget.setObjectName("guideWidget")
+        self.dem_diag_widget.setWordWrap(True)
+        self.dem_diag_widget.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.dem_diag_widget)
+
+        self.evidence_widget = QLabel("", card)
+        self.evidence_widget.setObjectName("guideWidget")
+        self.evidence_widget.setWordWrap(True)
+        self.evidence_widget.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.evidence_widget)
 
         self.workflow_status_label = QLabel("", card)
         self.workflow_status_label.setObjectName("guideStatus")
@@ -612,6 +654,7 @@ class FengShuiDockWidget(QWidget):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
+        calibration_rules = analysis_rules().get("calibration", {})
 
         card = QFrame(tab)
         card.setObjectName("tabCard")
@@ -630,22 +673,61 @@ class FengShuiDockWidget(QWidget):
         card_layout.addWidget(self.analysis_auto_hydro_checkbox)
 
         ratio_row = QHBoxLayout()
-        ratio_label = QLabel("음성 샘플 배수", card)
+        ratio_label = QLabel(ui_text("negative_ratio_label", default="Negative Ratio"), card)
         self.negative_ratio_combo = QComboBox(card)
-        self.negative_ratio_combo.addItem("1x", 1)
-        self.negative_ratio_combo.addItem("2x", 2)
-        self.negative_ratio_combo.addItem("3x (권장)", 3)
-        self.negative_ratio_combo.addItem("4x", 4)
-        self.negative_ratio_combo.setCurrentIndex(2)
+        ratio_options = calibration_rules.get("negative_ratio_options", [1, 2, 3, 4])
+        clean_options = []
+        for value in ratio_options:
+            try:
+                clean = int(value)
+            except (TypeError, ValueError):
+                continue
+            if clean > 0 and clean not in clean_options:
+                clean_options.append(clean)
+        if not clean_options:
+            clean_options = [1, 2, 3, 4]
+        default_ratio = calibration_rules.get("default_negative_ratio", 3)
+        try:
+            default_ratio = int(default_ratio)
+        except (TypeError, ValueError):
+            default_ratio = 3
+        for value in clean_options:
+            label = f"{value}x"
+            if value == default_ratio:
+                suffix = ui_text("negative_ratio_recommended_suffix", default="(Recommended)")
+                label = f"{value}x {suffix}"
+            self.negative_ratio_combo.addItem(label, value)
+        if default_ratio in clean_options:
+            self.negative_ratio_combo.setCurrentIndex(clean_options.index(default_ratio))
+        else:
+            self.negative_ratio_combo.setCurrentIndex(0)
         ratio_row.addWidget(ratio_label)
         ratio_row.addWidget(self.negative_ratio_combo, 1)
         card_layout.addLayout(ratio_row)
 
         seed_row = QHBoxLayout()
-        seed_label = QLabel("랜덤 시드", card)
+        seed_label = QLabel(ui_text("seed_label", default="Random Seed"), card)
         self.calibration_seed_spin = QSpinBox(card)
-        self.calibration_seed_spin.setRange(1, 999999)
-        self.calibration_seed_spin.setValue(42)
+        seed_min = calibration_rules.get("seed_min", 1)
+        seed_max = calibration_rules.get("seed_max", 999999)
+        seed_default = calibration_rules.get("seed_default", 42)
+        try:
+            seed_min = int(seed_min)
+        except (TypeError, ValueError):
+            seed_min = 1
+        try:
+            seed_max = int(seed_max)
+        except (TypeError, ValueError):
+            seed_max = 999999
+        if seed_max < seed_min:
+            seed_max = seed_min
+        try:
+            seed_default = int(seed_default)
+        except (TypeError, ValueError):
+            seed_default = 42
+        seed_default = max(seed_min, min(seed_max, seed_default))
+        self.calibration_seed_spin.setRange(seed_min, seed_max)
+        self.calibration_seed_spin.setValue(seed_default)
         seed_row.addWidget(seed_label)
         seed_row.addWidget(self.calibration_seed_spin, 1)
         card_layout.addLayout(seed_row)
@@ -656,7 +738,10 @@ class FengShuiDockWidget(QWidget):
         card_layout.addWidget(self.run_button)
 
         self.calibration_button = QPushButton(
-            "한국 SHP 캘리브레이션 (ROC/AUC 리포트)",
+            ui_text(
+                "calibration_button",
+                default="Korea SHP Calibration (ROC/AUC Report)",
+            ),
             card,
         )
         self.calibration_button.setObjectName("helpButton")
@@ -666,6 +751,83 @@ class FengShuiDockWidget(QWidget):
         layout.addStretch(1)
         return tab
 
+    def _advanced_context_enabled(self):
+        if not hasattr(self, "advanced_context_checkbox"):
+            return False
+        return bool(self.advanced_context_checkbox.isChecked())
+
+    def _toggle_advanced_options_panel(self, checked=None):
+        expanded = bool(checked) if checked is not None else bool(
+            self.advanced_options_button.isChecked()
+        )
+        if hasattr(self, "advanced_options_panel"):
+            self.advanced_options_panel.setVisible(expanded)
+        if hasattr(self, "advanced_options_button"):
+            self.advanced_options_button.setArrowType(
+                Qt.DownArrow if expanded else Qt.RightArrow
+            )
+            if self.advanced_options_button.isChecked() != expanded:
+                self.advanced_options_button.setChecked(expanded)
+
+    def _effective_context_keys(self):
+        if not self._advanced_context_enabled():
+            neutral_key = neutral_context_key()
+            return neutral_key, neutral_key
+        return self.culture_combo.currentData(), self.period_combo.currentData()
+
+    def _toggle_advanced_context_controls(self, *_args):
+        enabled = self._advanced_context_enabled()
+        widgets = [
+            getattr(self, "culture_combo", None),
+            getattr(self, "period_combo", None),
+            getattr(self, "context_param_combo", None),
+        ]
+        for widget in widgets:
+            if widget is not None:
+                widget.setEnabled(enabled)
+        self._update_context_evidence_hint()
+
+    def _toggle_web_mountain_controls(self, *_args):
+        enabled = self.mountain_name_enrichment_enabled()
+        if hasattr(self, "web_mountain_lang_combo"):
+            self.web_mountain_lang_combo.setEnabled(enabled)
+        if hasattr(self, "web_mountain_radius_spin"):
+            self.web_mountain_radius_spin.setEnabled(enabled)
+        if hasattr(self, "web_mountain_limit_spin"):
+            self.web_mountain_limit_spin.setEnabled(enabled)
+
+    def mountain_name_enrichment_enabled(self):
+        if not hasattr(self, "web_mountain_checkbox"):
+            return False
+        return bool(self.web_mountain_checkbox.isChecked())
+
+    def mountain_name_radius_m(self):
+        mountain_cfg = mountain_options()
+        if not hasattr(self, "web_mountain_radius_spin"):
+            return int(mountain_cfg["radius_default_m"])
+        try:
+            return int(self.web_mountain_radius_spin.value())
+        except (TypeError, ValueError):
+            return int(mountain_cfg["radius_default_m"])
+
+    def mountain_name_max_features(self):
+        mountain_cfg = mountain_options()
+        if not hasattr(self, "web_mountain_limit_spin"):
+            return int(mountain_cfg["max_features_default"])
+        try:
+            return int(self.web_mountain_limit_spin.value())
+        except (TypeError, ValueError):
+            return int(mountain_cfg["max_features_default"])
+
+    def mountain_name_language_preference(self):
+        mountain_cfg = mountain_options()
+        if not hasattr(self, "web_mountain_lang_combo"):
+            return str(mountain_cfg["language_default"])
+        value = self.web_mountain_lang_combo.currentData()
+        if value in ("local", "ko", "en"):
+            return value
+        return str(mountain_cfg["language_default"])
+
     def _open_help_dialog(self):
         if self._help_dialog is None:
             self._help_dialog = FengShuiHelpDialog(self)
@@ -674,11 +836,23 @@ class FengShuiDockWidget(QWidget):
         self._help_dialog.activateWindow()
 
     def _open_context_evidence_dialog(self):
-        html = context_evidence_html(
-            culture_key=self.culture_combo.currentData(),
-            period_key=self.period_combo.currentData(),
-            hemisphere=self.hemisphere_combo.currentData(),
-        )
+        if self._advanced_context_enabled():
+            culture_key, period_key = self._effective_context_keys()
+            html = context_evidence_html(
+                culture_key=culture_key,
+                period_key=period_key,
+                hemisphere=self.hemisphere_combo.currentData(),
+                language=self.label_language(),
+            )
+        else:
+            html = ui_text(
+                "context_general_mode_dialog_html",
+                default=(
+                    "<h3>General Principles Mode</h3>"
+                    "<p>Country/period overrides are disabled.</p>"
+                    "<p>Enable advanced context to inspect regional/historical evidence tables.</p>"
+                ),
+            )
         if self._context_evidence_dialog is None:
             self._context_evidence_dialog = ContextEvidenceDialog(self)
         self._context_evidence_dialog.set_html(html)
@@ -687,9 +861,33 @@ class FengShuiDockWidget(QWidget):
         self._context_evidence_dialog.activateWindow()
 
     def _update_context_evidence_hint(self, *_args):
+        if not self._advanced_context_enabled():
+            self._context_records = []
+            self.context_param_combo.blockSignals(True)
+            self.context_param_combo.clear()
+            self.context_param_combo.blockSignals(False)
+            self.context_evidence_hint.setText(
+                ui_text(
+                    "context_general_mode_hint",
+                    default=(
+                        "General principles mode is active. Country/period biases are disabled. "
+                        "Enable advanced context to apply regional and historical profiles."
+                    ),
+                )
+            )
+            self.context_param_hint.setText(
+                ui_text(
+                    "context_general_mode_note",
+                    default="Using neutral global principles only (no country/period overrides).",
+                )
+            )
+            self._update_evidence_summary_widget()
+            return
+
+        culture_key, period_key = self._effective_context_keys()
         records = context_evidence_records(
-            culture_key=self.culture_combo.currentData(),
-            period_key=self.period_combo.currentData(),
+            culture_key=culture_key,
+            period_key=period_key,
             hemisphere=self.hemisphere_combo.currentData(),
         )
         self._context_records = records
@@ -715,20 +913,37 @@ class FengShuiDockWidget(QWidget):
                     source_list.append(source)
             if len(source_list) >= 2:
                 break
-        hint = (
-            f"현재 프로필 근거: {self.culture_combo.currentText()} / "
-            f"{self.period_combo.currentText()} (상세는 '컨텍스트 근거 보기')."
+        hint = ui_text(
+            "context_hint_template",
+            default="Profile evidence: {culture} / {period} (details: '{button}').",
+        ).format(
+            culture=self.culture_combo.currentText(),
+            period=self.period_combo.currentText(),
+            button=ui_text("context_evidence_button", default="View Context Evidence"),
         )
         if source_list:
-            hint += f" 대표 DOI: {source_list[0]}"
+            hint += ui_text("context_hint_doi_prefix", default=" Representative DOI: ")
+            hint += str(source_list[0])
             if len(source_list) > 1:
                 hint += f", {source_list[1]}"
         self.context_evidence_hint.setText(hint)
         self._update_selected_param_evidence_hint()
+        self._update_evidence_summary_widget()
 
     def _update_selected_param_evidence_hint(self, *_args):
+        if not self._advanced_context_enabled():
+            self.context_param_hint.setText(
+                ui_text(
+                    "context_general_mode_note",
+                    default="Using neutral global principles only (no country/period overrides).",
+                )
+            )
+            return
+
         if not self._context_records:
-            self.context_param_hint.setText("선택 가능한 파라미터 근거가 없습니다.")
+            self.context_param_hint.setText(
+                ui_text("context_no_params", default="No parameter evidence.")
+            )
             return
 
         index = self.context_param_combo.currentIndex()
@@ -742,18 +957,183 @@ class FengShuiDockWidget(QWidget):
             value_text = str(value)
         level = item.get("evidence_level", "U")
         dois = item.get("source_doi", [])
-        doi_text = ", ".join(dois) if dois else "DOI 없음"
-        note = item.get("note") or "설명 없음"
+        doi_text = ", ".join(dois) if dois else ui_text("context_no_doi", default="No DOI")
+        note = item.get("note") or ui_text("context_no_note", default="No note")
         self.context_param_hint.setText(
-            f"[{item.get('group', '-')}.{item.get('name', '-')}] "
-            f"값={value_text} | 근거수준={level} | DOI={doi_text} | 메모={note}"
+            ui_text(
+                "context_param_template",
+                default="[{group}.{name}] value={value} | evidence={level} | DOI={doi} | note={note}",
+            ).format(
+                group=item.get("group", "-"),
+                name=item.get("name", "-"),
+                value=value_text,
+                level=level,
+                doi=doi_text,
+                note=note,
+            )
         )
 
     def _update_metric_help_hint(self, *_args):
         description = self.metric_help_combo.currentData()
         if description in (None, ""):
-            description = "선택한 지표에 대한 설명이 없습니다."
+            description = ui_text(
+                "metric_help_empty",
+                default="No description available for the selected metric.",
+            )
         self.metric_help_hint.setText(str(description))
+
+    def _update_quick_number_widget(self, *_args):
+        if not hasattr(self, "quick_number_widget"):
+            return
+        self.quick_number_widget.setText(
+            ui_text(
+                "guide_quick_numbers_html",
+                default=(
+                    "<b>Quick Number Read</b><br/>"
+                    "score/confidence (0-1): 0.80+ strong, 0.65-0.79 good, 0.50-0.64 moderate, below 0.50 weak.<br/>"
+                    "TPI: near 0 flat, negative concave, positive convex."
+                ),
+            )
+        )
+
+    def _update_dem_diagnostics_hint(self, *_args):
+        if not hasattr(self, "dem_diag_widget"):
+            return
+
+        dem_layer = self.dem_combo.currentLayer() if hasattr(self, "dem_combo") else None
+        if dem_layer is None:
+            self.dem_diag_widget.setText(
+                ui_text(
+                    "guide_dem_diag_empty",
+                    default=(
+                        "<b>DEM Diagnostics</b><br/>Select a DEM layer to inspect "
+                        "resolution, CRS unit reliability, and sampling density."
+                    ),
+                )
+            )
+            return
+
+        try:
+            x_res = abs(float(dem_layer.rasterUnitsPerPixelX()))
+            y_res = abs(float(dem_layer.rasterUnitsPerPixelY()))
+        except (TypeError, ValueError):
+            x_res = 0.0
+            y_res = 0.0
+        dem_step = (x_res + y_res) * 0.5 if x_res > 0 and y_res > 0 else max(x_res, y_res)
+
+        extent = dem_layer.extent()
+        width = max(0.0, float(extent.width()))
+        height = max(0.0, float(extent.height()))
+
+        rules = analysis_rules().get("adaptive_spacing", {})
+        try:
+            base_step_factor = float(rules.get("base_step_factor", 10.0))
+            min_span_divisor = float(rules.get("min_span_divisor", 180.0))
+        except (TypeError, ValueError):
+            base_step_factor = 10.0
+            min_span_divisor = 180.0
+        min_span_divisor = max(1.0, min_span_divisor)
+        min_span = min(width, height)
+        spacing = max(dem_step * max(0.1, base_step_factor), min_span / min_span_divisor)
+        if spacing <= 0:
+            spacing = dem_step * 10.0 if dem_step > 0 else 1.0
+        approx_cols = max(1, int(width / max(spacing, 1e-9)) + 1)
+        approx_rows = max(1, int(height / max(spacing, 1e-9)) + 1)
+        approx_nodes = approx_cols * approx_rows
+
+        crs_mode = "geographic" if dem_layer.crs().isGeographic() else "projected"
+        crs_note = (
+            "distance/smoothing in degree units can distort interpretation"
+            if crs_mode == "geographic"
+            else "distance/smoothing in projected units is more reliable"
+        )
+
+        self.dem_diag_widget.setText(
+            ui_text(
+                "guide_dem_diag_template",
+                default=(
+                    "<b>DEM Diagnostics</b><br/>"
+                    "layer={layer}<br/>"
+                    "pixel_step={step:.4f}, extent={width:.1f} x {height:.1f}, "
+                    "adaptive_spacing={spacing:.2f}, approx_sampling_nodes={nodes}<br/>"
+                    "CRS mode={crs_mode}: {crs_note}"
+                ),
+            ).format(
+                layer=escape(dem_layer.name()),
+                step=dem_step,
+                width=width,
+                height=height,
+                spacing=spacing,
+                nodes=approx_nodes,
+                crs_mode=crs_mode,
+                crs_note=escape(crs_note),
+            )
+        )
+
+    def _update_evidence_summary_widget(self, *_args):
+        if not hasattr(self, "evidence_widget"):
+            return
+        if not self._advanced_context_enabled():
+            self.evidence_widget.setText(
+                ui_text(
+                    "guide_evidence_general_mode",
+                    default=(
+                        "<b>Evidence Summary</b><br/>"
+                        "General principles mode: region/period evidence is intentionally not applied."
+                    ),
+                )
+            )
+            return
+        records = self._context_records if isinstance(self._context_records, list) else []
+        if not records:
+            self.evidence_widget.setText(
+                ui_text(
+                    "guide_evidence_empty",
+                    default="<b>Evidence Summary</b><br/>No context evidence loaded.",
+                )
+            )
+            return
+
+        counts = {"A": 0, "B": 0, "C": 0, "U": 0}
+        for item in records:
+            level = str(item.get("evidence_level", "U")).upper()
+            if level not in counts:
+                level = "U"
+            counts[level] += 1
+        total = max(1, sum(counts.values()))
+        low_count = counts["C"] + counts["U"]
+        low_ratio = low_count / total
+        if low_ratio >= 0.45:
+            quality = "Exploratory"
+        elif low_ratio >= 0.20:
+            quality = "Moderate"
+        else:
+            quality = "Stronger"
+
+        recommendation = (
+            "Includes many heuristic priors (C/U); run calibration and local validation."
+            if low_count > 0
+            else "Mostly A/B evidence for this context."
+        )
+        self.evidence_widget.setText(
+            ui_text(
+                "guide_evidence_template",
+                default=(
+                    "<b>Evidence Summary</b><br/>"
+                    "A={a}, B={b}, C={c}, U={u} (total={total})<br/>"
+                    "quality={quality}<br/>"
+                    "{recommendation}"
+                ),
+            ).format(
+                a=counts["A"],
+                b=counts["B"],
+                c=counts["C"],
+                u=counts["U"],
+                total=total,
+                quality=quality,
+                recommendation=escape(recommendation),
+            )
+        )
 
     def _workflow_checks(self):
         dem_ready = self.dem_combo.currentLayer() is not None
@@ -763,20 +1143,26 @@ class FengShuiDockWidget(QWidget):
         if self.mode_tabs.currentIndex() == 1:
             hydro_ready = water_ready or self.analysis_auto_hydro_checkbox.isChecked()
             checks = [
-                ("DEM 레이어 선택", dem_ready),
-                ("후보지 포인트 선택", sites_ready),
-                ("수계 조건 확인(수계 레이어 또는 DEM 자동 수문)", hydro_ready),
-                ("분석 실행 준비", dem_ready and sites_ready and hydro_ready),
+                (ui_text("workflow_check_dem", default="Select DEM layer"), dem_ready),
+                (ui_text("workflow_check_sites", default="Select candidate point layer"), sites_ready),
+                (ui_text("workflow_check_hydro", default="Confirm hydro source"), hydro_ready),
+                (
+                    ui_text("workflow_check_analysis_ready", default="Ready to run analysis"),
+                    dem_ready and sites_ready and hydro_ready,
+                ),
             ]
             mode_name = tr("tab_analysis")
             action_name = tr("run_button")
         else:
             hydro_ready = water_ready or self.landscape_auto_hydro_checkbox.isChecked()
             checks = [
-                ("DEM 레이어 선택", dem_ready),
-                ("수계 조건 확인(수계 레이어 또는 DEM 자동 수문)", hydro_ready),
-                ("용어 포인트/연결선 옵션 확인", True),
-                ("추출 실행 준비", dem_ready and hydro_ready),
+                (ui_text("workflow_check_dem", default="Select DEM layer"), dem_ready),
+                (ui_text("workflow_check_hydro", default="Confirm hydro source"), hydro_ready),
+                (ui_text("workflow_check_terms_option", default="Check term options"), True),
+                (
+                    ui_text("workflow_check_extract_ready", default="Ready to run extraction"),
+                    dem_ready and hydro_ready,
+                ),
             ]
             mode_name = tr("tab_landscape")
             action_name = tr("extract_landscape_button")
@@ -791,31 +1177,83 @@ class FengShuiDockWidget(QWidget):
         total = max(1, len(checks))
         percent = int(round((completed / total) * 100.0))
         self.workflow_progress.setValue(percent)
-        lang_name = "한국어" if self.label_language() == "ko" else "English"
+        lang_name = (
+            ui_text("workflow_lang_ko", default="Korean")
+            if self.label_language() == "ko"
+            else ui_text("workflow_lang_en", default="English")
+        )
+        context_mode = (
+            ui_text("context_mode_general_short", default="General")
+            if not self._advanced_context_enabled()
+            else ui_text("context_mode_advanced_short", default="Advanced")
+        )
+        mountain_mode = (
+            ui_text("web_mountain_mode_on", default="On")
+            if self.mountain_name_enrichment_enabled()
+            else ui_text("web_mountain_mode_off", default="Off")
+        )
+        mountain_lang = self.mountain_name_language_preference()
         self.progress_summary_label.setText(
-            f"현재 모드: {mode_name} | 용어 언어: {lang_name} | 준비도 {percent}%"
+            ui_text(
+                "workflow_summary_template",
+                default=(
+                    "Mode: {mode} | Label language: {lang} | Context: {context_mode} | "
+                    "Mountain names(web): {mountain_mode}/{mountain_lang} | "
+                    "Readiness {percent}%"
+                ),
+            ).format(
+                mode=mode_name,
+                lang=lang_name,
+                context_mode=context_mode,
+                mountain_mode=mountain_mode,
+                mountain_lang=mountain_lang,
+                percent=percent,
+            )
         )
 
         pending = next((label for label, done in checks if not done), None)
         if pending:
-            self.next_step_label.setText(f"다음 단계: {pending}")
+            self.next_step_label.setText(
+                ui_text("workflow_next_template", default="Next step: {pending}").format(
+                    pending=pending
+                )
+            )
         else:
-            self.next_step_label.setText(f"다음 단계: '{action_name}' 버튼으로 실행하세요.")
+            self.next_step_label.setText(
+                ui_text(
+                    "workflow_next_action_template",
+                    default="Next step: run with '{action}' button.",
+                ).format(action=action_name)
+            )
 
         rows = []
         for label, done in checks:
-            state = "완료" if done else "대기"
+            state = (
+                ui_text("workflow_state_done", default="Done")
+                if done
+                else ui_text("workflow_state_pending", default="Pending")
+            )
             color = "#1f6255" if done else "#8a6d3b"
             rows.append(
                 f"<span style='color:{color};'><b>{state}</b></span> · {escape(label)}"
             )
         self.checklist_label.setText("<br/>".join(rows))
-        self.workflow_status_label.setText(f"최근 상태: {self.status_label.text()}")
+        self.workflow_status_label.setText(
+            ui_text(
+                "workflow_recent_status_template",
+                default="Recent status: {text}",
+            ).format(text=self.status_label.text())
+        )
 
     def set_status(self, text):
         self.status_label.setText(text)
         if hasattr(self, "workflow_status_label"):
-            self.workflow_status_label.setText(f"최근 상태: {text}")
+            self.workflow_status_label.setText(
+                ui_text(
+                    "workflow_recent_status_template",
+                    default="Recent status: {text}",
+                ).format(text=text)
+            )
         self._refresh_progress_guide()
 
     def label_language(self):
@@ -825,37 +1263,40 @@ class FengShuiDockWidget(QWidget):
         return code if code in ("ko", "en") else "ko"
 
     def _emit_run_requested(self):
+        culture_key, period_key = self._effective_context_keys()
         self.run_requested.emit(
             self.sites_combo.currentLayer(),
             self.dem_combo.currentLayer(),
             self.water_combo.currentLayer(),
             self.hemisphere_combo.currentData(),
             self.profile_combo.currentData(),
-            self.culture_combo.currentData(),
-            self.period_combo.currentData(),
+            culture_key,
+            period_key,
             self.analysis_auto_hydro_checkbox.isChecked(),
         )
 
     def _emit_terms_requested(self):
+        culture_key, period_key = self._effective_context_keys()
         self.terms_requested.emit(
             self.dem_combo.currentLayer(),
             self.water_combo.currentLayer(),
             self.hemisphere_combo.currentData(),
-            self.culture_combo.currentData(),
-            self.period_combo.currentData(),
+            culture_key,
+            period_key,
             self.landscape_auto_hydro_checkbox.isChecked(),
             self.include_terms_checkbox.isChecked(),
         )
 
     def _emit_calibration_requested(self):
+        culture_key, period_key = self._effective_context_keys()
         self.calibration_requested.emit(
             self.sites_combo.currentLayer(),
             self.dem_combo.currentLayer(),
             self.water_combo.currentLayer(),
             self.hemisphere_combo.currentData(),
             self.profile_combo.currentData(),
-            self.culture_combo.currentData(),
-            self.period_combo.currentData(),
+            culture_key,
+            period_key,
             int(self.negative_ratio_combo.currentData()),
             int(self.calibration_seed_spin.value()),
             self.analysis_auto_hydro_checkbox.isChecked(),
@@ -897,6 +1338,11 @@ class FengShuiDockWidget(QWidget):
                 border: 1px solid #d6cab3;
                 border-radius: 12px;
             }
+            QFrame#advancedPanel {
+                background: #fbf7ee;
+                border: 1px solid #dccfb8;
+                border-radius: 10px;
+            }
             QFrame#tabCard {
                 background: #fffdf9;
                 border: 1px solid #ddd2bf;
@@ -925,6 +1371,14 @@ class FengShuiDockWidget(QWidget):
             QLabel#metricHint {
                 color: #2f3a38;
                 font-size: 11px;
+            }
+            QLabel#guideWidget {
+                color: #2f3a38;
+                font-size: 11px;
+                background: #fcf7ee;
+                border: 1px solid #ddcfb7;
+                border-radius: 8px;
+                padding: 6px 8px;
             }
             QLabel#guideStatus {
                 color: #38534c;
@@ -1024,6 +1478,17 @@ class FengShuiDockWidget(QWidget):
             }
             QPushButton#helpButton:hover {
                 background: #ece4d4;
+            }
+            QToolButton#advancedToggle {
+                background: #f6f1e6;
+                border: 1px solid #d2c5af;
+                border-radius: 7px;
+                padding: 6px 10px;
+                font-weight: 600;
+                text-align: left;
+            }
+            QToolButton#advancedToggle:hover {
+                background: #ede4d3;
             }
             QScrollBar:vertical {
                 background: #efe8d8;

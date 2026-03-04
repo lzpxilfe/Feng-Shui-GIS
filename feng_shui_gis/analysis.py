@@ -60,6 +60,62 @@ class FengShuiAnalyzer:
         self.context = context or QgsProcessingContext()
         self.feedback = feedback or QgsProcessingFeedback()
 
+    @staticmethod
+    def _rules():
+        rules = analysis_rules()
+        return rules if isinstance(rules, dict) else {}
+
+    @classmethod
+    def _rules_section(cls, section_key):
+        section = cls._rules().get(section_key, {})
+        return section if isinstance(section, dict) else {}
+
+    @staticmethod
+    def _rule_float(section, key, default, min_value=None, max_value=None):
+        try:
+            value = float(section.get(key, default))
+        except (TypeError, ValueError):
+            value = float(default)
+        if min_value is not None:
+            value = max(float(min_value), value)
+        if max_value is not None:
+            value = min(float(max_value), value)
+        return value
+
+    @staticmethod
+    def _rule_int(section, key, default, min_value=None, max_value=None):
+        try:
+            value = int(section.get(key, default))
+        except (TypeError, ValueError):
+            value = int(default)
+        if min_value is not None:
+            value = max(int(min_value), value)
+        if max_value is not None:
+            value = min(int(max_value), value)
+        return value
+
+    @staticmethod
+    def _rule_threshold_value(rules_list, probe_value, value_key, default_value):
+        if not isinstance(rules_list, list):
+            return default_value
+
+        candidates = []
+        for item in rules_list:
+            if not isinstance(item, dict):
+                continue
+            try:
+                min_nodes = int(item.get("min_nodes", 0))
+                value = item.get(value_key, default_value)
+            except (TypeError, ValueError):
+                continue
+            candidates.append((min_nodes, value))
+
+        candidates.sort(key=lambda pair: pair[0], reverse=True)
+        for min_nodes, value in candidates:
+            if probe_value >= min_nodes:
+                return value
+        return default_value
+
     def run(
         self,
         site_layer,
@@ -227,7 +283,27 @@ class FengShuiAnalyzer:
         sample_spacing = self._adaptive_spacing(dem_layer, dem_step)
         recommended_count = self._recommended_hyeol_count(dem_layer, sample_spacing)
         effective_keep = max(1, min(max_hyeol, recommended_count))
-        suppress_distance = sample_spacing * (10.5 if effective_keep <= 3 else 9.0)
+        hyeol_rules = self._rules_section("hyeol_selection")
+        keep_threshold = self._rule_int(
+            hyeol_rules,
+            "low_keep_count_threshold",
+            3,
+            min_value=1,
+        )
+        suppress_multiplier = self._rule_float(
+            hyeol_rules,
+            "suppress_multiplier_high",
+            10.5,
+            min_value=0.1,
+        )
+        if effective_keep > keep_threshold:
+            suppress_multiplier = self._rule_float(
+                hyeol_rules,
+                "suppress_multiplier_low",
+                9.0,
+                min_value=0.1,
+            )
+        suppress_distance = sample_spacing * suppress_multiplier
         candidates = self._collect_hyeol_candidates(
             provider=provider,
             dem_layer=dem_layer,
@@ -271,7 +347,7 @@ class FengShuiAnalyzer:
         if layer.fields().indexFromName("fs_note") < 0:
             to_add.append(QgsField("fs_note", QVariant.String, "string", 80))
         if layer.fields().indexFromName("fs_reason") < 0:
-            to_add.append(QgsField("fs_reason", QVariant.String, "string", 254))
+            to_add.append(QgsField("fs_reason", QVariant.String, "string", 1024))
         if layer.fields().indexFromName("fs_water_m") < 0:
             to_add.append(QgsField("fs_water_m", QVariant.Double, "double", 12, 3))
         if layer.fields().indexFromName("fs_slope") < 0:
@@ -360,14 +436,17 @@ class FengShuiAnalyzer:
                 total_score = self._profile_weighted_score(indicators, profile)
                 confidence = self._profile_confidence(indicators, profile)
                 note = self._explain_top_factors(indicators, profile)
-                score_text = "n/a" if total_score is None else f"{total_score:.2f}"
-                slope_text = "n/a" if slope_value is None else f"{slope_value:.2f}"
-                aspect_text = "n/a" if aspect_value is None else f"{aspect_value:.1f}"
-                water_text = "n/a" if water_distance is None else f"{water_distance:.1f}"
-                reason_ko = (
-                    f"모델={profile_key}, 문화권={context['culture_key']}, 시대={context['period_key']}, "
-                    f"총점={score_text}, 경사={slope_text}, 향={aspect_text}, "
-                    f"수계거리={water_text}, 상위요인={note}"
+                reason_ko = self._compose_site_reason(
+                    profile_key=profile_key,
+                    context=context,
+                    profile=profile,
+                    indicators=indicators,
+                    dem_metrics=dem_metrics,
+                    water_distance=water_distance,
+                    slope_value=slope_value,
+                    aspect_value=aspect_value,
+                    total_score=total_score,
+                    note=note,
                 )
 
                 feature["fs_culture"] = context["culture_key"]
@@ -952,35 +1031,53 @@ class FengShuiAnalyzer:
             return distance_score
         return dem_score
 
-    @staticmethod
-    def _adaptive_spacing(dem_layer, dem_step):
+    def _adaptive_spacing(self, dem_layer, dem_step):
+        rules = self._rules_section("adaptive_spacing")
+        base_step_factor = self._rule_float(
+            rules, "base_step_factor", 10.0, min_value=0.1
+        )
+        min_span_divisor = self._rule_float(
+            rules, "min_span_divisor", 180.0, min_value=1.0
+        )
+        fallback_spacing = self._rule_float(
+            rules, "fallback_min_spacing", 1.0, min_value=0.1
+        )
+        max_points = self._rule_int(rules, "max_points", 12000, min_value=50)
+
         extent = dem_layer.extent()
         min_span = min(extent.width(), extent.height())
-        spacing = max(dem_step * 10.0, min_span / 180.0)
+        spacing = max(dem_step * base_step_factor, min_span / min_span_divisor)
         if spacing <= 0:
-            return max(dem_step * 10.0, 1.0)
+            return max(dem_step * base_step_factor, fallback_spacing)
 
         cols = max(1, int(extent.width() / spacing) + 1)
         rows = max(1, int(extent.height() / spacing) + 1)
         total = cols * rows
-        max_points = 12000
         if total > max_points:
             spacing *= math.sqrt(total / max_points)
         return spacing
 
-    @staticmethod
-    def _recommended_hyeol_count(dem_layer, spacing):
+    def _recommended_hyeol_count(self, dem_layer, spacing):
+        rules = self._rules_section("hyeol_selection")
+        thresholds = rules.get("recommended_count_thresholds", [])
+        default_count = self._rule_int(
+            rules, "default_recommended_count", 5, min_value=1
+        )
+
         extent = dem_layer.extent()
         approx_cols = max(1, int(extent.width() / max(spacing, 1e-6)))
         approx_rows = max(1, int(extent.height() / max(spacing, 1e-6)))
         approx_nodes = approx_cols * approx_rows
-        if approx_nodes >= 22000:
-            return 2
-        if approx_nodes >= 12000:
-            return 3
-        if approx_nodes >= 5000:
-            return 4
-        return 5
+        count = self._rule_threshold_value(
+            thresholds,
+            approx_nodes,
+            "count",
+            default_count,
+        )
+        try:
+            return max(1, int(count))
+        except (TypeError, ValueError):
+            return default_count
 
     @staticmethod
     def _grid_points(dem_layer, spacing):
@@ -1117,7 +1214,21 @@ class FengShuiAnalyzer:
         period_id = context.get("period_key", "early_modern")
         term_bias = context.get("term_bias", {})
         term_target_shift = context.get("term_target_shift", 0.0)
-        term_min_score = max(0.42, context.get("hyeol_threshold", 0.62) * 0.72)
+        hyeol_rules = self._rules_section("hyeol_selection")
+        min_score_floor = self._rule_float(
+            hyeol_rules, "min_score_floor", 0.42, min_value=0.0, max_value=1.0
+        )
+        threshold_multiplier = self._rule_float(
+            hyeol_rules,
+            "context_threshold_multiplier",
+            0.72,
+            min_value=0.0,
+            max_value=2.0,
+        )
+        term_min_score = max(
+            min_score_floor,
+            context.get("hyeol_threshold", 0.62) * threshold_multiplier,
+        )
 
         def add_term(
             term_id,
@@ -1461,34 +1572,8 @@ class FengShuiAnalyzer:
         fields.append(QgsField("reason_ko", QVariant.String, "string", 1024))
         data.addAttributes(fields)
         link_layer.updateFields()
-
-        # Build enclosure-style paths around myeongdang instead of center-radial spokes.
-        path_plan = [
-            {
-                "node_ids": ["jusan", "dunoe", "jojongsan"],
-                "style_term": "jusan",
-                "link_type": "backbone",
-                "label": "배후 축선",
-            },
-            {
-                "node_ids": ["oecheongnyong", "josan", "oebaekho"],
-                "style_term": "oecheongnyong",
-                "link_type": "outer_wrap",
-                "label": "외곽 감싸기",
-            },
-            {
-                "node_ids": ["naecheongnyong", "ansan", "naebaekho"],
-                "style_term": "myeongdang",
-                "link_type": "inner_wrap",
-                "label": "내곽 감싸기",
-            },
-            {
-                "node_ids": ["naesugu", "oesugu", "ipsu"],
-                "style_term": "naesugu",
-                "link_type": "water_flow",
-                "label": "수구 흐름",
-            },
-        ]
+        link_rules = self._rules_section("term_links")
+        path_plan = self._term_link_plan(link_rules)
 
         grouped = defaultdict(dict)
         for feature in term_layer.getFeatures():
@@ -1501,7 +1586,13 @@ class FengShuiAnalyzer:
             grouped[parent_id][term_id] = feature
 
         link_features = []
-        min_link_score = 0.44
+        min_link_score = self._rule_float(
+            link_rules, "min_link_score", 0.44, min_value=0.0, max_value=1.0
+        )
+        distinct_min_distance = self._rule_float(
+            link_rules, "distinct_min_distance", 0.2, min_value=0.01
+        )
+        smooth_passes = self._rule_int(link_rules, "smooth_passes", 2, min_value=0)
         for parent_id, terms in grouped.items():
             for spec in path_plan:
                 nodes = []
@@ -1517,11 +1608,15 @@ class FengShuiAnalyzer:
                 if missing:
                     continue
 
-                distinct_points = self._distinct_points(points, min_distance=0.2)
+                distinct_points = self._distinct_points(
+                    points, min_distance=distinct_min_distance
+                )
                 if len(distinct_points) < 2:
                     continue
 
-                smoothed_points = self._smooth_polyline(distinct_points, passes=2)
+                smoothed_points = self._smooth_polyline(
+                    distinct_points, passes=smooth_passes
+                )
                 if len(smoothed_points) < 2:
                     continue
 
@@ -1586,6 +1681,76 @@ class FengShuiAnalyzer:
         return link_layer
 
     @staticmethod
+    def _term_link_plan(link_rules):
+        default_plan = [
+            {
+                "node_ids": ["jusan", "dunoe", "jojongsan"],
+                "style_term": "jusan",
+                "link_type": "backbone",
+                "label": "Backbone",
+            },
+            {
+                "node_ids": ["oecheongnyong", "josan", "oebaekho"],
+                "style_term": "oecheongnyong",
+                "link_type": "outer_wrap",
+                "label": "Outer Wrap",
+            },
+            {
+                "node_ids": ["naecheongnyong", "ansan", "naebaekho"],
+                "style_term": "myeongdang",
+                "link_type": "inner_wrap",
+                "label": "Inner Wrap",
+            },
+            {
+                "node_ids": ["jusan", "myeongdang", "ansan"],
+                "style_term": "myeongdang",
+                "link_type": "core_axis",
+                "label": "Core Axis",
+            },
+            {
+                "node_ids": ["naesugu", "ansan", "oesugu"],
+                "style_term": "naesugu",
+                "link_type": "front_arc",
+                "label": "Front Arc",
+            },
+            {
+                "node_ids": ["naesugu", "oesugu", "ipsu"],
+                "style_term": "naesugu",
+                "link_type": "water_flow",
+                "label": "Water Flow",
+            },
+        ]
+        if not isinstance(link_rules, dict):
+            return default_plan
+
+        raw_plan = link_rules.get("path_plan")
+        if not isinstance(raw_plan, list):
+            return default_plan
+
+        normalized = []
+        for item in raw_plan:
+            if not isinstance(item, dict):
+                continue
+            node_ids = item.get("node_ids", [])
+            if not isinstance(node_ids, list):
+                continue
+            clean_nodes = [str(node).strip() for node in node_ids if str(node).strip()]
+            if len(clean_nodes) < 2:
+                continue
+            style_term = str(item.get("style_term", clean_nodes[0])).strip() or clean_nodes[0]
+            link_type = str(item.get("link_type", "path")).strip() or "path"
+            label = str(item.get("label", link_type)).strip() or link_type
+            normalized.append(
+                {
+                    "node_ids": clean_nodes,
+                    "style_term": style_term,
+                    "link_type": link_type,
+                    "label": label,
+                }
+            )
+        return normalized or default_plan
+
+    @staticmethod
     def _path_mean_score(features):
         values = []
         for feature in features:
@@ -1645,6 +1810,26 @@ class FengShuiAnalyzer:
             smoothed.append(QgsPointXY(current[-1].x(), current[-1].y()))
             current = smoothed
         return current
+
+    def _prepare_display_polyline(
+        self,
+        points,
+        spacing,
+        densify_step_factor,
+        densify_min_step,
+        smooth_passes,
+        distinct_min_distance_factor,
+    ):
+        if len(points) < 2:
+            return [QgsPointXY(point.x(), point.y()) for point in points]
+
+        densified = self._densify_polyline(
+            points,
+            max_step=max(spacing * densify_step_factor, densify_min_step),
+        )
+        smoothed = self._smooth_polyline(densified, passes=smooth_passes)
+        distinct_min_distance = max(1e-9, spacing * distinct_min_distance_factor)
+        return self._distinct_points(smoothed, min_distance=distinct_min_distance)
 
     def style_term_points(self, term_layer):
         style_map = point_styles()
@@ -1723,6 +1908,25 @@ class FengShuiAnalyzer:
         provider = dem_layer.dataProvider()
         dem_step = self._dem_step(dem_layer)
         spacing = self._hydro_spacing(dem_layer, dem_step)
+        hydro_rules = self._rules_section("hydro_network")
+        min_drop_floor = self._rule_float(
+            hydro_rules, "min_drop_floor", 0.15, min_value=1e-6
+        )
+        min_drop_ratio = self._rule_float(
+            hydro_rules, "min_drop_ratio", 0.0012, min_value=1e-9
+        )
+        acc_threshold_floor = self._rule_float(
+            hydro_rules, "acc_threshold_floor", 8.0, min_value=0.0
+        )
+        secondary_keep_order_floor = self._rule_int(
+            hydro_rules, "secondary_keep_order_floor", 2, min_value=1
+        )
+        secondary_keep_order_delta = self._rule_int(
+            hydro_rules, "secondary_keep_order_delta", 1, min_value=0
+        )
+        secondary_keep_acc_ratio = self._rule_float(
+            hydro_rules, "secondary_keep_acc_ratio", 0.82, min_value=0.0, max_value=1.0
+        )
 
         hydro_layer = QgsVectorLayer(
             f"LineString?crs={dem_layer.crs().authid()}",
@@ -1775,7 +1979,7 @@ class FengShuiAnalyzer:
         elev_min = min(elevations)
         elev_max = max(elevations)
         elev_range = max(1e-6, elev_max - elev_min)
-        min_drop = max(0.15, elev_range * 0.0012)
+        min_drop = max(min_drop_floor, elev_range * min_drop_ratio)
         neighbor_offsets = [
             (-1, -1),
             (-1, 0),
@@ -1835,7 +2039,7 @@ class FengShuiAnalyzer:
 
         cut_index = int(len(accumulation_values) * keep_quantile)
         cut_index = max(0, min(len(accumulation_values) - 1, cut_index))
-        accumulation_threshold = max(8.0, accumulation_values[cut_index])
+        accumulation_threshold = max(acc_threshold_floor, accumulation_values[cut_index])
 
         selected_downstream = {}
         for key, target in downstream.items():
@@ -1846,8 +2050,11 @@ class FengShuiAnalyzer:
                 keep = True
             if (
                 not keep
-                and order_value >= max(2, min_order - 1)
-                and acc_value >= (accumulation_threshold * 0.82)
+                and order_value >= max(
+                    secondary_keep_order_floor,
+                    min_order - secondary_keep_order_delta,
+                )
+                and acc_value >= (accumulation_threshold * secondary_keep_acc_ratio)
             ):
                 keep = True
             if keep:
@@ -1896,23 +2103,37 @@ class FengShuiAnalyzer:
         if not stream_paths:
             return hydro_layer
 
+        render_rules = self._rules_section("hydro_rendering")
+        densify_step_factor = self._rule_float(
+            render_rules, "densify_step_factor", 0.72, min_value=0.05
+        )
+        densify_min_step = self._rule_float(
+            render_rules, "densify_min_step", 1.0, min_value=1e-6
+        )
+        smooth_passes = self._rule_int(render_rules, "smooth_passes", 2, min_value=0)
+        distinct_min_distance_factor = self._rule_float(
+            render_rules, "distinct_min_distance_factor", 0.03, min_value=0.0
+        )
+
         features = []
         stream_id = 1
         for path in stream_paths:
-            points = [nodes[key]["point"] for key in path if key in nodes]
+            raw_points = [nodes[key]["point"] for key in path if key in nodes]
+            if len(raw_points) < 2:
+                continue
+
+            points = self._prepare_display_polyline(
+                points=raw_points,
+                spacing=spacing,
+                densify_step_factor=densify_step_factor,
+                densify_min_step=densify_min_step,
+                smooth_passes=smooth_passes,
+                distinct_min_distance_factor=distinct_min_distance_factor,
+            )
             if len(points) < 2:
                 continue
 
-            length = 0.0
-            for idx in range(1, len(path)):
-                key_a = path[idx - 1]
-                key_b = path[idx]
-                point_a = nodes[key_a]["point"]
-                point_b = nodes[key_b]["point"]
-                length += math.hypot(
-                    point_b.x() - point_a.x(),
-                    point_b.y() - point_a.y(),
-                )
+            length = self._polyline_length(points)
             if length <= 0:
                 continue
 
@@ -1951,10 +2172,10 @@ class FengShuiAnalyzer:
     @staticmethod
     def style_hydro_network(hydro_layer):
         class_styles = {
-            "main": ("#0b3d91", 1.6, 0.48),
-            "secondary": ("#1456b8", 1.2, 0.40),
-            "branch": ("#2b7bd8", 0.9, 0.32),
-            "minor": ("#63a5ff", 0.7, 0.24),
+            "main": ("#0b3d91", 1.7, 0.62),
+            "secondary": ("#1456b8", 1.35, 0.54),
+            "branch": ("#2b7bd8", 1.0, 0.44),
+            "minor": ("#63a5ff", 0.8, 0.34),
         }
         categories = []
         for class_id, (color, width, opacity) in class_styles.items():
@@ -1978,7 +2199,7 @@ class FengShuiAnalyzer:
                 "line_style": "solid",
             }
         )
-        fallback.setOpacity(0.20)
+        fallback.setOpacity(0.26)
         renderer.setSourceSymbol(fallback)
         hydro_layer.setRenderer(renderer)
         hydro_layer.triggerRepaint()
@@ -1987,6 +2208,7 @@ class FengShuiAnalyzer:
         provider = dem_layer.dataProvider()
         dem_step = self._dem_step(dem_layer)
         spacing = self._ridge_spacing(dem_layer, dem_step)
+        ridge_rules = self._rules_section("ridge_network")
 
         ridge_layer = QgsVectorLayer(
             f"LineString?crs={dem_layer.crs().authid()}",
@@ -2040,8 +2262,48 @@ class FengShuiAnalyzer:
         elev_min = min(elevations)
         elev_max = max(elevations)
         elev_range = max(1e-6, elev_max - elev_min)
-        prominence_min = max(0.6, elev_range * 0.010)
-        neighbor_delta = max(0.05, elev_range * 0.0022)
+        prominence_min_floor = self._rule_float(
+            ridge_rules, "prominence_min_floor", 0.6, min_value=0.01
+        )
+        prominence_min_ratio = self._rule_float(
+            ridge_rules, "prominence_min_ratio", 0.010, min_value=1e-6
+        )
+        neighbor_delta_floor = self._rule_float(
+            ridge_rules, "neighbor_delta_floor", 0.05, min_value=1e-6
+        )
+        neighbor_delta_ratio = self._rule_float(
+            ridge_rules, "neighbor_delta_ratio", 0.0022, min_value=1e-6
+        )
+        required_neighbor_ratio = self._rule_float(
+            ridge_rules, "required_neighbor_ratio", 0.55, min_value=0.0, max_value=1.0
+        )
+        soft_required_ratio = self._rule_float(
+            ridge_rules,
+            "soft_required_neighbor_ratio",
+            0.45,
+            min_value=0.0,
+            max_value=1.0,
+        )
+        soft_prominence_ratio = self._rule_float(
+            ridge_rules, "soft_prominence_ratio", 0.78, min_value=0.1, max_value=2.0
+        )
+        max_segment_distance_factor = self._rule_float(
+            ridge_rules, "max_segment_distance_factor", 2.9, min_value=0.5
+        )
+        max_segment_drop_floor = self._rule_float(
+            ridge_rules, "max_segment_drop_floor", 2.0, min_value=0.1
+        )
+        max_segment_drop_ratio = self._rule_float(
+            ridge_rules, "max_segment_drop_ratio", 0.14, min_value=1e-6
+        )
+        min_path_spacing_factor = self._rule_float(
+            ridge_rules, "min_path_spacing_factor", 2.4, min_value=0.1
+        )
+        min_path_diag_ratio = self._rule_float(
+            ridge_rules, "min_path_diag_ratio", 0.008, min_value=1e-6
+        )
+        prominence_min = max(prominence_min_floor, elev_range * prominence_min_ratio)
+        neighbor_delta = max(neighbor_delta_floor, elev_range * neighbor_delta_ratio)
 
         neighborhood = [
             (-1, -1),
@@ -2070,11 +2332,14 @@ class FengShuiAnalyzer:
                 1 for item in neighbors if elev >= (item["elev"] + neighbor_delta)
             )
             prominence = elev - mean_neighbor
-            required = max(3, int(len(neighbors) * 0.55))
-            soft_required = max(2, int(len(neighbors) * 0.45))
+            required = max(3, int(len(neighbors) * required_neighbor_ratio))
+            soft_required = max(2, int(len(neighbors) * soft_required_ratio))
             if (
                 (higher_count < required or prominence < prominence_min)
-                and (higher_count < soft_required or prominence < (prominence_min * 0.78))
+                and (
+                    higher_count < soft_required
+                    or prominence < (prominence_min * soft_prominence_ratio)
+                )
             ):
                 continue
 
@@ -2100,43 +2365,22 @@ class FengShuiAnalyzer:
         if len(ridge_nodes) < 2:
             return ridge_layer
 
-        segment_offsets = [
-            (1, 0),
-            (0, 1),
-            (1, 1),
-            (1, -1),
-            (2, 0),
-            (0, 2),
-            (2, 1),
-            (1, 2),
-            (2, -1),
-            (1, -2),
-            (2, 2),
-            (2, -2),
-        ]
-        max_segment_distance = spacing * 2.9
-        max_segment_drop = max(2.0, elev_range * 0.14)
-        adjacency = {key: set() for key in ridge_nodes.keys()}
-        for key_a in ridge_nodes.keys():
-            ix, iy = key_a
-            for dx, dy in segment_offsets:
-                key_b = (ix + dx, iy + dy)
-                if key_b not in ridge_nodes:
-                    continue
-                point_a = ridge_nodes[key_a]["point"]
-                point_b = ridge_nodes[key_b]["point"]
-                distance = math.hypot(
-                    point_b.x() - point_a.x(),
-                    point_b.y() - point_a.y(),
-                )
-                if distance > max_segment_distance:
-                    continue
-                if abs(ridge_nodes[key_a]["elev"] - ridge_nodes[key_b]["elev"]) > (
-                    max_segment_drop
-                ):
-                    continue
-                adjacency[key_a].add(key_b)
-                adjacency[key_b].add(key_a)
+        segment_offsets = self._ridge_segment_offsets(ridge_rules)
+        max_segment_distance = spacing * max_segment_distance_factor
+        max_segment_drop = max(max_segment_drop_floor, elev_range * max_segment_drop_ratio)
+        adjacency = self._ridge_adjacency_from_offsets(
+            ridge_nodes=ridge_nodes,
+            segment_offsets=segment_offsets,
+            max_segment_distance=max_segment_distance,
+            max_segment_drop=max_segment_drop,
+        )
+        adjacency = self._sparsify_ridge_adjacency(
+            adjacency=adjacency,
+            ridge_nodes=ridge_nodes,
+            ridge_rules=ridge_rules,
+            max_segment_distance=max_segment_distance,
+            max_segment_drop=max_segment_drop,
+        )
 
         if not any(adjacency.values()):
             return ridge_layer
@@ -2148,7 +2392,7 @@ class FengShuiAnalyzer:
             elev_range=elev_range,
         )
 
-        ridge_paths = self._ridge_paths_from_graph(adjacency)
+        ridge_paths = self._ridge_paths_from_graph(adjacency, ridge_nodes)
         raw_paths = []
         for path in ridge_paths:
             if len(path) < 2:
@@ -2188,17 +2432,37 @@ class FengShuiAnalyzer:
             )
 
         diag = math.hypot(extent.width(), extent.height())
-        min_path_len = max(spacing * 2.4, diag * 0.008)
+        min_path_len = max(spacing * min_path_spacing_factor, diag * min_path_diag_ratio)
         raw_paths = [item for item in raw_paths if item["len"] >= min_path_len]
 
         if not raw_paths:
             return ridge_layer
 
         ranked_paths = self._rank_ridge_paths(raw_paths)
+        render_rules = self._rules_section("ridge_rendering")
+        densify_step_factor = self._rule_float(
+            render_rules, "densify_step_factor", 0.70, min_value=0.1
+        )
+        densify_min_step = self._rule_float(
+            render_rules, "densify_min_step", 1.0, min_value=0.1
+        )
+        smooth_passes = self._rule_int(render_rules, "smooth_passes", 3, min_value=0)
+        distinct_min_distance_factor = self._rule_float(
+            render_rules, "distinct_min_distance_factor", 0.05, min_value=0.0
+        )
         features = []
         for item in ranked_paths:
             feature = QgsFeature(ridge_layer.fields())
-            smoothed_points = self._smooth_polyline(item["points"], passes=2)
+            smoothed_points = self._prepare_display_polyline(
+                points=item["points"],
+                spacing=spacing,
+                densify_step_factor=densify_step_factor,
+                densify_min_step=densify_min_step,
+                smooth_passes=smooth_passes,
+                distinct_min_distance_factor=distinct_min_distance_factor,
+            )
+            if len(smoothed_points) < 2:
+                continue
             feature.setGeometry(QgsGeometry.fromPolylineXY(smoothed_points))
             feature["ridge_id"] = item["ridge_id"]
             feature["strength"] = item["strength"]
@@ -2228,8 +2492,8 @@ class FengShuiAnalyzer:
     @staticmethod
     def style_ridge_network(ridge_layer):
         class_styles = {
-            "major": ("#273331", 1.25, 0.52),
-            "minor": ("#4b5a57", 0.72, 0.28),
+            "major": ("#273331", 1.35, 0.66),
+            "minor": ("#4b5a57", 0.85, 0.44),
         }
         categories = []
         for class_id, (color, width, opacity) in class_styles.items():
@@ -2259,22 +2523,32 @@ class FengShuiAnalyzer:
                 "line_style": "solid",
             }
         )
-        fallback.setOpacity(0.18)
+        fallback.setOpacity(0.25)
         renderer.setSourceSymbol(fallback)
         ridge_layer.setRenderer(renderer)
         ridge_layer.triggerRepaint()
 
     def _ridge_spacing(self, dem_layer, dem_step):
+        rules = self._rules_section("ridge_network")
+        spacing_step_factor = self._rule_float(
+            rules, "spacing_step_factor", 5.8, min_value=0.1
+        )
+        spacing_coarse_factor = self._rule_float(
+            rules, "spacing_coarse_factor", 0.92, min_value=0.01
+        )
+        spacing_fallback = self._rule_float(
+            rules, "spacing_fallback", 1.0, min_value=0.1
+        )
+        max_points = self._rule_int(rules, "spacing_max_points", 12000, min_value=50)
         coarse = self._adaptive_spacing(dem_layer, dem_step)
-        spacing = max(dem_step * 5.8, coarse * 0.92)
+        spacing = max(dem_step * spacing_step_factor, coarse * spacing_coarse_factor)
         if spacing <= 0:
-            spacing = max(dem_step * 5.8, 1.0)
+            spacing = max(dem_step * spacing_step_factor, spacing_fallback)
 
         extent = dem_layer.extent()
         cols = max(1, int(extent.width() / spacing) + 1)
         rows = max(1, int(extent.height() / spacing) + 1)
         total = cols * rows
-        max_points = 12000
         if total > max_points:
             spacing *= math.sqrt(total / max_points)
         return spacing
@@ -2283,20 +2557,275 @@ class FengShuiAnalyzer:
     def _ridge_edge_key(key_a, key_b):
         return (key_a, key_b) if key_a <= key_b else (key_b, key_a)
 
+    @staticmethod
+    def _ridge_segment_offsets(ridge_rules):
+        default_offsets = [(1, 0), (0, 1), (1, 1), (1, -1)]
+        if not isinstance(ridge_rules, dict):
+            return default_offsets
+        raw_offsets = ridge_rules.get("segment_offsets")
+        if not isinstance(raw_offsets, list):
+            return default_offsets
+        offsets = []
+        for item in raw_offsets:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            try:
+                dx = int(item[0])
+                dy = int(item[1])
+            except (TypeError, ValueError):
+                continue
+            if dx == 0 and dy == 0:
+                continue
+            if dx < 0 or (dx == 0 and dy <= 0):
+                continue
+            offsets.append((dx, dy))
+        return offsets or default_offsets
+
+    @staticmethod
+    def _ridge_adjacency_from_offsets(
+        ridge_nodes,
+        segment_offsets,
+        max_segment_distance,
+        max_segment_drop,
+    ):
+        adjacency = {key: set() for key in ridge_nodes.keys()}
+        for key_a in ridge_nodes.keys():
+            ix, iy = key_a
+            for dx, dy in segment_offsets:
+                key_b = (ix + dx, iy + dy)
+                if key_b not in ridge_nodes:
+                    continue
+                point_a = ridge_nodes[key_a]["point"]
+                point_b = ridge_nodes[key_b]["point"]
+                distance = math.hypot(
+                    point_b.x() - point_a.x(),
+                    point_b.y() - point_a.y(),
+                )
+                if distance > max_segment_distance:
+                    continue
+                elev_gap = abs(ridge_nodes[key_a]["elev"] - ridge_nodes[key_b]["elev"])
+                if elev_gap > max_segment_drop:
+                    continue
+                adjacency[key_a].add(key_b)
+                adjacency[key_b].add(key_a)
+        return adjacency
+
+    @staticmethod
+    def _ridge_edge_cost(
+        key_a,
+        key_b,
+        ridge_nodes,
+        max_segment_distance,
+        max_segment_drop,
+    ):
+        point_a = ridge_nodes[key_a]["point"]
+        point_b = ridge_nodes[key_b]["point"]
+        distance = math.hypot(
+            point_b.x() - point_a.x(),
+            point_b.y() - point_a.y(),
+        )
+        dist_ratio = distance / max(max_segment_distance, 1e-6)
+        elev_ratio = abs(ridge_nodes[key_a]["elev"] - ridge_nodes[key_b]["elev"]) / max(
+            max_segment_drop, 1e-6
+        )
+        strength_gap = abs(ridge_nodes[key_a]["strength"] - ridge_nodes[key_b]["strength"])
+        mean_strength = (ridge_nodes[key_a]["strength"] + ridge_nodes[key_b]["strength"]) * 0.5
+        return (0.50 * dist_ratio) + (0.30 * elev_ratio) + (0.20 * strength_gap) - (
+            0.10 * mean_strength
+        )
+
+    def _sparsify_ridge_adjacency(
+        self,
+        adjacency,
+        ridge_nodes,
+        ridge_rules,
+        max_segment_distance,
+        max_segment_drop,
+    ):
+        max_degree = self._rule_int(ridge_rules, "max_node_degree", 2, min_value=1, max_value=8)
+        orphan_extra_degree = self._rule_int(
+            ridge_rules, "orphan_extra_degree", 3, min_value=1, max_value=10
+        )
+        orphan_extra_degree = max(max_degree + 1, orphan_extra_degree)
+        orphan_strength_min = self._rule_float(
+            ridge_rules, "orphan_strength_min", 0.62, min_value=0.0, max_value=1.0
+        )
+        edges = []
+        for key_a, neighbors in adjacency.items():
+            for key_b in neighbors:
+                edge_key = self._ridge_edge_key(key_a, key_b)
+                if edge_key[0] != key_a:
+                    continue
+                cost = self._ridge_edge_cost(
+                    key_a=key_a,
+                    key_b=key_b,
+                    ridge_nodes=ridge_nodes,
+                    max_segment_distance=max_segment_distance,
+                    max_segment_drop=max_segment_drop,
+                )
+                edges.append((cost, key_a, key_b))
+        if not edges:
+            return adjacency
+
+        edges.sort(key=lambda item: item[0])
+        sparse = {key: set() for key in adjacency.keys()}
+        degree = {key: 0 for key in adjacency.keys()}
+        for _cost, key_a, key_b in edges:
+            if degree[key_a] >= max_degree or degree[key_b] >= max_degree:
+                continue
+            sparse[key_a].add(key_b)
+            sparse[key_b].add(key_a)
+            degree[key_a] += 1
+            degree[key_b] += 1
+
+        for key, node in sorted(
+            ridge_nodes.items(),
+            key=lambda item: item[1]["strength"],
+            reverse=True,
+        ):
+            if degree.get(key, 0) > 0:
+                continue
+            if node["strength"] < orphan_strength_min:
+                continue
+            candidates = []
+            for other in adjacency.get(key, set()):
+                if degree.get(other, 0) >= orphan_extra_degree:
+                    continue
+                cost = self._ridge_edge_cost(
+                    key_a=key,
+                    key_b=other,
+                    ridge_nodes=ridge_nodes,
+                    max_segment_distance=max_segment_distance,
+                    max_segment_drop=max_segment_drop,
+                )
+                candidates.append((cost, other))
+            if not candidates:
+                continue
+            candidates.sort(key=lambda item: item[0])
+            best = candidates[0][1]
+            sparse[key].add(best)
+            sparse[best].add(key)
+            degree[key] = degree.get(key, 0) + 1
+            degree[best] = degree.get(best, 0) + 1
+
+        return sparse
+
+    @staticmethod
+    def _ridge_turn_penalty(point_prev, point_curr, point_next):
+        vec_a_x = point_curr.x() - point_prev.x()
+        vec_a_y = point_curr.y() - point_prev.y()
+        vec_b_x = point_next.x() - point_curr.x()
+        vec_b_y = point_next.y() - point_curr.y()
+        len_a = math.hypot(vec_a_x, vec_a_y)
+        len_b = math.hypot(vec_b_x, vec_b_y)
+        if len_a <= 1e-6 or len_b <= 1e-6:
+            return 1.0
+        dot = ((vec_a_x * vec_b_x) + (vec_a_y * vec_b_y)) / (len_a * len_b)
+        dot = max(-1.0, min(1.0, dot))
+        return 1.0 - dot
+
+    @classmethod
+    def _ridge_path_step_cost(cls, prev_key, current_key, next_key, ridge_nodes):
+        path_rules = cls._rules_section("ridge_path")
+        turn_weight = cls._rule_float(path_rules, "turn_weight", 0.66, min_value=0.0)
+        length_weight = cls._rule_float(
+            path_rules, "length_weight", 0.22, min_value=0.0
+        )
+        strength_weight = cls._rule_float(
+            path_rules, "strength_weight", 0.12, min_value=0.0
+        )
+        weight_sum = turn_weight + length_weight + strength_weight
+        if weight_sum <= 0:
+            turn_weight, length_weight, strength_weight = 0.66, 0.22, 0.12
+            weight_sum = 1.0
+        turn_weight /= weight_sum
+        length_weight /= weight_sum
+        strength_weight /= weight_sum
+
+        prev_point = ridge_nodes[prev_key]["point"]
+        current_point = ridge_nodes[current_key]["point"]
+        next_point = ridge_nodes[next_key]["point"]
+        turn_penalty = cls._ridge_turn_penalty(prev_point, current_point, next_point)
+        prev_len = math.hypot(
+            current_point.x() - prev_point.x(),
+            current_point.y() - prev_point.y(),
+        )
+        next_len = math.hypot(
+            next_point.x() - current_point.x(),
+            next_point.y() - current_point.y(),
+        )
+        length_penalty = abs(next_len - prev_len) / max(prev_len, 1e-6)
+        strength_penalty = abs(
+            ridge_nodes[next_key]["strength"] - ridge_nodes[current_key]["strength"]
+        )
+        return (turn_weight * turn_penalty) + (length_weight * length_penalty) + (
+            strength_weight * strength_penalty
+        )
+
+    def _ridge_endpoint_bridge_penalty(self, key, other, adjacency, ridge_nodes):
+        if key not in adjacency or other not in adjacency:
+            return 1.0
+        if len(adjacency[key]) != 1 or len(adjacency[other]) != 1:
+            return 1.0
+        prev_key = next(iter(adjacency[key]))
+        prev_other = next(iter(adjacency[other]))
+        point_prev = ridge_nodes[prev_key]["point"]
+        point_key = ridge_nodes[key]["point"]
+        point_other = ridge_nodes[other]["point"]
+        point_prev_other = ridge_nodes[prev_other]["point"]
+        penalty_a = self._ridge_turn_penalty(point_prev, point_key, point_other)
+        penalty_b = self._ridge_turn_penalty(point_prev_other, point_other, point_key)
+        return (penalty_a + penalty_b) * 0.5
+
     def _bridge_ridge_endpoints(self, adjacency, ridge_nodes, spacing, elev_range):
         endpoints = [key for key, neighbors in adjacency.items() if len(neighbors) == 1]
+        bridge_rules = self._rules_section("ridge_bridge")
+        max_endpoint_count = self._rule_int(
+            bridge_rules, "max_endpoint_count", 1800, min_value=2
+        )
+        max_bridge_pairs = self._rule_int(
+            bridge_rules, "max_bridge_pairs", 8, min_value=0
+        )
         if len(endpoints) < 2:
             return 0
-        if len(endpoints) > 1800:
+        if len(endpoints) > max_endpoint_count:
+            return 0
+        if max_bridge_pairs <= 0:
             return 0
 
-        max_distance = spacing * 2.0
+        max_distance_factor = self._rule_float(
+            bridge_rules, "max_distance_factor", 2.0, min_value=0.1
+        )
+        elev_tolerance_floor = self._rule_float(
+            bridge_rules, "elev_tolerance_floor", 1.5, min_value=0.1
+        )
+        elev_tolerance_ratio = self._rule_float(
+            bridge_rules, "elev_tolerance_ratio", 0.10, min_value=1e-6
+        )
+        distance_weight = self._rule_float(
+            bridge_rules, "distance_weight", 0.50, min_value=0.0
+        )
+        elev_weight = self._rule_float(
+            bridge_rules, "elev_weight", 0.22, min_value=0.0
+        )
+        strength_weight = self._rule_float(
+            bridge_rules, "strength_weight", 0.10, min_value=0.0
+        )
+        direction_weight = self._rule_float(
+            bridge_rules, "direction_weight", 0.18, min_value=0.0
+        )
+        max_direction_penalty = self._rule_float(
+            bridge_rules, "max_direction_penalty", 0.65, min_value=0.0
+        )
+        max_distance = spacing * max_distance_factor
         max_distance_sq = max_distance * max_distance
-        elev_tolerance = max(1.5, elev_range * 0.10)
+        elev_tolerance = max(elev_tolerance_floor, elev_range * elev_tolerance_ratio)
         used = set()
         bridged = 0
 
         for key in endpoints:
+            if bridged >= max_bridge_pairs:
+                break
             if key in used:
                 continue
 
@@ -2324,8 +2853,18 @@ class FengShuiAnalyzer:
                 distance_ratio = math.sqrt(distance_sq) / max_distance
                 elev_ratio = abs(elev - other_elev) / elev_tolerance
                 strength_ratio = abs(strength - ridge_nodes[other]["strength"])
-                score = (distance_ratio * 0.62) + (elev_ratio * 0.25) + (
-                    strength_ratio * 0.13
+                direction_penalty = self._ridge_endpoint_bridge_penalty(
+                    key=key,
+                    other=other,
+                    adjacency=adjacency,
+                    ridge_nodes=ridge_nodes,
+                )
+                if direction_penalty > max_direction_penalty:
+                    continue
+                score = (distance_ratio * distance_weight) + (elev_ratio * elev_weight) + (
+                    strength_ratio * strength_weight
+                ) + (
+                    direction_penalty * direction_weight
                 )
                 if best is None or score < best_score:
                     best = other
@@ -2341,7 +2880,7 @@ class FengShuiAnalyzer:
 
         return bridged
 
-    def _ridge_paths_from_graph(self, adjacency):
+    def _ridge_paths_from_graph(self, adjacency, ridge_nodes):
         visited_edges = set()
         paths = []
 
@@ -2355,12 +2894,22 @@ class FengShuiAnalyzer:
             prev = start
             current = neighbor
             while True:
-                candidates = sorted(
-                    n for n in adjacency[current] if n != prev
-                )
-                if len(candidates) != 1:
+                candidates = [
+                    n
+                    for n in sorted(adjacency[current])
+                    if n != prev and self._ridge_edge_key(current, n) not in visited_edges
+                ]
+                if not candidates:
                     break
-                nxt = candidates[0]
+                if len(candidates) == 1:
+                    nxt = candidates[0]
+                else:
+                    nxt = min(
+                        candidates,
+                        key=lambda key: self._ridge_path_step_cost(
+                            prev, current, key, ridge_nodes
+                        ),
+                    )
                 next_edge = self._ridge_edge_key(current, nxt)
                 if next_edge in visited_edges:
                     break
@@ -2370,10 +2919,18 @@ class FengShuiAnalyzer:
             return path
 
         branch_nodes = sorted(
-            key for key, neighbors in adjacency.items() if len(neighbors) != 2 and neighbors
+            (
+                key
+                for key, neighbors in adjacency.items()
+                if len(neighbors) != 2 and neighbors
+            ),
+            key=lambda key: ridge_nodes[key]["strength"],
+            reverse=True,
         )
         for start in branch_nodes:
-            for neighbor in sorted(adjacency[start]):
+            for neighbor in sorted(
+                adjacency[start], key=lambda key: ridge_nodes[key]["strength"], reverse=True
+            ):
                 path = trace_path(start, neighbor)
                 if path and len(path) > 1:
                     paths.append(path)
@@ -2387,36 +2944,90 @@ class FengShuiAnalyzer:
         return paths
 
     @staticmethod
-    def _rank_ridge_paths(raw_paths):
+    def _densify_polyline(points, max_step=1.0):
+        if len(points) < 2:
+            return [QgsPointXY(point.x(), point.y()) for point in points]
+
+        step = max(0.5, float(max_step))
+        densified = [QgsPointXY(points[0].x(), points[0].y())]
+        for idx in range(len(points) - 1):
+            point_a = points[idx]
+            point_b = points[idx + 1]
+            dx = point_b.x() - point_a.x()
+            dy = point_b.y() - point_a.y()
+            seg_len = math.hypot(dx, dy)
+            if seg_len > step:
+                insert_count = int(seg_len / step)
+                for offset in range(1, insert_count + 1):
+                    ratio = offset / (insert_count + 1)
+                    densified.append(
+                        QgsPointXY(
+                            point_a.x() + (dx * ratio),
+                            point_a.y() + (dy * ratio),
+                        )
+                    )
+            densified.append(QgsPointXY(point_b.x(), point_b.y()))
+        return densified
+
+    @classmethod
+    def _rank_ridge_paths(cls, raw_paths):
         if not raw_paths:
             return []
+
+        rank_rules = cls._rules_section("ridge_ranking")
+        length_weight = cls._rule_float(
+            rank_rules, "score_length_weight", 0.62, min_value=0.0
+        )
+        strength_weight = cls._rule_float(
+            rank_rules, "score_strength_weight", 0.38, min_value=0.0
+        )
+        weight_sum = length_weight + strength_weight
+        if weight_sum <= 0:
+            length_weight = 0.62
+            strength_weight = 0.38
+            weight_sum = 1.0
+        length_weight /= weight_sum
+        strength_weight /= weight_sum
 
         max_len = max(item["len"] for item in raw_paths)
         max_len = max(max_len, 1e-6)
         scored = []
         for item in raw_paths:
             length_norm = item["len"] / max_len
-            score = (0.62 * length_norm) + (0.38 * item["strength"])
+            score = (length_weight * length_norm) + (strength_weight * item["strength"])
             scored.append((score, item))
         scored.sort(key=lambda pair: pair[0], reverse=True)
 
         total_candidates = len(scored)
-        if total_candidates >= 220:
-            keep_ratio = 0.38
-        elif total_candidates >= 120:
-            keep_ratio = 0.45
-        elif total_candidates >= 70:
-            keep_ratio = 0.56
-        else:
-            keep_ratio = 0.70
-        keep_count = max(12, int(total_candidates * keep_ratio))
+        keep_ratio_rules = rank_rules.get("keep_ratio_rules", [])
+        keep_ratio_default = cls._rule_float(
+            rank_rules, "default_keep_ratio", 0.70, min_value=0.01, max_value=1.0
+        )
+        keep_ratio = cls._rule_threshold_value(
+            keep_ratio_rules,
+            total_candidates,
+            "ratio",
+            keep_ratio_default,
+        )
+        try:
+            keep_ratio = float(keep_ratio)
+        except (TypeError, ValueError):
+            keep_ratio = keep_ratio_default
+        keep_ratio = max(0.01, min(1.0, keep_ratio))
+        min_keep_count = cls._rule_int(
+            rank_rules, "min_keep_count", 12, min_value=1
+        )
+        keep_count = max(min_keep_count, int(total_candidates * keep_ratio))
         scored = scored[:keep_count]
 
         ranked = []
         total = len(scored)
+        major_percentile_threshold = cls._rule_float(
+            rank_rules, "major_percentile_threshold", 0.30, min_value=0.0, max_value=1.0
+        )
         for index, (score_value, item) in enumerate(scored, start=1):
             percentile = index / total
-            if percentile <= 0.30:
+            if percentile <= major_percentile_threshold:
                 ridge_class = "major"
             else:
                 ridge_class = "minor"
@@ -2438,51 +3049,83 @@ class FengShuiAnalyzer:
         return ranked
 
     def _hydro_spacing(self, dem_layer, dem_step):
+        rules = self._rules_section("hydro_network")
+        spacing_step_factor = self._rule_float(
+            rules, "spacing_step_factor", 3.2, min_value=0.1
+        )
+        spacing_coarse_factor = self._rule_float(
+            rules, "spacing_coarse_factor", 0.58, min_value=0.01
+        )
+        spacing_fallback = self._rule_float(
+            rules, "spacing_fallback", 1.0, min_value=0.1
+        )
+        max_points = self._rule_int(rules, "spacing_max_points", 26000, min_value=50)
         coarse = self._adaptive_spacing(dem_layer, dem_step)
-        spacing = max(dem_step * 3.2, coarse * 0.58)
+        spacing = max(dem_step * spacing_step_factor, coarse * spacing_coarse_factor)
         if spacing <= 0:
-            spacing = max(dem_step * 3.2, 1.0)
+            spacing = max(dem_step * spacing_step_factor, spacing_fallback)
 
         extent = dem_layer.extent()
         cols = max(1, int(extent.width() / spacing) + 1)
         rows = max(1, int(extent.height() / spacing) + 1)
         total = cols * rows
-        max_points = 26000
         if total > max_points:
             spacing *= math.sqrt(total / max_points)
         return spacing
 
-    @staticmethod
-    def _hydro_keep_quantile(node_count):
-        if node_count >= 20000:
-            return 0.95
-        if node_count >= 12000:
-            return 0.93
-        if node_count >= 7000:
-            return 0.91
-        if node_count >= 3000:
-            return 0.89
-        return 0.86
+    @classmethod
+    def _hydro_keep_quantile(cls, node_count):
+        rules = cls._rules().get("hydro_keep_quantile_rules", [])
+        default_quantile = 0.86
+        value = cls._rule_threshold_value(
+            rules,
+            int(node_count),
+            "quantile",
+            default_quantile,
+        )
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            return default_quantile
 
-    @staticmethod
-    def _hydro_min_order(node_count):
-        if node_count >= 18000:
-            return 4
-        if node_count >= 4000:
-            return 3
-        return 2
+    @classmethod
+    def _hydro_min_order(cls, node_count):
+        rules = cls._rules().get("hydro_min_order_rules", [])
+        value = cls._rule_threshold_value(
+            rules,
+            int(node_count),
+            "order",
+            2,
+        )
+        try:
+            return max(1, int(value))
+        except (TypeError, ValueError):
+            return 2
 
-    @staticmethod
-    def _hydro_min_path_length(dem_layer, spacing, node_count):
+    @classmethod
+    def _hydro_min_path_length(cls, dem_layer, spacing, node_count):
+        rules = cls._rules_section("hydro_min_path_rules")
+        base_spacing_factor = cls._rule_float(
+            rules, "base_spacing_factor", 4.0, min_value=0.1
+        )
+        base_diag_ratio = cls._rule_float(
+            rules, "base_diag_ratio", 0.006, min_value=1e-6
+        )
+        size_rules = rules.get("size_rules", [])
         extent = dem_layer.extent()
         diag = math.hypot(extent.width(), extent.height())
-        length = max(spacing * 4.0, diag * 0.006)
-        if node_count >= 18000:
-            length = max(length, spacing * 10.0)
-        elif node_count >= 9000:
-            length = max(length, spacing * 7.0)
-        elif node_count >= 4000:
-            length = max(length, spacing * 5.5)
+        length = max(spacing * base_spacing_factor, diag * base_diag_ratio)
+        sized = cls._rule_threshold_value(
+            size_rules,
+            int(node_count),
+            "spacing_factor",
+            None,
+        )
+        if sized is not None:
+            try:
+                length = max(length, spacing * max(0.1, float(sized)))
+            except (TypeError, ValueError):
+                pass
         return length
 
     @staticmethod
@@ -2720,6 +3363,127 @@ class FengShuiAnalyzer:
             if indicators.get(key) is not None:
                 available += weight
         return available / total
+
+    @staticmethod
+    def _indicator_label_ko(key):
+        labels = {
+            "slope": "경사",
+            "aspect": "향",
+            "form": "형국",
+            "long": "종심",
+            "water": "수계",
+            "conv": "수렴습윤",
+            "tpi": "TPI",
+        }
+        return labels.get(key, key)
+
+    @staticmethod
+    def _score_band_100(score_value):
+        if score_value is None:
+            return "판정불가"
+        if score_value >= 80.0:
+            return "매우 양호"
+        if score_value >= 68.0:
+            return "양호"
+        if score_value >= 55.0:
+            return "보통"
+        if score_value >= 45.0:
+            return "주의"
+        return "낮음"
+
+    @staticmethod
+    def _indicator_contributions(indicators, profile):
+        rows = []
+        weights = profile.get("weights", {})
+        if not isinstance(weights, dict):
+            return rows
+        for key, weight in weights.items():
+            score = indicators.get(key)
+            if score is None:
+                continue
+            try:
+                weight_value = float(weight)
+                score_value = float(score)
+            except (TypeError, ValueError):
+                continue
+            rows.append(
+                {
+                    "key": key,
+                    "weight": weight_value,
+                    "score": score_value,
+                    "contrib": weight_value * score_value,
+                }
+            )
+        rows.sort(key=lambda item: item["contrib"], reverse=True)
+        return rows
+
+    def _compose_site_reason(
+        self,
+        profile_key,
+        context,
+        profile,
+        indicators,
+        dem_metrics,
+        water_distance,
+        slope_value,
+        aspect_value,
+        total_score,
+        note,
+    ):
+        contributions = self._indicator_contributions(indicators, profile)
+        top_rows = contributions[:3]
+        weak_rows = sorted(contributions, key=lambda item: item["score"])[:2]
+        top_text = ", ".join(
+            (
+                f"{self._indicator_label_ko(item['key'])} "
+                f"{item['score']:.2f}(w{item['weight']:.2f})"
+            )
+            for item in top_rows
+        )
+        weak_text = ", ".join(
+            (
+                f"{self._indicator_label_ko(item['key'])} "
+                f"{item['score']:.2f}(w{item['weight']:.2f})"
+            )
+            for item in weak_rows
+        )
+
+        score_text = self._fmt_num(total_score, 2)
+        grade = self._score_band_100(total_score)
+        slope_text = "n/a" if slope_value is None else f"{slope_value:.2f}°"
+        if aspect_value is None:
+            aspect_text = "n/a"
+        else:
+            aspect_text = f"{aspect_value:.1f}°({self._azimuth_label(aspect_value)})"
+        water_text = "n/a" if water_distance is None else f"{water_distance:.1f}m"
+        target_text = self._fmt_num(context.get("water_distance_target"), 1)
+        sigma_text = self._fmt_num(context.get("water_distance_sigma"), 1)
+
+        metric_text = (
+            f"형국 {self._fmt_num(dem_metrics.get('form_score'), 3)}, "
+            f"종심 {self._fmt_num(dem_metrics.get('long_score'), 3)}, "
+            f"수렴습윤 {self._fmt_num(dem_metrics.get('dem_water_score'), 3)}, "
+            f"수렴도 {self._fmt_num(dem_metrics.get('convergence'), 3)}, "
+            f"TPI {self._fmt_num(dem_metrics.get('tpi_norm'), 4)}"
+            f"({self._tpi_hint(dem_metrics.get('tpi_norm'))})"
+        )
+        context_text = (
+            f"컨텍스트={context.get('culture_key')}/{context.get('period_key')}, "
+            f"모델={profile_key}"
+        )
+        parts = [
+            f"적합도 {score_text}/100 ({grade})",
+            f"상위기여: {top_text}" if top_text else "상위기여: n/a",
+            f"보완요인: {weak_text}" if weak_text else "보완요인: n/a",
+            f"현장값: 경사 {slope_text}, 향 {aspect_text}, 수계거리 {water_text} (목표 {target_text}±{sigma_text}m)",
+            f"세부지표: {metric_text}",
+            context_text,
+            f"가중요약: {note}" if note else "",
+        ]
+        reason = " | ".join(part for part in parts if part)
+        if len(reason) > 1000:
+            return f"{reason[:997]}..."
+        return reason
 
     @staticmethod
     def _explain_top_factors(indicators, profile):
