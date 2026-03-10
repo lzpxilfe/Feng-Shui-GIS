@@ -23,11 +23,11 @@ def _coerce_text(value):
 def _localized(node, language=None):
     if not isinstance(node, dict):
         return node
-    lang = (language or language_code() or "ko").lower()
+    lang = (language or language_code() or "en").lower()
     return (
         node.get(lang)
-        or node.get("ko")
         or node.get("en")
+        or node.get("ko")
         or next(iter(node.values()), "")
     )
 

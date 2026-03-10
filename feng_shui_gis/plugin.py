@@ -28,6 +28,29 @@ from .ui_catalog import ui_text
 
 
 class FengShuiGisPlugin:
+    _OUTPUT_SUFFIXES = {
+        "en": {
+            "analysis": "fengshui",
+            "calibration": "calibration",
+            "ridge": "fengshui_ridges",
+            "hydro": "fengshui_hydro",
+            "terms": "fengshui_terms",
+            "term_links": "fengshui_links",
+            "hydro_auto": "hydro_auto",
+            "hydro_auto_calibration": "hydro_auto_calib",
+        },
+        "ko": {
+            "analysis": "풍수_입지평가",
+            "calibration": "풍수_보정",
+            "ridge": "풍수_산줄기",
+            "hydro": "풍수_수계",
+            "terms": "풍수_용어",
+            "term_links": "풍수_구조연결",
+            "hydro_auto": "풍수_자동수계",
+            "hydro_auto_calibration": "풍수_자동수계_보정",
+        },
+    }
+
     def __init__(self, iface):
         self.iface = iface
         self.action = None
@@ -131,7 +154,8 @@ class FengShuiGisPlugin:
             self._mountain_name_options()
         )
         self._warn_low_evidence_context(culture_key, period_key, hemisphere)
-        self._warn_if_geographic(dem_layer)
+        if not self._require_projected_dem_crs(dem_layer):
+            return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
 
         try:
@@ -145,7 +169,9 @@ class FengShuiGisPlugin:
                 auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
                 if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
                     analyzer.style_hydro_network(auto_hydro_layer)
-                    auto_hydro_layer.setName(f"{dem_layer.name()}_hydro_auto")
+                    auto_hydro_layer.setName(
+                        self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
+                    )
                     QgsProject.instance().addMapLayer(auto_hydro_layer)
                     prepared_water = auto_hydro_layer
 
@@ -158,7 +184,7 @@ class FengShuiGisPlugin:
                 culture_key=culture_key,
                 period_key=period_key,
             )
-            output_layer.setName(f"{site_layer.name()}_fengshui")
+            output_layer.setName(self._output_layer_name(site_layer.name(), "analysis", label_lang))
             mountain_updated = 0
             if mountain_enabled:
                 mountain_updated = self._enrich_layer_with_mountain_names(
@@ -196,6 +222,7 @@ class FengShuiGisPlugin:
         dem_layer,
         water_layer,
         hemisphere,
+        profile_key,
         culture_key,
         period_key,
         auto_hydro,
@@ -217,7 +244,8 @@ class FengShuiGisPlugin:
             self._mountain_name_options()
         )
         self._warn_low_evidence_context(culture_key, period_key, hemisphere)
-        self._warn_if_geographic(dem_layer)
+        if not self._require_projected_dem_crs(dem_layer):
+            return
         self._warn_if_crs_mismatch(dem_layer, water_layer)
 
         try:
@@ -227,13 +255,29 @@ class FengShuiGisPlugin:
             analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
 
             ridge_layer = analyzer.build_ridge_network(dem_layer)
+            ridge_layer.setName(self._output_layer_name(dem_layer.name(), "ridge", label_lang))
             analyzer.style_ridge_network(ridge_layer)
 
+            hydro_reference_layer = water_layer
             hydro_layer = None
-            if water_layer is None and auto_hydro:
-                hydro_layer = analyzer.build_hydro_network(dem_layer)
+            if water_layer is not None and self._is_line_layer(water_layer):
+                hydro_layer = self._copy_vector_layer(
+                    water_layer,
+                    self._output_layer_name(dem_layer.name(), "hydro", label_lang),
+                )
                 if hydro_layer and hydro_layer.featureCount() > 0:
                     analyzer.style_hydro_network(hydro_layer)
+                else:
+                    hydro_layer = None
+            elif auto_hydro:
+                hydro_layer = analyzer.build_hydro_network(dem_layer)
+                if hydro_layer and hydro_layer.featureCount() > 0:
+                    hydro_layer.setName(
+                        self._output_layer_name(dem_layer.name(), "hydro", label_lang)
+                    )
+                    analyzer.style_hydro_network(hydro_layer)
+                    if hydro_reference_layer is None:
+                        hydro_reference_layer = hydro_layer
                 else:
                     hydro_layer = None
 
@@ -242,11 +286,15 @@ class FengShuiGisPlugin:
             if include_terms:
                 terms_layer = analyzer.extract_terms(
                     dem_layer,
+                    water_layer=hydro_reference_layer,
                     hemisphere=hemisphere,
+                    profile_key=profile_key,
                     culture_key=culture_key,
                     period_key=period_key,
                 )
+                terms_layer.setName(self._output_layer_name(dem_layer.name(), "terms", label_lang))
                 line_layer = analyzer.build_term_links(terms_layer)
+                line_layer.setName(self._output_layer_name(dem_layer.name(), "term_links", label_lang))
                 analyzer.style_term_points(terms_layer)
                 analyzer.style_term_links(line_layer)
 
@@ -333,7 +381,8 @@ class FengShuiGisPlugin:
             calibration_culture = "korea"
         calibration_culture = calibration_culture.strip().lower()
         self._warn_low_evidence_context(calibration_culture, period_key, hemisphere)
-        self._warn_if_geographic(dem_layer)
+        if not self._require_projected_dem_crs(dem_layer):
+            return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
         if culture_key != calibration_culture:
             self.iface.messageBar().pushWarning(
@@ -354,7 +403,13 @@ class FengShuiGisPlugin:
                 auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
                 if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
                     analyzer.style_hydro_network(auto_hydro_layer)
-                    auto_hydro_layer.setName(f"{dem_layer.name()}_hydro_auto_calib")
+                    auto_hydro_layer.setName(
+                        self._output_layer_name(
+                            dem_layer.name(),
+                            "hydro_auto_calibration",
+                            label_lang,
+                        )
+                    )
                     QgsProject.instance().addMapLayer(auto_hydro_layer)
                     prepared_water = auto_hydro_layer
 
@@ -369,7 +424,9 @@ class FengShuiGisPlugin:
                 negative_ratio=negative_ratio,
                 random_seed=random_seed,
             )
-            scored_layer.setName(f"{site_layer.name()}_calibration")
+            scored_layer.setName(
+                self._output_layer_name(site_layer.name(), "calibration", label_lang)
+            )
             mountain_updated = 0
             if mountain_enabled:
                 mountain_updated = self._enrich_layer_with_mountain_names(
@@ -419,6 +476,59 @@ class FengShuiGisPlugin:
                 tr("plugin_title"),
                 tr("warn_geographic_crs"),
             )
+
+    def _output_layer_name(self, base_name, layer_kind, label_lang="ko"):
+        language = label_lang if label_lang in self._OUTPUT_SUFFIXES else "ko"
+        suffix = self._OUTPUT_SUFFIXES[language].get(layer_kind, layer_kind)
+        clean_base = str(base_name).strip() if base_name is not None else ""
+        clean_base = clean_base or "layer"
+        return f"{clean_base}_{suffix}"
+
+    @staticmethod
+    def _is_line_layer(layer):
+        if layer is None:
+            return False
+        return QgsWkbTypes.geometryType(layer.wkbType()) == QgsWkbTypes.LineGeometry
+
+    @staticmethod
+    def _copy_vector_layer(source_layer, layer_name):
+        if source_layer is None:
+            return None
+        copied = source_layer.materialize(QgsFeatureRequest())
+        if not isinstance(copied, QgsVectorLayer):
+            return None
+        copied.setName(layer_name)
+        return copied
+
+    def _require_projected_dem_crs(self, layer):
+        if layer is None:
+            return True
+        crs = layer.crs()
+        if crs is None or not crs.isValid():
+            return True
+        if not crs.isGeographic():
+            return True
+
+        text_lang = self._label_language()
+        default_message = (
+            "DEM 좌표계가 경위도(도 단위)입니다. 이 플러그인의 거리·반경 계산은 투영 좌표계가 필요합니다. "
+            "미터 기반 CRS로 재투영한 뒤 다시 실행하세요."
+            if text_lang == "ko"
+            else (
+                "DEM CRS is geographic (degrees). This plugin's distance and radius "
+                "calculations require a projected CRS. Reproject the DEM to a meter-based "
+                "CRS and run again."
+            )
+        )
+        message = ui_text(
+            "projected_crs_required",
+            text_lang,
+            default=default_message,
+        )
+        self.iface.messageBar().pushCritical(tr("plugin_title"), message)
+        if self.dock:
+            self.dock.set_status(message)
+        return False
 
     def _warn_if_crs_mismatch(self, dem_layer, *other_layers):
         if dem_layer is None:

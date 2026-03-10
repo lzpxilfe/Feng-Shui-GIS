@@ -12,6 +12,42 @@
       "ko": "용어 언어",
       "en": "Label Language"
     },
+    "goal_label": {
+      "ko": "탐색 목적",
+      "en": "Exploration Goal"
+    },
+    "goal_tomb_label": {
+      "ko": "음택(무덤 자리)",
+      "en": "Burial Site (Yin House)"
+    },
+    "goal_house_label": {
+      "ko": "양택(집터/거주지)",
+      "en": "Dwelling Site (Yang House)"
+    },
+    "goal_general_label": {
+      "ko": "일반 지형 읽기",
+      "en": "General Terrain Reading"
+    },
+    "goal_custom_label": {
+      "ko": "직접 설정",
+      "en": "Manual Setup"
+    },
+    "goal_hint_tomb": {
+      "ko": "<b>음택</b> 모드입니다. 무덤 자리를 찾기 쉽게 <b>{profile}</b> 프리셋을 자동 적용하고, 혈/명당 후보를 보기 좋게 용어 추출을 기본으로 켭니다.",
+      "en": "<b>Burial-site mode</b>. The <b>{profile}</b> preset is applied automatically, and term extraction is enabled by default so hyeol and myeongdang candidates are easier to inspect."
+    },
+    "goal_hint_house": {
+      "ko": "<b>양택</b> 모드입니다. 집터·거주지 형세를 보기 쉽게 <b>{profile}</b> 프리셋을 자동 적용하고, 지형 용어를 함께 보도록 맞춥니다.",
+      "en": "<b>Dwelling-site mode</b>. The <b>{profile}</b> preset is applied automatically, and terrain terms are enabled to help read settlement form."
+    },
+    "goal_hint_general": {
+      "ko": "<b>일반 지형 읽기</b> 모드입니다. 전체 산줄기와 수계 흐름을 먼저 파악하는 데 맞춰 기본 프리셋을 적용합니다. 무덤 자리를 찾는다면 음택으로 바꾸는 편이 더 낫습니다.",
+      "en": "<b>General terrain mode</b>. This keeps a neutral preset for reading broad ridge and hydro patterns first. If you are looking for burial sites, switch to the burial-site goal."
+    },
+    "goal_hint_custom": {
+      "ko": "<b>직접 설정</b> 모드입니다. 고급 옵션에서 프리셋, 문화권, 시대를 직접 고르며 결과를 세밀하게 조정합니다. 현재 모델: <b>{profile}</b>.",
+      "en": "<b>Manual mode</b>. Fine-tune the preset, culture, and period from Advanced Options. Current model: <b>{profile}</b>."
+    },
     "context_param_label": {
       "ko": "근거 파라미터",
       "en": "Evidence Parameter"
@@ -23,6 +59,38 @@
     "guide_title": {
       "ko": "진행 가이드",
       "en": "Progress Guide"
+    },
+    "guide_goal_intro_tomb": {
+      "ko": "<b>이 모드가 하는 일</b><br/>무덤을 쓰기 좋아 보이는 형세를 DEM에서 먼저 찾습니다. 산줄기, 물길, 혈 후보, 명당 구조를 차례대로 읽게 도와줍니다.",
+      "en": "<b>What this mode does</b><br/>It looks for landform patterns that resemble suitable burial settings. Start by reading ridges, water flow, hyeol candidates, and supporting term structure from the DEM."
+    },
+    "guide_goal_intro_house": {
+      "ko": "<b>이 모드가 하는 일</b><br/>집터나 거주지 형세를 읽기 쉽게 DEM 지형과 수계의 균형을 먼저 보여줍니다. 뒤의 보호와 앞의 개방감을 함께 살펴보는 데 맞춰져 있습니다.",
+      "en": "<b>What this mode does</b><br/>It reads dwelling-site form by balancing terrain shelter and openness from DEM and hydro structure."
+    },
+    "guide_goal_intro_general": {
+      "ko": "<b>이 모드가 하는 일</b><br/>풍수 전공 지식이 없어도 전체 지형 흐름을 먼저 훑어볼 수 있게 기본 산줄기와 수계를 정리합니다.",
+      "en": "<b>What this mode does</b><br/>It gives a broad first pass over the landscape so users without Feng Shui background can read ridge and hydro structure before going deeper."
+    },
+    "guide_goal_intro_custom": {
+      "ko": "<b>이 모드가 하는 일</b><br/>세부 프리셋과 컨텍스트를 직접 바꾸며 결과를 비교할 수 있습니다. 해석 목적이 분명할 때 쓰는 모드입니다.",
+      "en": "<b>What this mode does</b><br/>It lets you compare results while manually changing presets and context. Use this when you already know the interpretation target."
+    },
+    "guide_goal_steps_tomb": {
+      "ko": "<b>권장 순서</b><br/>1. DEM을 고릅니다.<br/>2. 수계를 넣거나 DEM 자동 수계를 그대로 둡니다.<br/>3. 용어 추출을 켠 상태로 지형 추출을 실행합니다.<br/>4. 혈·명당 후보를 눈으로 먼저 확인합니다.<br/>5. 점 레이어가 있으면 나중에 고급 분석 탭에서 점수 계산을 합니다.",
+      "en": "<b>Recommended order</b><br/>1. Select a DEM.<br/>2. Provide a water layer or keep DEM auto-hydro on.<br/>3. Run landscape extraction with term extraction enabled.<br/>4. Inspect hyeol and myeongdang candidates first.<br/>5. If you have point data, use Advanced Analysis afterward for scoring."
+    },
+    "guide_goal_steps_house": {
+      "ko": "<b>권장 순서</b><br/>1. DEM을 고릅니다.<br/>2. 수계를 넣거나 DEM 자동 수계를 사용합니다.<br/>3. 지형 추출로 뒤의 받침과 앞의 개방 구조를 먼저 봅니다.<br/>4. 후보 점이 있으면 고급 분석 탭에서 점수 계산을 합니다.",
+      "en": "<b>Recommended order</b><br/>1. Select a DEM.<br/>2. Provide a water layer or use DEM auto-hydro.<br/>3. Run landscape extraction first to inspect shelter-behind and openness-in-front.<br/>4. If you have candidate points, score them in Advanced Analysis."
+    },
+    "guide_goal_steps_general": {
+      "ko": "<b>권장 순서</b><br/>1. DEM을 고릅니다.<br/>2. 수계를 넣거나 DEM 자동 수계를 사용합니다.<br/>3. 지형 흐름 추출을 먼저 실행합니다.<br/>4. 필요할 때만 용어 점과 고급 분석으로 넘어갑니다.",
+      "en": "<b>Recommended order</b><br/>1. Select a DEM.<br/>2. Provide a water layer or use DEM auto-hydro.<br/>3. Run landscape extraction first.<br/>4. Only move to term points or advanced analysis if you need more detail."
+    },
+    "guide_goal_steps_custom": {
+      "ko": "<b>권장 순서</b><br/>1. 고급 옵션에서 목적에 맞는 프리셋을 고릅니다.<br/>2. 필요하면 문화권/시대 보정을 켭니다.<br/>3. DEM과 수계를 준비한 뒤 결과를 비교합니다.",
+      "en": "<b>Recommended order</b><br/>1. Choose a preset from Advanced Options.<br/>2. Enable culture/period context if needed.<br/>3. Prepare DEM and hydro data, then compare outputs."
     },
     "guide_metric_label": {
       "ko": "지표 빠른 설명",
@@ -56,6 +124,10 @@
       "ko": " 대표 DOI: ",
       "en": " Representative DOI: "
     },
+    "context_hint_reference_prefix": {
+      "ko": "대표 참고문헌: ",
+      "en": " Representative references: "
+    },
     "context_no_params": {
       "ko": "선택 가능한 파라미터 근거가 없습니다.",
       "en": "No selectable parameter evidence."
@@ -64,6 +136,10 @@
       "ko": "DOI 없음",
       "en": "No DOI"
     },
+    "context_no_reference": {
+      "ko": "참고문헌 없음",
+      "en": "No reference"
+    },
     "context_no_note": {
       "ko": "설명 없음",
       "en": "No note"
@@ -71,6 +147,10 @@
     "context_param_template": {
       "ko": "[{group}.{name}] 값={value} | 근거수준={level} | DOI={doi} | 메모={note}",
       "en": "[{group}.{name}] value={value} | evidence={level} | DOI={doi} | note={note}"
+    },
+    "context_param_reference_template": {
+      "ko": "[{group}.{name}] 값={value} | 근거수준={level} | 참고문헌={reference} | 메모={note}",
+      "en": "[{group}.{name}] value={value} | evidence={level} | reference={reference} | note={note}"
     },
     "metric_help_empty": {
       "ko": "선택한 지표에 대한 설명이 없습니다.",
@@ -96,6 +176,10 @@
       "ko": "용어 포인트/연결선 옵션 확인",
       "en": "Check term point/link options"
     },
+    "workflow_check_terms_recommended": {
+      "ko": "용어 점 추출 켜기(혈 후보 확인용)",
+      "en": "Turn on term extraction for candidate-site reading"
+    },
     "workflow_check_extract_ready": {
       "ko": "추출 실행 준비",
       "en": "Ready to run extraction"
@@ -109,8 +193,8 @@
       "en": "English"
     },
     "workflow_summary_template": {
-      "ko": "현재 모드: {mode} | 용어 언어: {lang} | 준비도 {percent}%",
-      "en": "Mode: {mode} | Label language: {lang} | Readiness {percent}%"
+      "ko": "목적: {goal} | 현재 탭: {mode} | 모델: {profile} | 용어 언어: {lang} | 컨텍스트: {context_mode} | 산 이름(web): {mountain_mode}/{mountain_lang} | 준비도 {percent}%",
+      "en": "Goal: {goal} | Tab: {mode} | Model: {profile} | Label language: {lang} | Context: {context_mode} | Mountain names(web): {mountain_mode}/{mountain_lang} | Readiness {percent}%"
     },
     "workflow_next_template": {
       "ko": "다음 단계: {pending}",
@@ -653,8 +737,8 @@
       ],
       "en": [
         "<h3>Workflow</h3>",
-        "<p><b>1) Landscape mode</b>: extract ridge/hydro first from DEM (+ optional water layer).</p>",
-        "<p><b>2) If water is missing</b>: run DEM-based hydro extraction.</p>",
+        "<p><b>1) Landscape mode</b>: extract ridge flow from DEM first, and use the supplied water layer as hydro reference when available.</p>",
+        "<p><b>2) If water is missing</b>: run DEM-based hydro extraction and use it as the hydro reference layer.</p>",
         "<p><b>3) Term detail</b>: create term points/links only when needed.</p>",
         "<p><b>4) Advanced analysis</b>: compute <code>fs_score</code> when candidate point layer exists.</p>",
         "<p><b>Click explanation</b>: inspect feature to see <code>reason_ko</code> or <code>fs_reason</code>.</p>",

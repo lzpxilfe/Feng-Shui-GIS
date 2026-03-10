@@ -5,6 +5,7 @@ from copy import deepcopy
 from html import escape
 
 from .config_loader import load_json
+from .reference_catalog import reference_display_text
 from .ui_catalog import ui_text
 
 _CONFIG_FILE = "contexts.json"
@@ -441,12 +442,12 @@ def context_evidence_html(culture_key, period_key, hemisphere, language=None):
             lang,
             default=group_name,
         )
-        doi_text = "<br/>".join(
-            f'<a href="{escape(source)}">{escape(source)}</a>'
-            for source in record.get("source_doi", [])
+        reference_text = reference_display_text(
+            record.get("source_doi", []),
+            language=lang,
         )
-        if not doi_text:
-            doi_text = "-"
+        if not reference_text:
+            reference_text = "-"
         note = escape(record.get("note", "")) if record.get("note") else "-"
         value = record.get("value")
         if isinstance(value, float):
@@ -459,7 +460,7 @@ def context_evidence_html(culture_key, period_key, hemisphere, language=None):
             f"<td>{escape(record['name'])}</td>"
             f"<td>{escape(value_text)}</td>"
             f"<td>{escape(record.get('evidence_level', 'U'))}</td>"
-            f"<td>{doi_text}</td>"
+            f"<td>{escape(reference_text)}</td>"
             f"<td>{note}</td>"
             "</tr>"
         )
@@ -476,7 +477,11 @@ def context_evidence_html(culture_key, period_key, hemisphere, language=None):
     col_name = ui_text("context_evidence_col_name", lang, default="name")
     col_value = ui_text("context_evidence_col_value", lang, default="value")
     col_level = ui_text("context_evidence_col_level", lang, default="level")
-    col_doi = ui_text("context_evidence_col_source_doi", lang, default="source_doi")
+    col_doi = ui_text(
+        "context_evidence_col_reference",
+        lang,
+        default="참고문헌" if lang == "ko" else "reference",
+    )
     col_note = ui_text("context_evidence_col_note", lang, default="note")
     level_note = ui_text(
         "context_evidence_level_note",

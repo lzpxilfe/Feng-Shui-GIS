@@ -5,7 +5,7 @@ _MESSAGES = {
     "en": {
         "plugin_title": "Feng Shui GIS",
         "menu_title": "Feng Shui GIS",
-        "panel_title": "Feng Shui Site Analyzer",
+        "panel_title": "Feng Shui GIS",
         "panel_subtitle": "DEM and water-first landscape reading with optional archaeology scoring.",
         "sites_label": "Site points",
         "dem_label": "DEM raster",
@@ -59,9 +59,9 @@ _MESSAGES = {
         "ok_landscape_finished": "Created landscape flow layers",
     },
     "ko": {
-        "plugin_title": "풍수 GIS",
-        "menu_title": "풍수 GIS",
-        "panel_title": "풍수 입지 분석기",
+        "plugin_title": "Feng Shui GIS",
+        "menu_title": "Feng Shui GIS",
+        "panel_title": "Feng Shui GIS",
         "panel_subtitle": "DEM/수계를 우선으로 읽고, 필요할 때만 고급 입지 점수를 계산합니다.",
         "sites_label": "후보지 포인트",
         "dem_label": "DEM 래스터",
@@ -96,7 +96,7 @@ _MESSAGES = {
         "analysis_auto_hydro_label": "분석 시 수계가 없으면 DEM 자동 수문 추출 사용",
         "extract_landscape_button": "지형 흐름/맥 추출",
         "help_button": "상세 도움말",
-        "help_dialog_title": "풍수 GIS - 상세 가이드",
+        "help_dialog_title": "Feng Shui GIS - 상세 가이드",
         "help_tab_overview": "워크플로우",
         "help_tab_symbols": "심볼",
         "help_tab_references": "레퍼런스",
@@ -115,9 +115,10 @@ _MESSAGES = {
         "ok_landscape_finished": "지형 흐름 레이어가 생성되었습니다",
     },
     "zh": {
-        "plugin_title": "风水 GIS",
-        "menu_title": "风水 GIS",
-        "panel_title": "风水选址分析",
+        "plugin_title": "Feng Shui GIS",
+        "menu_title": "Feng Shui GIS",
+        "panel_title": "Feng Shui GIS",
+        "panel_subtitle": "优先根据 DEM 和水系解读地形，仅在需要时计算高级选址评分。",
         "sites_label": "候选点图层",
         "dem_label": "DEM 栅格",
         "water_label": "水系图层（可选）",
@@ -142,6 +143,7 @@ _MESSAGES = {
         "period_medieval": "中世",
         "period_early_modern": "近世",
         "period_modern": "近现代",
+        "help_dialog_title": "Feng Shui GIS - 详细指南",
         "run_button": "运行分析",
         "extract_terms_button": "提取 DEM 术语",
         "status_idle": "选择图层后开始分析。",
@@ -157,9 +159,10 @@ _MESSAGES = {
         "ok_landscape_finished": "已创建地形流线图层",
     },
     "ja": {
-        "plugin_title": "風水 GIS",
-        "menu_title": "風水 GIS",
-        "panel_title": "風水立地アナライザー",
+        "plugin_title": "Feng Shui GIS",
+        "menu_title": "Feng Shui GIS",
+        "panel_title": "Feng Shui GIS",
+        "panel_subtitle": "DEM と水系を優先して地形を読み、必要な場合にのみ高度な立地スコアを計算します。",
         "sites_label": "候補地点ポイント",
         "dem_label": "DEM ラスター",
         "water_label": "水系レイヤー（任意）",
@@ -184,6 +187,7 @@ _MESSAGES = {
         "period_medieval": "中世",
         "period_early_modern": "近世",
         "period_modern": "近現代",
+        "help_dialog_title": "Feng Shui GIS - 詳細ガイド",
         "run_button": "解析実行",
         "extract_terms_button": "DEM 用語抽出",
         "status_idle": "レイヤーを選択して解析を実行してください。",
@@ -202,11 +206,11 @@ _MESSAGES = {
 
 
 def _language_code():
-    # Prefer system locale when available, then fall back to Korean.
+    # Prefer system locale when available, then fall back to English.
     code = QLocale.system().name().split("_", maxsplit=1)[0].lower()
     if code in _MESSAGES:
         return code
-    return "ko"
+    return "en"
 
 
 def language_code():
@@ -217,4 +221,4 @@ def tr(key):
     lang = _language_code()
     if lang in _MESSAGES and key in _MESSAGES[lang]:
         return _MESSAGES[lang][key]
-    return _MESSAGES["ko"].get(key, key)
+    return _MESSAGES["en"].get(key, _MESSAGES["ko"].get(key, key))

@@ -1,0 +1,172 @@
+{
+  "references": [
+    {
+      "doi": "10.1080/13658810802055954",
+      "short": {
+        "en": "Um (2009)",
+        "ko": "Um (2009)"
+      },
+      "summary": {
+        "en": "Feng Shui parameter extraction from tomb footprints using GIS.",
+        "ko": "묘지 입지에서 풍수 파라미터를 GIS로 추출한 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1109/IGARSS.2002.1027144",
+      "short": {
+        "en": "Tung Fung & Marafa (2003)",
+        "ko": "Tung Fung & Marafa (2003)"
+      },
+      "summary": {
+        "en": "Remote sensing and GIS analysis of feng shui woodlands.",
+        "ko": "풍수 비보림을 원격탐사와 GIS로 분석한 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1007/s11355-006-0014-8",
+      "short": {
+        "en": "Whang & Lee (2006)",
+        "ko": "Whang & Lee (2006)"
+      },
+      "summary": {
+        "en": "Korean landscape ecology principles for Bi-bo woodlands and ponds.",
+        "ko": "한국 비보림과 연못의 경관생태 원리를 다룬 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.15299/jk.2016.8.60.203",
+      "short": {
+        "en": "Kim & Cheon (2016)",
+        "ko": "Kim & Cheon (2016)"
+      },
+      "summary": {
+        "en": "Compass-theory approach to folk village Yangtaek layout.",
+        "ko": "민속마을 양택 배치에 대한 나경론 기반 접근."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1163/156853508X276824",
+      "short": {
+        "en": "Chen et al. (2008)",
+        "ko": "Chen et al. (2008)"
+      },
+      "summary": {
+        "en": "Ryukyu island feng shui village landscape morphology.",
+        "ko": "류큐 풍수 마을 경관 형태를 다룬 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1163/156853511X577475",
+      "short": {
+        "en": "Nakama & Chen (2011)",
+        "ko": "Nakama & Chen (2011)"
+      },
+      "summary": {
+        "en": "Okinawa feng shui landscape and tree planting records.",
+        "ko": "오키나와 풍수 경관과 식재 기록을 분석한 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1016/j.ufug.2007.10.001",
+      "short": {
+        "en": "Chen et al. (2008b)",
+        "ko": "Chen et al. (2008b)"
+      },
+      "summary": {
+        "en": "House-embracing tree layouts in Okinawan feng shui villages.",
+        "ko": "오키나와 풍수 마을의 포택수 배치를 다룬 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1515/9781438468716-011",
+      "short": {
+        "en": "Zho (2017)",
+        "ko": "Zho (2017)"
+      },
+      "summary": {
+        "en": "Geomancy and traditional architecture during the Choson dynasty.",
+        "ko": "조선시대 풍수와 전통건축의 관계를 다룬 장."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1515/9781438468716-009",
+      "short": {
+        "en": "Lee (2017)",
+        "ko": "Lee (2017)"
+      },
+      "summary": {
+        "en": "Geomantic practices of water acquisition and management in Choson.",
+        "ko": "조선시대 물 확보와 관리의 풍수 실천을 다룬 장."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1515/9781438468716-004",
+      "short": {
+        "en": "Yoon (2017)",
+        "ko": "Yoon (2017)"
+      },
+      "summary": {
+        "en": "Historical periodization of Korean geomancy.",
+        "ko": "한국 풍수의 역사적 시기 구분을 다룬 장."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.3390/ijgi10110752",
+      "short": {
+        "en": "Cui et al. (2021)",
+        "ko": "Cui et al. (2021)"
+      },
+      "summary": {
+        "en": "GIS-based feng shui suitability evaluation of mausoleums in Nanjing.",
+        "ko": "난징 묘역의 풍수 적합성을 GIS로 평가한 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1038/s40494-025-01686-y",
+      "short": {
+        "en": "Wang et al. (2026)",
+        "ko": "Wang et al. (2026)"
+      },
+      "summary": {
+        "en": "Parametric study of feng shui influence on courtyard dwelling design.",
+        "ko": "중국 전통 사합원 설계에 대한 풍수 영향의 파라메트릭 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1080/13576275.2020.1750356",
+      "short": {
+        "en": "Ren & Woudstra (2021)",
+        "ko": "Ren & Woudstra (2021)"
+      },
+      "summary": {
+        "en": "Changing burial landscapes and revived feng shui rituals in China.",
+        "ko": "중국의 변화하는 장묘 경관과 풍수 의례의 부활을 다룬 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.3368/lj.16.2.174",
+      "short": {
+        "en": "Xu (1997)",
+        "ko": "Xu (1997)"
+      },
+      "summary": {
+        "en": "Using feng shui as a clue for prehistoric landscape-setting patterns.",
+        "ko": "선사 경관 입지 패턴 해석의 단서로 풍수를 사용한 연구."
+      },
+      "show_in_help": true
+    }
+  ]
+}
