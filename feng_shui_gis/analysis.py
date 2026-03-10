@@ -19,6 +19,7 @@ from qgis.core import (
     QgsProcessingFeedback,
     QgsProcessingUtils,
     QgsProject,
+    QgsRasterLayer,
     QgsRendererCategory,
     QgsSpatialIndex,
     QgsVectorLayer,
@@ -279,13 +280,54 @@ class FengShuiAnalyzer:
     def extract_terms(
         self,
         dem_layer,
+        water_layer=None,
         hemisphere="north",
+        profile_key="general",
         culture_key="east_asia",
         period_key="early_modern",
         max_hyeol=5,
     ):
         context = build_context(culture_key, period_key, hemisphere)
+        profile = self._contextualize_profile(
+            self._profile_spec(profile_key),
+            context,
+        )
         provider = dem_layer.dataProvider()
+        weights = profile.get("weights", {})
+        slope_provider = None
+        aspect_provider = None
+        if float(weights.get("slope", 0.0)) > 0.0:
+            slope_output = processing.run(
+                "qgis:slope",
+                {
+                    "INPUT": dem_layer,
+                    "BAND": 1,
+                    "Z_FACTOR": 1.0,
+                    "OUTPUT": "TEMPORARY_OUTPUT",
+                },
+                context=self.context,
+                feedback=self.feedback,
+                is_child_algorithm=True,
+            )["OUTPUT"]
+            slope_provider = self._as_raster_layer(slope_output).dataProvider()
+        if float(weights.get("aspect", 0.0)) > 0.0:
+            aspect_output = processing.run(
+                "qgis:aspect",
+                {
+                    "INPUT": dem_layer,
+                    "BAND": 1,
+                    "Z_FACTOR": 1.0,
+                    "OUTPUT": "TEMPORARY_OUTPUT",
+                },
+                context=self.context,
+                feedback=self.feedback,
+                is_child_algorithm=True,
+            )["OUTPUT"]
+            aspect_provider = self._as_raster_layer(aspect_output).dataProvider()
+        water_index, water_geoms = self._prepare_water_reference(
+            dem_layer=dem_layer,
+            water_layer=water_layer,
+        )
         dem_step = self._dem_step(dem_layer)
         sample_spacing = self._adaptive_spacing(dem_layer, dem_step)
         recommended_count = self._recommended_hyeol_count(dem_layer, sample_spacing)
@@ -318,6 +360,11 @@ class FengShuiAnalyzer:
             dem_step=dem_step,
             spacing=sample_spacing,
             context=context,
+            profile=profile,
+            slope_provider=slope_provider,
+            aspect_provider=aspect_provider,
+            water_index=water_index,
+            water_geoms=water_geoms,
         )
         selected = self._suppress_near_duplicates(
             candidates=candidates,
@@ -331,6 +378,7 @@ class FengShuiAnalyzer:
             dem_step=dem_step,
             selected=selected,
             context=context,
+            profile_key=profile_key,
         )
 
     def _as_vector_layer(self, output_obj):
@@ -339,6 +387,14 @@ class FengShuiAnalyzer:
         resolved = QgsProcessingUtils.mapLayerFromString(output_obj, self.context)
         if not isinstance(resolved, QgsVectorLayer):
             raise RuntimeError("Could not resolve sampled output layer.")
+        return resolved
+
+    def _as_raster_layer(self, output_obj):
+        if isinstance(output_obj, QgsRasterLayer):
+            return output_obj
+        resolved = QgsProcessingUtils.mapLayerFromString(output_obj, self.context)
+        if not isinstance(resolved, QgsRasterLayer):
+            raise RuntimeError("Could not resolve temporary raster output.")
         return resolved
 
     def _ensure_fields(self, layer):
@@ -387,35 +443,10 @@ class FengShuiAnalyzer:
         aspect_field = self._find_field(site_layer, "as_")
         dem_crs = dem_layer.crs()
         site_to_dem = self._build_transform(site_layer.crs(), dem_crs)
-        water_to_dem = (
-            self._build_transform(water_layer.crs(), dem_crs)
-            if water_layer is not None
-            else None
+        water_index, water_geoms = self._prepare_water_reference(
+            dem_layer=dem_layer,
+            water_layer=water_layer,
         )
-
-        water_index = None
-        water_geoms = None
-        if water_layer is not None:
-            indexed_features = []
-            transformed_geoms = {}
-            for src_feature in water_layer.getFeatures():
-                if not src_feature.hasGeometry():
-                    continue
-                transformed = self._transform_geometry(
-                    src_feature.geometry(),
-                    water_to_dem,
-                )
-                if transformed is None or transformed.isEmpty():
-                    continue
-                feature_id = int(src_feature.id())
-                indexed = QgsFeature()
-                indexed.setId(feature_id)
-                indexed.setGeometry(transformed)
-                indexed_features.append(indexed)
-                transformed_geoms[feature_id] = transformed
-            if indexed_features:
-                water_index = QgsSpatialIndex(indexed_features)
-                water_geoms = transformed_geoms
 
         dem_provider = dem_layer.dataProvider()
         dem_step = self._dem_step(dem_layer)
@@ -461,7 +492,7 @@ class FengShuiAnalyzer:
                     "form": dem_metrics["form_score"],
                     "long": dem_metrics["long_score"],
                     "water": water_score,
-                    "conv": dem_metrics["dem_water_score"],
+                    "conv": dem_metrics["convergence"],
                     "tpi": self._score_profile_tpi(dem_metrics["tpi_norm"], profile),
                 }
 
@@ -503,6 +534,36 @@ class FengShuiAnalyzer:
     def _profile_spec(cls, profile_key):
         return profile_spec(profile_key)
 
+    def _prepare_water_reference(self, dem_layer, water_layer):
+        if dem_layer is None or water_layer is None:
+            return None, None
+
+        dem_crs = dem_layer.crs()
+        water_to_dem = self._build_transform(water_layer.crs(), dem_crs)
+        indexed_features = []
+        transformed_geoms = {}
+        for src_feature in water_layer.getFeatures():
+            if not src_feature.hasGeometry():
+                continue
+            transformed = self._transform_geometry(
+                src_feature.geometry(),
+                water_to_dem,
+            )
+            if transformed is None or transformed.isEmpty():
+                continue
+            feature_id = int(src_feature.id())
+            indexed = QgsFeature()
+            indexed.setId(feature_id)
+            indexed.setGeometry(transformed)
+            indexed_features.append(indexed)
+            transformed_geoms[feature_id] = transformed
+        if not indexed_features:
+            return None, None
+        spatial_index = QgsSpatialIndex()
+        for indexed_feature in indexed_features:
+            spatial_index.addFeature(indexed_feature)
+        return spatial_index, transformed_geoms
+
     @staticmethod
     def _contextualize_profile(profile, context):
         adjusted = {
@@ -540,16 +601,21 @@ class FengShuiAnalyzer:
 
     def _build_transform(self, source_crs, target_crs):
         if source_crs is None or target_crs is None:
+            raise RuntimeError("Missing CRS required for coordinate transform.")
+        if not source_crs.isValid() or not target_crs.isValid():
+            raise RuntimeError("Invalid CRS encountered while preparing coordinate transform.")
+        if source_crs == target_crs:
             return None
+
+        project = self.context.project() if self.context is not None else None
+        if project is None:
+            project = QgsProject.instance()
         try:
-            if not source_crs.isValid() or not target_crs.isValid() or source_crs == target_crs:
-                return None
-            project = self.context.project() if self.context is not None else None
-            if project is None:
-                project = QgsProject.instance()
             return QgsCoordinateTransform(source_crs, target_crs, project)
-        except Exception:
-            return None
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to build coordinate transform: {source_crs.authid()} -> {target_crs.authid()}"
+            ) from exc
 
     @staticmethod
     def _transform_point(point, transformer):
@@ -560,8 +626,8 @@ class FengShuiAnalyzer:
         try:
             transformed = transformer.transform(QgsPointXY(point.x(), point.y()))
             return QgsPointXY(transformed.x(), transformed.y())
-        except Exception:
-            return None
+        except Exception as exc:
+            raise RuntimeError("Failed to transform point geometry.") from exc
 
     @staticmethod
     def _transform_geometry(geometry, transformer):
@@ -573,8 +639,8 @@ class FengShuiAnalyzer:
         try:
             cloned.transform(transformer)
             return cloned
-        except Exception:
-            return None
+        except Exception as exc:
+            raise RuntimeError("Failed to transform feature geometry.") from exc
 
     @staticmethod
     def _geometry_point(geometry):
@@ -1063,6 +1129,7 @@ class FengShuiAnalyzer:
         relief,
         center_elev,
         threshold,
+        water_distance=None,
     ):
         gap_text = "판정 불가"
         if base_score is not None:
@@ -1176,23 +1243,44 @@ class FengShuiAnalyzer:
             x += spacing
 
     def _collect_hyeol_candidates(
-        self, provider, dem_layer, hemisphere, dem_step, spacing, context
+        self,
+        provider,
+        dem_layer,
+        hemisphere,
+        dem_step,
+        spacing,
+        context,
+        profile,
+        slope_provider=None,
+        aspect_provider=None,
+        water_index=None,
+        water_geoms=None,
     ):
         rules = analysis_rules().get("hyeol_candidate", {})
         tpi_min = float(rules.get("tpi_min", -0.45))
         tpi_max = float(rules.get("tpi_max", 0.35))
-        tpi_target = float(rules.get("tpi_target", -0.08))
-        tpi_sigma = float(rules.get("tpi_sigma", 0.30))
+        tpi_target = float(profile.get("tpi_target", rules.get("tpi_target", -0.08)))
+        tpi_sigma = float(profile.get("tpi_sigma", rules.get("tpi_sigma", 0.30)))
         candidates = []
         for point in self._grid_points(dem_layer, spacing):
             center = self._sample_dem(provider, point)
             if center is None:
                 continue
+            slope_value = (
+                self._sample_dem(slope_provider, point)
+                if slope_provider is not None
+                else None
+            )
+            aspect_value = (
+                self._sample_dem(aspect_provider, point)
+                if aspect_provider is not None
+                else None
+            )
 
             metrics = self._compute_dem_metrics(
                 provider=provider,
                 site_point=point,
-                slope_deg=None,
+                slope_deg=slope_value,
                 hemisphere=hemisphere,
                 dem_step=dem_step,
                 context=context,
@@ -1201,13 +1289,31 @@ class FengShuiAnalyzer:
             if tpi_norm is not None and (tpi_norm < tpi_min or tpi_norm > tpi_max):
                 continue
 
-            hyeol_shape = self._mean_scores(
-                metrics["form_score"],
-                metrics["long_score"],
-                metrics["dem_water_score"],
+            water_distance = self._nearest_water_distance(
+                site_geom=QgsGeometry.fromPointXY(point),
+                site_point=point,
+                water_index=water_index,
+                water_geoms=water_geoms,
             )
-            tpi_score = self._score_gaussian(tpi_norm, tpi_target, tpi_sigma)
-            hyeol_score = self._mean_scores(hyeol_shape, tpi_score)
+            water_distance_score = self._score_water_distance(
+                water_distance,
+                context=context,
+            )
+            water_score = self._combine_hydro_scores(
+                distance_score=water_distance_score,
+                dem_score=metrics["dem_water_score"],
+            )
+
+            hyeol_indicators = {
+                "slope": self._score_profile_slope(slope_value, profile),
+                "aspect": self._score_aspect(aspect_value, hemisphere, context=context),
+                "form": metrics["form_score"],
+                "long": metrics["long_score"],
+                "water": water_score,
+                "conv": metrics["convergence"],
+                "tpi": self._score_profile_tpi(tpi_norm, profile),
+            }
+            hyeol_score = self._profile_weighted_score(hyeol_indicators, profile)
             if hyeol_score is None or hyeol_score < context["hyeol_threshold"]:
                 continue
 
@@ -1217,6 +1323,8 @@ class FengShuiAnalyzer:
                     "score": hyeol_score,
                     "elev": center,
                     "metrics": metrics,
+                    "water_distance": water_distance,
+                    "hydro_score": water_score,
                 }
             )
 
@@ -1244,7 +1352,7 @@ class FengShuiAnalyzer:
         return selected
 
     def _build_term_layer(
-        self, dem_layer, provider, hemisphere, dem_step, selected, context
+        self, dem_layer, provider, hemisphere, dem_step, selected, context, profile_key
     ):
         layer_name = f"{dem_layer.name()}_fengshui_terms"
         term_layer = QgsVectorLayer(
@@ -1259,6 +1367,7 @@ class FengShuiAnalyzer:
         fields.append(QgsField("term_name", QVariant.String, "string", 28))
         fields.append(QgsField("culture", QVariant.String, "string", 20))
         fields.append(QgsField("period", QVariant.String, "string", 20))
+        fields.append(QgsField("profile", QVariant.String, "string", 20))
         fields.append(QgsField("parent_id", QVariant.Int))
         fields.append(QgsField("rank", QVariant.Int))
         fields.append(QgsField("score", QVariant.Double, "double", 7, 3))
@@ -1366,6 +1475,7 @@ class FengShuiAnalyzer:
                 term_ko=term_label_ko(term_id),
                 culture=culture_id,
                 period=period_id,
+                profile=profile_key,
                 parent_id=parent_id,
                 rank=rank,
                 point=point,
@@ -1391,9 +1501,10 @@ class FengShuiAnalyzer:
             metrics = item.get("metrics", {})
             form_score = metrics.get("form_score")
             long_score = metrics.get("long_score")
-            wet_score = metrics.get("dem_water_score")
+            wet_score = item.get("hydro_score", metrics.get("dem_water_score"))
             tpi_norm = metrics.get("tpi_norm")
             conv_score = metrics.get("convergence")
+            water_distance = item.get("water_distance")
 
             ring_values = self._sample_ring(
                 provider=provider,
@@ -1418,6 +1529,7 @@ class FengShuiAnalyzer:
                 relief=relief,
                 center_elev=center_elev,
                 threshold=context["hyeol_threshold"],
+                water_distance=water_distance,
             )
             add_term(
                 term_id="hyeol",
@@ -1601,6 +1713,7 @@ class FengShuiAnalyzer:
         term_ko=None,
         culture=None,
         period=None,
+        profile=None,
         reason_ko=None,
     ):
         feature = QgsFeature(layer.fields())
@@ -1610,6 +1723,7 @@ class FengShuiAnalyzer:
         feature["term_name"] = term_name
         feature["culture"] = culture if culture else ""
         feature["period"] = period if period else ""
+        feature["profile"] = profile if profile else ""
         feature["parent_id"] = parent_id
         feature["rank"] = rank
         feature["score"] = score
@@ -1642,6 +1756,7 @@ class FengShuiAnalyzer:
         fields.append(QgsField("score", QVariant.Double, "double", 7, 3))
         fields.append(QgsField("culture", QVariant.String, "string", 20))
         fields.append(QgsField("period", QVariant.String, "string", 20))
+        fields.append(QgsField("profile", QVariant.String, "string", 20))
         fields.append(QgsField("src_id", QVariant.String, "string", 28))
         fields.append(QgsField("src_ko", QVariant.String, "string", 28))
         fields.append(QgsField("src_en", QVariant.String, "string", 28))
@@ -1739,6 +1854,7 @@ class FengShuiAnalyzer:
                 line_feature["score"] = score
                 line_feature["culture"] = source["culture"] or target["culture"]
                 line_feature["period"] = source["period"] or target["period"]
+                line_feature["profile"] = source["profile"] or target["profile"]
                 line_feature["src_id"] = source_id
                 line_feature["src_ko"] = term_label_ko(source_id)
                 line_feature["src_en"] = term_label(source_id, "en")
@@ -1913,6 +2029,30 @@ class FengShuiAnalyzer:
         smoothed = self._smooth_polyline(densified, passes=smooth_passes)
         distinct_min_distance = max(1e-9, spacing * distinct_min_distance_factor)
         return self._distinct_points(smoothed, min_distance=distinct_min_distance)
+
+    @staticmethod
+    def _moving_average_polyline(points, passes=1):
+        current = [QgsPointXY(point.x(), point.y()) for point in points]
+        if len(current) < 3 or passes <= 0:
+            return current
+
+        for _ in range(passes):
+            if len(current) < 3:
+                break
+            smoothed = [QgsPointXY(current[0].x(), current[0].y())]
+            for index in range(1, len(current) - 1):
+                point_prev = current[index - 1]
+                point_curr = current[index]
+                point_next = current[index + 1]
+                smoothed.append(
+                    QgsPointXY(
+                        (point_prev.x() + (point_curr.x() * 2.0) + point_next.x()) / 4.0,
+                        (point_prev.y() + (point_curr.y() * 2.0) + point_next.y()) / 4.0,
+                    )
+                )
+            smoothed.append(QgsPointXY(current[-1].x(), current[-1].y()))
+            current = smoothed
+        return current
 
     def style_term_points(self, term_layer):
         style_map = point_styles()
@@ -2511,6 +2651,7 @@ class FengShuiAnalyzer:
                     "strength": sum(strengths) / len(strengths) if strengths else 0.0,
                     "elev_a": ridge_nodes[path[0]]["elev"],
                     "elev_b": ridge_nodes[path[-1]]["elev"],
+                    "node_count": len(path),
                 }
             )
 
@@ -2530,6 +2671,9 @@ class FengShuiAnalyzer:
             render_rules, "densify_min_step", 1.0, min_value=0.1
         )
         smooth_passes = self._rule_int(render_rules, "smooth_passes", 3, min_value=0)
+        moving_average_passes = self._rule_int(
+            render_rules, "moving_average_passes", 2, min_value=0
+        )
         distinct_min_distance_factor = self._rule_float(
             render_rules, "distinct_min_distance_factor", 0.05, min_value=0.0
         )
@@ -2543,6 +2687,10 @@ class FengShuiAnalyzer:
                 densify_min_step=densify_min_step,
                 smooth_passes=smooth_passes,
                 distinct_min_distance_factor=distinct_min_distance_factor,
+            )
+            smoothed_points = self._moving_average_polyline(
+                smoothed_points,
+                passes=moving_average_passes,
             )
             if len(smoothed_points) < 2:
                 continue
@@ -2575,8 +2723,8 @@ class FengShuiAnalyzer:
     @staticmethod
     def style_ridge_network(ridge_layer):
         class_styles = {
-            "major": ("#273331", 1.35, 0.66),
-            "minor": ("#4b5a57", 0.85, 0.44),
+            "major": ("#22302e", 1.55, 0.78),
+            "minor": ("#54615f", 0.65, 0.24),
         }
         categories = []
         for class_id, (color, width, opacity) in class_styles.items():
@@ -2639,6 +2787,154 @@ class FengShuiAnalyzer:
     @staticmethod
     def _ridge_edge_key(key_a, key_b):
         return (key_a, key_b) if key_a <= key_b else (key_b, key_a)
+
+    @staticmethod
+    def _ridge_edge_span(key_a, key_b, ridge_nodes):
+        point_a = ridge_nodes[key_a]["point"]
+        point_b = ridge_nodes[key_b]["point"]
+        distance = math.hypot(
+            point_b.x() - point_a.x(),
+            point_b.y() - point_a.y(),
+        )
+        mean_strength = (
+            ridge_nodes[key_a]["strength"] + ridge_nodes[key_b]["strength"]
+        ) * 0.5
+        return distance * (0.68 + (0.32 * mean_strength))
+
+    @staticmethod
+    def _ridge_components(adjacency):
+        seen = set()
+        components = []
+        for start in adjacency.keys():
+            if start in seen or not adjacency.get(start):
+                continue
+            stack = [start]
+            component = set()
+            seen.add(start)
+            while stack:
+                current = stack.pop()
+                component.add(current)
+                for neighbor in adjacency.get(current, ()):
+                    if neighbor in seen:
+                        continue
+                    seen.add(neighbor)
+                    stack.append(neighbor)
+            if len(component) > 1:
+                components.append(component)
+        return components
+
+    @classmethod
+    def _ridge_component_spanning_tree(cls, component_keys, adjacency, ridge_nodes):
+        component_set = set(component_keys)
+        tree = {key: set() for key in component_set}
+        edges = []
+        for key_a in component_set:
+            for key_b in adjacency.get(key_a, set()):
+                if key_b not in component_set:
+                    continue
+                edge_key = cls._ridge_edge_key(key_a, key_b)
+                if edge_key[0] != key_a:
+                    continue
+                span = cls._ridge_edge_span(key_a, key_b, ridge_nodes)
+                edges.append((span, key_a, key_b))
+        if not edges:
+            return tree
+
+        parent = {key: key for key in component_set}
+        rank = {key: 0 for key in component_set}
+
+        def find(node):
+            while parent[node] != node:
+                parent[node] = parent[parent[node]]
+                node = parent[node]
+            return node
+
+        def union(first, second):
+            root_first = find(first)
+            root_second = find(second)
+            if root_first == root_second:
+                return False
+            if rank[root_first] < rank[root_second]:
+                root_first, root_second = root_second, root_first
+            parent[root_second] = root_first
+            if rank[root_first] == rank[root_second]:
+                rank[root_first] += 1
+            return True
+
+        edges.sort(key=lambda item: item[0], reverse=True)
+        for _span, key_a, key_b in edges:
+            if not union(key_a, key_b):
+                continue
+            tree[key_a].add(key_b)
+            tree[key_b].add(key_a)
+        return tree
+
+    @classmethod
+    def _ridge_tree_farthest(cls, start, tree_adjacency, ridge_nodes):
+        best_node = start
+        best_distance = 0.0
+        parents = {start: None}
+        stack = [(start, None, 0.0)]
+        while stack:
+            current, prev, distance = stack.pop()
+            current_strength = ridge_nodes[current]["strength"]
+            best_strength = ridge_nodes[best_node]["strength"]
+            if distance > best_distance + 1e-9 or (
+                abs(distance - best_distance) <= 1e-9 and current_strength > best_strength
+            ):
+                best_node = current
+                best_distance = distance
+            for neighbor in tree_adjacency.get(current, ()):
+                if neighbor == prev:
+                    continue
+                parents[neighbor] = current
+                stack.append(
+                    (
+                        neighbor,
+                        current,
+                        distance + cls._ridge_edge_span(current, neighbor, ridge_nodes),
+                    )
+                )
+        return best_node, best_distance, parents
+
+    @classmethod
+    def _ridge_tree_diameter(cls, tree_adjacency, ridge_nodes, component_keys):
+        if not component_keys:
+            return []
+        seed = max(component_keys, key=lambda key: ridge_nodes[key]["strength"])
+        first, _first_distance, _first_parents = cls._ridge_tree_farthest(
+            seed,
+            tree_adjacency,
+            ridge_nodes,
+        )
+        second, _second_distance, parents = cls._ridge_tree_farthest(
+            first,
+            tree_adjacency,
+            ridge_nodes,
+        )
+        path = []
+        current = second
+        while current is not None:
+            path.append(current)
+            current = parents.get(current)
+        path.reverse()
+        return path
+
+    @classmethod
+    def _ridge_path_length_by_keys(cls, path, ridge_nodes):
+        if len(path) < 2:
+            return 0.0
+        length = 0.0
+        for index in range(1, len(path)):
+            key_a = path[index - 1]
+            key_b = path[index]
+            point_a = ridge_nodes[key_a]["point"]
+            point_b = ridge_nodes[key_b]["point"]
+            length += math.hypot(
+                point_b.x() - point_a.x(),
+                point_b.y() - point_a.y(),
+            )
+        return length
 
     @staticmethod
     def _ridge_segment_offsets(ridge_rules):
@@ -2964,65 +3260,64 @@ class FengShuiAnalyzer:
         return bridged
 
     def _ridge_paths_from_graph(self, adjacency, ridge_nodes):
-        visited_edges = set()
-        paths = []
+        component_rules = self._rules_section("ridge_component")
+        min_component_nodes = self._rule_int(
+            component_rules, "min_component_nodes", 5, min_value=2
+        )
+        secondary_component_nodes = self._rule_int(
+            component_rules, "secondary_component_nodes", 7, min_value=2
+        )
+        secondary_length_ratio = self._rule_float(
+            component_rules, "secondary_length_ratio", 0.55, min_value=0.1, max_value=1.0
+        )
 
-        def trace_path(start, neighbor):
-            edge = self._ridge_edge_key(start, neighbor)
-            if edge in visited_edges:
-                return None
-            visited_edges.add(edge)
-
-            path = [start, neighbor]
-            prev = start
-            current = neighbor
-            while True:
-                candidates = [
-                    n
-                    for n in sorted(adjacency[current])
-                    if n != prev and self._ridge_edge_key(current, n) not in visited_edges
-                ]
-                if not candidates:
-                    break
-                if len(candidates) == 1:
-                    nxt = candidates[0]
-                else:
-                    nxt = min(
-                        candidates,
-                        key=lambda key: self._ridge_path_step_cost(
-                            prev, current, key, ridge_nodes
-                        ),
-                    )
-                next_edge = self._ridge_edge_key(current, nxt)
-                if next_edge in visited_edges:
-                    break
-                visited_edges.add(next_edge)
-                path.append(nxt)
-                prev, current = current, nxt
-            return path
-
-        branch_nodes = sorted(
-            (
-                key
-                for key, neighbors in adjacency.items()
-                if len(neighbors) != 2 and neighbors
+        components = self._ridge_components(adjacency)
+        components.sort(
+            key=lambda component: (
+                len(component),
+                sum(ridge_nodes[key]["strength"] for key in component) / max(1, len(component)),
             ),
-            key=lambda key: ridge_nodes[key]["strength"],
             reverse=True,
         )
-        for start in branch_nodes:
-            for neighbor in sorted(
-                adjacency[start], key=lambda key: ridge_nodes[key]["strength"], reverse=True
-            ):
-                path = trace_path(start, neighbor)
-                if path and len(path) > 1:
-                    paths.append(path)
 
-        for key in sorted(adjacency.keys()):
-            for neighbor in sorted(adjacency[key]):
-                path = trace_path(key, neighbor)
-                if path and len(path) > 1:
-                    paths.append(path)
+        paths = []
+        for component in components:
+            if len(component) < min_component_nodes:
+                continue
+            tree = self._ridge_component_spanning_tree(component, adjacency, ridge_nodes)
+            primary_path = self._ridge_tree_diameter(tree, ridge_nodes, component)
+            if len(primary_path) < 2:
+                continue
+            paths.append(primary_path)
+
+            interior = set(primary_path[1:-1])
+            remainder = {
+                key for key in component if key not in interior and len(tree.get(key, set())) > 0
+            }
+            if len(remainder) < secondary_component_nodes:
+                continue
+
+            remainder_tree = {
+                key: {neighbor for neighbor in tree.get(key, set()) if neighbor in remainder}
+                for key in remainder
+            }
+            remainder_components = self._ridge_components(remainder_tree)
+            if not remainder_components:
+                continue
+            secondary_component = max(remainder_components, key=len)
+            if len(secondary_component) < secondary_component_nodes:
+                continue
+            secondary_path = self._ridge_tree_diameter(
+                remainder_tree,
+                ridge_nodes,
+                secondary_component,
+            )
+            if len(secondary_path) < 2:
+                continue
+            primary_length = self._ridge_path_length_by_keys(primary_path, ridge_nodes)
+            secondary_length = self._ridge_path_length_by_keys(secondary_path, ridge_nodes)
+            if secondary_length >= (primary_length * secondary_length_ratio):
+                paths.append(secondary_path)
 
         return paths
 
@@ -3064,20 +3359,32 @@ class FengShuiAnalyzer:
         strength_weight = cls._rule_float(
             rank_rules, "score_strength_weight", 0.38, min_value=0.0
         )
-        weight_sum = length_weight + strength_weight
+        node_weight = cls._rule_float(
+            rank_rules, "score_node_weight", 0.18, min_value=0.0
+        )
+        weight_sum = length_weight + strength_weight + node_weight
         if weight_sum <= 0:
             length_weight = 0.62
             strength_weight = 0.38
+            node_weight = 0.0
             weight_sum = 1.0
         length_weight /= weight_sum
         strength_weight /= weight_sum
+        node_weight /= weight_sum
 
         max_len = max(item["len"] for item in raw_paths)
         max_len = max(max_len, 1e-6)
+        max_nodes = max(item.get("node_count", 0) for item in raw_paths)
+        max_nodes = max(max_nodes, 1)
         scored = []
         for item in raw_paths:
             length_norm = item["len"] / max_len
-            score = (length_weight * length_norm) + (strength_weight * item["strength"])
+            node_norm = item.get("node_count", 0) / max_nodes
+            score = (
+                (length_weight * length_norm)
+                + (strength_weight * item["strength"])
+                + (node_weight * node_norm)
+            )
             scored.append((score, item))
         scored.sort(key=lambda pair: pair[0], reverse=True)
 
@@ -3313,13 +3620,20 @@ class FengShuiAnalyzer:
         best_f1 = (0.0, pairs[0][0])
         best_youden = (-999.0, pairs[0][0])
 
-        for score, label in pairs:
-            if label == 1:
-                tp += 1
-            else:
-                fp += 1
-            fn = positive_count - tp
-            _tn = negative_count - fp
+        index = 0
+        while index < len(pairs):
+            score = pairs[index][0]
+            group_tp = 0
+            group_fp = 0
+            while index < len(pairs) and pairs[index][0] == score:
+                if pairs[index][1] == 1:
+                    group_tp += 1
+                else:
+                    group_fp += 1
+                index += 1
+
+            tp += group_tp
+            fp += group_fp
             tpr = tp / positive_count
             fpr = fp / negative_count
             precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0

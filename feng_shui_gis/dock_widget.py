@@ -41,6 +41,7 @@ from .profile_catalog import (
     profile_label,
     term_label_ko,
 )
+from .reference_catalog import reference_display_text, references_help_html
 from .ui_catalog import (
     ui_help_html,
     ui_hydro_legend,
@@ -206,7 +207,7 @@ class FengShuiHelpDialog(QDialog):
 
     @staticmethod
     def _refs_html():
-        return ui_help_html("references")
+        return references_help_html()
 
 
 class ContextEvidenceDialog(QDialog):
@@ -231,7 +232,7 @@ class ContextEvidenceDialog(QDialog):
 
 class FengShuiDockWidget(QWidget):
     run_requested = pyqtSignal(object, object, object, str, str, str, str, bool)
-    terms_requested = pyqtSignal(object, object, str, str, str, bool, bool)
+    terms_requested = pyqtSignal(object, object, str, str, str, str, bool, bool)
     calibration_requested = pyqtSignal(
         object,
         object,
@@ -244,6 +245,16 @@ class FengShuiDockWidget(QWidget):
         int,
         bool,
     )
+    GOAL_PROFILE_MAP = {
+        "tomb": "tomb",
+        "house": "house",
+        "general": "general",
+    }
+    PROFILE_GOAL_MAP = {
+        "tomb": "tomb",
+        "house": "house",
+        "general": "general",
+    }
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -254,6 +265,7 @@ class FengShuiDockWidget(QWidget):
         self._help_dialog = None
         self._context_evidence_dialog = None
         self._context_records = []
+        self._syncing_goal_controls = False
         self.setStyleSheet(self._main_stylesheet())
         self._build_ui()
 
@@ -302,6 +314,26 @@ class FengShuiDockWidget(QWidget):
         form.setFormAlignment(Qt.AlignTop)
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(8)
+
+        self.purpose_combo = QComboBox(self)
+        self.purpose_combo.addItem(
+            ui_text("goal_tomb_label", default="음택(무덤 자리)"),
+            "tomb",
+        )
+        self.purpose_combo.addItem(
+            ui_text("goal_house_label", default="양택(집터/거주지)"),
+            "house",
+        )
+        self.purpose_combo.addItem(
+            ui_text("goal_general_label", default="일반 지형 읽기"),
+            "general",
+        )
+        self.purpose_combo.addItem(
+            ui_text("goal_custom_label", default="직접 설정"),
+            "custom",
+        )
+        form.addRow(ui_text("goal_label", default="탐색 목적"), self.purpose_combo)
+
         self.sites_combo = QgsMapLayerComboBox(self)
         self.sites_combo.setFilters(QgsMapLayerProxyModel.PointLayer)
         form.addRow(tr("sites_label"), self.sites_combo)
@@ -391,6 +423,12 @@ class FengShuiDockWidget(QWidget):
         )
 
         controls_layout.addLayout(form)
+
+        self.goal_hint_label = QLabel("", self)
+        self.goal_hint_label.setObjectName("goalHint")
+        self.goal_hint_label.setWordWrap(True)
+        self.goal_hint_label.setTextFormat(Qt.RichText)
+        controls_layout.addWidget(self.goal_hint_label)
 
         self.advanced_options_button = QToolButton(self)
         self.advanced_options_button.setObjectName("advancedToggle")
@@ -484,6 +522,7 @@ class FengShuiDockWidget(QWidget):
         self.period_combo.currentIndexChanged.connect(self._update_context_evidence_hint)
         self.hemisphere_combo.currentIndexChanged.connect(self._update_context_evidence_hint)
         self.context_param_combo.currentIndexChanged.connect(self._update_selected_param_evidence_hint)
+        self.purpose_combo.currentIndexChanged.connect(self._apply_usage_goal_presets)
         self.advanced_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
         self.advanced_options_button.toggled.connect(self._toggle_advanced_options_panel)
         self.advanced_options_button.toggled.connect(self._refresh_progress_guide)
@@ -525,7 +564,9 @@ class FengShuiDockWidget(QWidget):
         self.landscape_auto_hydro_checkbox.toggled.connect(self._refresh_progress_guide)
         self.include_terms_checkbox.toggled.connect(self._refresh_progress_guide)
         self.analysis_auto_hydro_checkbox.toggled.connect(self._refresh_progress_guide)
+        self.purpose_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.profile_combo.currentIndexChanged.connect(self._refresh_progress_guide)
+        self.profile_combo.currentIndexChanged.connect(self._sync_usage_goal_from_profile)
         self.culture_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.period_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.hemisphere_combo.currentIndexChanged.connect(self._refresh_progress_guide)
@@ -536,6 +577,9 @@ class FengShuiDockWidget(QWidget):
         self._toggle_advanced_options_panel(False)
         self._toggle_advanced_context_controls()
         self._toggle_web_mountain_controls()
+        default_goal_index = max(0, self.purpose_combo.findData("tomb"))
+        self.purpose_combo.setCurrentIndex(default_goal_index)
+        self._apply_usage_goal_presets()
         self._update_metric_help_hint()
         self._update_quick_number_widget()
         self._update_dem_diagnostics_hint()
@@ -557,6 +601,18 @@ class FengShuiDockWidget(QWidget):
         self.progress_summary_label.setObjectName("guideSummary")
         self.progress_summary_label.setWordWrap(True)
         card_layout.addWidget(self.progress_summary_label)
+
+        self.guide_intro_widget = QLabel("", card)
+        self.guide_intro_widget.setObjectName("guideWidget")
+        self.guide_intro_widget.setWordWrap(True)
+        self.guide_intro_widget.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.guide_intro_widget)
+
+        self.guide_steps_widget = QLabel("", card)
+        self.guide_steps_widget.setObjectName("guideWidget")
+        self.guide_steps_widget.setWordWrap(True)
+        self.guide_steps_widget.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.guide_steps_widget)
 
         self.workflow_progress = QProgressBar(card)
         self.workflow_progress.setObjectName("workflowProgress")
@@ -775,6 +831,131 @@ class FengShuiDockWidget(QWidget):
             return neutral_key, neutral_key
         return self.culture_combo.currentData(), self.period_combo.currentData()
 
+    def _usage_goal_key(self):
+        if not hasattr(self, "purpose_combo"):
+            return "general"
+        goal_key = self.purpose_combo.currentData()
+        return goal_key if goal_key else "general"
+
+    def _usage_goal_label(self, goal_key=None):
+        if not hasattr(self, "purpose_combo"):
+            return "general"
+        target_key = goal_key or self._usage_goal_key()
+        index = self.purpose_combo.findData(target_key)
+        if index >= 0:
+            return self.purpose_combo.itemText(index)
+        return self.purpose_combo.currentText() or str(target_key)
+
+    @classmethod
+    def _goal_profile_key(cls, goal_key):
+        return cls.GOAL_PROFILE_MAP.get(goal_key)
+
+    @classmethod
+    def _goal_key_for_profile(cls, profile_key):
+        return cls.PROFILE_GOAL_MAP.get(profile_key, "custom")
+
+    @staticmethod
+    def _goal_include_terms(goal_key):
+        return goal_key in ("tomb", "house")
+
+    def _goal_hint_html(self, goal_key):
+        profile_key = self._goal_profile_key(goal_key)
+        if goal_key == "custom":
+            profile_label_text = self.profile_combo.currentText() or ui_text(
+                "goal_custom_label", default="직접 설정"
+            )
+            return ui_text(
+                "goal_hint_custom",
+                default=(
+                    "<b>직접 설정</b> 모드입니다. 고급 옵션에서 프리셋, 문화권, 시대를 "
+                    "직접 고르며 결과를 조정합니다."
+                ),
+            ).format(profile=escape(profile_label_text))
+
+        profile_label_text = profile_label(profile_key, language_code())
+        return ui_text(
+            f"goal_hint_{goal_key}",
+            default=(
+                "<b>{goal}</b> 목적에 맞는 기본 프리셋을 자동 적용합니다. "
+                "고급 옵션을 열지 않아도 '{profile}' 모델이 연결됩니다."
+            ),
+        ).format(
+            goal=escape(self._usage_goal_label(goal_key)),
+            profile=escape(profile_label_text or profile_key or ""),
+        )
+
+    def _guide_intro_html(self, goal_key):
+        default_text = (
+            "<b>이 모드가 하는 일</b><br/>DEM과 수계를 바탕으로 산줄기, 혈 후보, 구조 용어를 "
+            "차례대로 읽습니다."
+        )
+        return ui_text(f"guide_goal_intro_{goal_key}", default=default_text)
+
+    def _guide_steps_html(self, goal_key):
+        default_text = (
+            "<b>권장 순서</b><br/>"
+            "1. DEM을 고릅니다.<br/>"
+            "2. 수계를 넣거나 DEM 자동 수계를 사용합니다.<br/>"
+            "3. 지형 추출을 먼저 실행합니다."
+        )
+        return ui_text(f"guide_goal_steps_{goal_key}", default=default_text)
+
+    def _update_usage_goal_guidance(self):
+        goal_key = self._usage_goal_key()
+        if hasattr(self, "goal_hint_label"):
+            self.goal_hint_label.setText(self._goal_hint_html(goal_key))
+        if hasattr(self, "guide_intro_widget"):
+            self.guide_intro_widget.setText(self._guide_intro_html(goal_key))
+        if hasattr(self, "guide_steps_widget"):
+            self.guide_steps_widget.setText(self._guide_steps_html(goal_key))
+
+    def _apply_usage_goal_presets(self, *_args):
+        if self._syncing_goal_controls:
+            return
+
+        goal_key = self._usage_goal_key()
+        self._syncing_goal_controls = True
+        try:
+            profile_key = self._goal_profile_key(goal_key)
+            if profile_key:
+                profile_index = self.profile_combo.findData(profile_key)
+                if profile_index >= 0 and profile_index != self.profile_combo.currentIndex():
+                    self.profile_combo.setCurrentIndex(profile_index)
+
+                if hasattr(self, "include_terms_checkbox"):
+                    include_terms = self._goal_include_terms(goal_key)
+                    if self.include_terms_checkbox.isChecked() != include_terms:
+                        self.include_terms_checkbox.setChecked(include_terms)
+
+                if hasattr(self, "mode_tabs") and self.mode_tabs.currentIndex() != 0:
+                    self.mode_tabs.setCurrentIndex(0)
+
+            if goal_key == "custom" and hasattr(self, "advanced_options_button"):
+                self.advanced_options_button.setChecked(True)
+        finally:
+            self._syncing_goal_controls = False
+
+        self._update_usage_goal_guidance()
+
+    def _sync_usage_goal_from_profile(self, *_args):
+        if self._syncing_goal_controls or not hasattr(self, "profile_combo"):
+            self._update_usage_goal_guidance()
+            return
+
+        goal_key = self._goal_key_for_profile(self.profile_combo.currentData())
+        index = self.purpose_combo.findData(goal_key)
+        if index < 0:
+            self._update_usage_goal_guidance()
+            return
+
+        self._syncing_goal_controls = True
+        try:
+            if index != self.purpose_combo.currentIndex():
+                self.purpose_combo.setCurrentIndex(index)
+        finally:
+            self._syncing_goal_controls = False
+        self._update_usage_goal_guidance()
+
     def _toggle_advanced_context_controls(self, *_args):
         enabled = self._advanced_context_enabled()
         widgets = [
@@ -921,11 +1102,18 @@ class FengShuiDockWidget(QWidget):
             period=self.period_combo.currentText(),
             button=ui_text("context_evidence_button", default="View Context Evidence"),
         )
-        if source_list:
-            hint += ui_text("context_hint_doi_prefix", default=" Representative DOI: ")
-            hint += str(source_list[0])
-            if len(source_list) > 1:
-                hint += f", {source_list[1]}"
+        references_text = reference_display_text(source_list, limit=2)
+        if references_text:
+            prefix_default = (
+                " 대표 참고문헌: "
+                if language_code() == "ko"
+                else " Representative references: "
+            )
+            hint += ui_text(
+                "context_hint_reference_prefix",
+                default=prefix_default,
+            )
+            hint += references_text
         self.context_evidence_hint.setText(hint)
         self._update_selected_param_evidence_hint()
         self._update_evidence_summary_widget()
@@ -956,19 +1144,30 @@ class FengShuiDockWidget(QWidget):
         else:
             value_text = str(value)
         level = item.get("evidence_level", "U")
-        dois = item.get("source_doi", [])
-        doi_text = ", ".join(dois) if dois else ui_text("context_no_doi", default="No DOI")
+        references_text = reference_display_text(item.get("source_doi", []))
+        if not references_text:
+            references_text = ui_text(
+                "context_no_reference",
+                default="참고문헌 없음" if language_code() == "ko" else "No reference",
+            )
         note = item.get("note") or ui_text("context_no_note", default="No note")
         self.context_param_hint.setText(
             ui_text(
-                "context_param_template",
-                default="[{group}.{name}] value={value} | evidence={level} | DOI={doi} | note={note}",
+                "context_param_reference_template",
+                default=(
+                    "[{group}.{name}] 값={value} | 근거수준={level} | 참고문헌={reference} | 메모={note}"
+                    if language_code() == "ko"
+                    else (
+                        "[{group}.{name}] value={value} | evidence={level} | "
+                        "reference={reference} | note={note}"
+                    )
+                ),
             ).format(
                 group=item.get("group", "-"),
                 name=item.get("name", "-"),
                 value=value_text,
                 level=level,
-                doi=doi_text,
+                reference=references_text,
                 note=note,
             )
         )
@@ -1139,6 +1338,12 @@ class FengShuiDockWidget(QWidget):
         dem_ready = self.dem_combo.currentLayer() is not None
         sites_ready = self.sites_combo.currentLayer() is not None
         water_ready = self.water_combo.currentLayer() is not None
+        goal_key = self._usage_goal_key()
+        terms_ready = (
+            self.include_terms_checkbox.isChecked()
+            if goal_key in ("tomb", "house")
+            else True
+        )
 
         if self.mode_tabs.currentIndex() == 1:
             hydro_ready = water_ready or self.analysis_auto_hydro_checkbox.isChecked()
@@ -1158,10 +1363,21 @@ class FengShuiDockWidget(QWidget):
             checks = [
                 (ui_text("workflow_check_dem", default="Select DEM layer"), dem_ready),
                 (ui_text("workflow_check_hydro", default="Confirm hydro source"), hydro_ready),
-                (ui_text("workflow_check_terms_option", default="Check term options"), True),
+                (
+                    ui_text(
+                        "workflow_check_terms_recommended",
+                        default="Turn on term points for site-shape reading",
+                    )
+                    if goal_key in ("tomb", "house")
+                    else ui_text(
+                        "workflow_check_terms_option",
+                        default="Check term point/link options",
+                    ),
+                    terms_ready,
+                ),
                 (
                     ui_text("workflow_check_extract_ready", default="Ready to run extraction"),
-                    dem_ready and hydro_ready,
+                    dem_ready and hydro_ready and terms_ready,
                 ),
             ]
             mode_name = tr("tab_landscape")
@@ -1177,6 +1393,7 @@ class FengShuiDockWidget(QWidget):
         total = max(1, len(checks))
         percent = int(round((completed / total) * 100.0))
         self.workflow_progress.setValue(percent)
+        self._update_usage_goal_guidance()
         lang_name = (
             ui_text("workflow_lang_ko", default="Korean")
             if self.label_language() == "ko"
@@ -1193,16 +1410,21 @@ class FengShuiDockWidget(QWidget):
             else ui_text("web_mountain_mode_off", default="Off")
         )
         mountain_lang = self.mountain_name_language_preference()
+        goal_name = self._usage_goal_label()
+        profile_name = self.profile_combo.currentText() or str(self.profile_combo.currentData())
         self.progress_summary_label.setText(
             ui_text(
                 "workflow_summary_template",
                 default=(
-                    "Mode: {mode} | Label language: {lang} | Context: {context_mode} | "
+                    "Goal: {goal} | Mode: {mode} | Model: {profile} | "
+                    "Label language: {lang} | Context: {context_mode} | "
                     "Mountain names(web): {mountain_mode}/{mountain_lang} | "
                     "Readiness {percent}%"
                 ),
             ).format(
+                goal=goal_name,
                 mode=mode_name,
+                profile=profile_name,
                 lang=lang_name,
                 context_mode=context_mode,
                 mountain_mode=mountain_mode,
@@ -1281,6 +1503,7 @@ class FengShuiDockWidget(QWidget):
             self.dem_combo.currentLayer(),
             self.water_combo.currentLayer(),
             self.hemisphere_combo.currentData(),
+            self.profile_combo.currentData(),
             culture_key,
             period_key,
             self.landscape_auto_hydro_checkbox.isChecked(),
@@ -1405,6 +1628,14 @@ class FengShuiDockWidget(QWidget):
                 color: #38534c;
                 font-size: 11px;
                 padding: 2px 0px;
+            }
+            QLabel#goalHint {
+                color: #2f3a38;
+                font-size: 11px;
+                background: #fcf7ee;
+                border: 1px solid #ddcfb7;
+                border-radius: 8px;
+                padding: 6px 8px;
             }
             QLabel#contextParamHint {
                 color: #2c413c;
