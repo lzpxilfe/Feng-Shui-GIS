@@ -1,6 +1,64 @@
 {
   "base_culture_key": "east_asia",
   "base_period_key": "early_modern",
+  "neutral_defaults": {
+    "aspect_targets": {
+      "north": {
+        "value": 180.0,
+        "source_doi": [],
+        "evidence_level": "U",
+        "note": "General principles mode: regional and period biases disabled."
+      },
+      "south": {
+        "value": 0.0,
+        "source_doi": [],
+        "evidence_level": "U",
+        "note": "General principles mode: regional and period biases disabled."
+      }
+    },
+    "aspect_sharpness": {
+      "value": 1.0,
+      "source_doi": [],
+      "evidence_level": "U",
+      "note": "General principles mode: regional and period biases disabled."
+    },
+    "water_distance_target": {
+      "value": 220.0,
+      "source_doi": [],
+      "evidence_level": "U",
+      "note": "General principles mode: regional and period biases disabled."
+    },
+    "water_distance_sigma": {
+      "value": 350.0,
+      "source_doi": [],
+      "evidence_level": "U",
+      "note": "General principles mode: regional and period biases disabled."
+    },
+    "macro_radius_multiplier": {
+      "value": 1.0,
+      "source_doi": [],
+      "evidence_level": "U",
+      "note": "General principles mode: regional and period biases disabled."
+    },
+    "micro_radius_multiplier": {
+      "value": 1.0,
+      "source_doi": [],
+      "evidence_level": "U",
+      "note": "General principles mode: regional and period biases disabled."
+    },
+    "hyeol_threshold": {
+      "value": 0.62,
+      "source_doi": [],
+      "evidence_level": "U",
+      "note": "General principles mode: regional and period biases disabled."
+    },
+    "term_target_shift": {
+      "value": 0.0,
+      "source_doi": [],
+      "evidence_level": "U",
+      "note": "General principles mode: regional and period biases disabled."
+    }
+  },
   "cultures": {
     "east_asia": {
       "label": {

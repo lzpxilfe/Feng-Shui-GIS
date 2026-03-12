@@ -23,6 +23,7 @@ from qgis.PyQt.QtWidgets import (
 from qgis.core import QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
 
+from .analysis import FengShuiAnalyzer
 from .cultural_context import (
     available_cultures,
     available_periods,
@@ -1213,32 +1214,24 @@ class FengShuiDockWidget(QWidget):
             return
 
         try:
-            x_res = abs(float(dem_layer.rasterUnitsPerPixelX()))
-            y_res = abs(float(dem_layer.rasterUnitsPerPixelY()))
-        except (TypeError, ValueError):
-            x_res = 0.0
-            y_res = 0.0
-        dem_step = (x_res + y_res) * 0.5 if x_res > 0 and y_res > 0 else max(x_res, y_res)
+            diagnostics = FengShuiAnalyzer.adaptive_spacing_diagnostics(dem_layer)
+        except RuntimeError as exc:
+            self.dem_diag_widget.setText(
+                ui_text(
+                    "guide_dem_diag_empty",
+                    default=(
+                        "<b>DEM Diagnostics</b><br/>"
+                        f"Configuration error: {escape(str(exc))}"
+                    ),
+                )
+            )
+            return
 
-        extent = dem_layer.extent()
-        width = max(0.0, float(extent.width()))
-        height = max(0.0, float(extent.height()))
-
-        rules = analysis_rules().get("adaptive_spacing", {})
-        try:
-            base_step_factor = float(rules.get("base_step_factor", 10.0))
-            min_span_divisor = float(rules.get("min_span_divisor", 180.0))
-        except (TypeError, ValueError):
-            base_step_factor = 10.0
-            min_span_divisor = 180.0
-        min_span_divisor = max(1.0, min_span_divisor)
-        min_span = min(width, height)
-        spacing = max(dem_step * max(0.1, base_step_factor), min_span / min_span_divisor)
-        if spacing <= 0:
-            spacing = dem_step * 10.0 if dem_step > 0 else 1.0
-        approx_cols = max(1, int(width / max(spacing, 1e-9)) + 1)
-        approx_rows = max(1, int(height / max(spacing, 1e-9)) + 1)
-        approx_nodes = approx_cols * approx_rows
+        dem_step = diagnostics["dem_step"]
+        width = diagnostics["width"]
+        height = diagnostics["height"]
+        spacing = diagnostics["spacing"]
+        approx_nodes = diagnostics["approx_nodes"]
 
         crs_mode = "geographic" if dem_layer.crs().isGeographic() else "projected"
         crs_note = (
