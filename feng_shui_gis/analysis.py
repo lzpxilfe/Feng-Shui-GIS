@@ -32,6 +32,7 @@ from .profile_catalog import (
     line_styles,
     point_styles,
     profile_spec,
+    special_term_specs,
     term_label,
     term_label_ko,
     term_radius_scales,
@@ -70,15 +71,19 @@ class FengShuiAnalyzer:
 
     @classmethod
     def _rules_section(cls, section_key):
-        section = cls._rules().get(section_key, {})
-        return section if isinstance(section, dict) else {}
+        section = cls._rules().get(section_key)
+        if not isinstance(section, dict):
+            raise RuntimeError(f"Missing analysis rules section '{section_key}'.")
+        return section
 
     @staticmethod
     def _rule_float(section, key, default, min_value=None, max_value=None):
+        if key not in section:
+            raise RuntimeError(f"Missing numeric rule '{key}'.")
         try:
-            value = float(section.get(key, default))
-        except (TypeError, ValueError):
-            value = float(default)
+            value = float(section[key])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"Invalid numeric rule '{key}'.") from exc
         if min_value is not None:
             value = max(float(min_value), value)
         if max_value is not None:
@@ -87,10 +92,12 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _rule_int(section, key, default, min_value=None, max_value=None):
+        if key not in section:
+            raise RuntimeError(f"Missing integer rule '{key}'.")
         try:
-            value = int(section.get(key, default))
-        except (TypeError, ValueError):
-            value = int(default)
+            value = int(section[key])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"Invalid integer rule '{key}'.") from exc
         if min_value is not None:
             value = max(int(min_value), value)
         if max_value is not None:
@@ -811,11 +818,8 @@ class FengShuiAnalyzer:
         if aspect_deg is None:
             return None
         if context:
-            target = context.get(
-                "aspect_target",
-                180.0 if hemisphere == "north" else 0.0,
-            )
-            sharpness = max(0.5, context.get("aspect_sharpness", 1.0))
+            target = float(context["aspect_target"])
+            sharpness = max(0.5, float(context["aspect_sharpness"]))
         else:
             target = 180.0 if hemisphere == "north" else 0.0
             sharpness = 1.0
@@ -827,11 +831,10 @@ class FengShuiAnalyzer:
     def _score_water_distance(distance_m, context=None):
         if distance_m is None:
             return None
-        target = 220.0
-        sigma = 350.0
-        if context:
-            target = context.get("water_distance_target", target)
-            sigma = context.get("water_distance_sigma", sigma)
+        if not context:
+            raise RuntimeError("Water-distance scoring requires a validated context.")
+        target = float(context["water_distance_target"])
+        sigma = float(context["water_distance_sigma"])
         score = math.exp(-((distance_m - target) / sigma) ** 2)
         if distance_m < 30.0:
             return max(0.1, score * 0.5)
@@ -876,20 +879,19 @@ class FengShuiAnalyzer:
         if center is None:
             return null_metrics
 
-        rules = analysis_rules()
-        sampling_rules = rules.get("sampling", {})
-        dem_rules = rules.get("dem_metrics", {})
+        sampling_rules = self._rules_section("sampling")
+        dem_rules = self._rules_section("dem_metrics")
 
         micro_mult = 1.0
         macro_mult = 1.0
         if context:
-            micro_mult = context.get("micro_radius_multiplier", 1.0)
-            macro_mult = context.get("macro_radius_multiplier", 1.0)
-        micro_radius = dem_step * float(sampling_rules.get("micro_radius_factor", 2.0)) * micro_mult
-        macro_radius = dem_step * float(sampling_rules.get("macro_radius_factor", 12.0)) * macro_mult
+            micro_mult = float(context["micro_radius_multiplier"])
+            macro_mult = float(context["macro_radius_multiplier"])
+        micro_radius = dem_step * float(sampling_rules["micro_radius_factor"]) * micro_mult
+        macro_radius = dem_step * float(sampling_rules["macro_radius_factor"]) * macro_mult
 
-        macro_bearing_step = int(sampling_rules.get("macro_bearing_step", 22))
-        micro_bearing_step = int(sampling_rules.get("micro_bearing_step", 45))
+        macro_bearing_step = int(sampling_rules["macro_bearing_step"])
+        micro_bearing_step = int(sampling_rules["micro_bearing_step"])
         macro_bearings = list(range(0, 360, max(1, macro_bearing_step)))
         micro_bearings = list(range(0, 360, max(1, micro_bearing_step)))
 
@@ -926,9 +928,9 @@ class FengShuiAnalyzer:
             front_norm = (center - front_mean) / relief
             side_norm = (left_mean - right_mean) / relief
 
-            back_spec = dem_rules.get("form_back", {"target": 0.20, "sigma": 0.35})
-            front_spec = dem_rules.get("form_front", {"target": 0.15, "sigma": 0.35})
-            side_spec = dem_rules.get("form_side", {"target": 0.05, "sigma": 0.25})
+            back_spec = dem_rules["form_back"]
+            front_spec = dem_rules["form_front"]
+            side_spec = dem_rules["form_side"]
             back_score = self._score_gaussian(
                 back_norm, float(back_spec["target"]), float(back_spec["sigma"])
             )
@@ -945,16 +947,14 @@ class FengShuiAnalyzer:
         if relief is not None and relief > 0 and mean_macro is not None:
             tpi = center - mean_macro
             tpi_norm = tpi / relief
-            xue_spec = dem_rules.get("xue", {"target": -0.10, "sigma": 0.30})
+            xue_spec = dem_rules["xue"]
             xue_score = self._score_gaussian(
                 tpi_norm, float(xue_spec["target"]), float(xue_spec["sigma"])
             )
             hierarchy_ratio = None
             if std_micro is not None and std_macro is not None and std_macro > 0:
                 hierarchy_ratio = std_micro / std_macro
-            hierarchy_spec = dem_rules.get(
-                "hierarchy", {"target": 0.55, "sigma": 0.30}
-            )
+            hierarchy_spec = dem_rules["hierarchy"]
             hierarchy_score = self._score_gaussian(
                 hierarchy_ratio,
                 float(hierarchy_spec["target"]),
@@ -972,10 +972,10 @@ class FengShuiAnalyzer:
             if slope_deg is None:
                 slope_factor = 0.75
             else:
-                slope_denominator = float(dem_rules.get("slope_denominator", 35.0))
+                slope_denominator = float(dem_rules["slope_denominator"])
                 slope_factor = max(0.25, 1.0 - min(1.0, slope_deg / slope_denominator))
 
-            wetness_spec = dem_rules.get("wetness", {"target": 0.60, "sigma": 0.28})
+            wetness_spec = dem_rules["wetness"]
             wetness_shape = self._score_gaussian(
                 convergence,
                 float(wetness_spec["target"]),
@@ -1181,31 +1181,49 @@ class FengShuiAnalyzer:
             return distance_score
         return dem_score
 
-    def _adaptive_spacing(self, dem_layer, dem_step):
-        rules = self._rules_section("adaptive_spacing")
-        base_step_factor = self._rule_float(
+    @classmethod
+    def adaptive_spacing_diagnostics(cls, dem_layer, dem_step=None):
+        if dem_step is None:
+            dem_step = cls._dem_step(dem_layer)
+        rules = cls._rules_section("adaptive_spacing")
+        base_step_factor = cls._rule_float(
             rules, "base_step_factor", 10.0, min_value=0.1
         )
-        min_span_divisor = self._rule_float(
+        min_span_divisor = cls._rule_float(
             rules, "min_span_divisor", 180.0, min_value=1.0
         )
-        fallback_spacing = self._rule_float(
+        fallback_spacing = cls._rule_float(
             rules, "fallback_min_spacing", 1.0, min_value=0.1
         )
-        max_points = self._rule_int(rules, "max_points", 12000, min_value=50)
+        max_points = cls._rule_int(rules, "max_points", 12000, min_value=50)
 
         extent = dem_layer.extent()
+        width = max(0.0, float(extent.width()))
+        height = max(0.0, float(extent.height()))
         min_span = min(extent.width(), extent.height())
         spacing = max(dem_step * base_step_factor, min_span / min_span_divisor)
         if spacing <= 0:
-            return max(dem_step * base_step_factor, fallback_spacing)
+            spacing = max(dem_step * base_step_factor, fallback_spacing)
 
-        cols = max(1, int(extent.width() / spacing) + 1)
-        rows = max(1, int(extent.height() / spacing) + 1)
+        cols = max(1, int(width / spacing) + 1)
+        rows = max(1, int(height / spacing) + 1)
         total = cols * rows
         if total > max_points:
             spacing *= math.sqrt(total / max_points)
-        return spacing
+            cols = max(1, int(width / spacing) + 1)
+            rows = max(1, int(height / spacing) + 1)
+            total = cols * rows
+        return {
+            "dem_step": dem_step,
+            "width": width,
+            "height": height,
+            "spacing": spacing,
+            "approx_nodes": total,
+            "max_points": max_points,
+        }
+
+    def _adaptive_spacing(self, dem_layer, dem_step):
+        return self.adaptive_spacing_diagnostics(dem_layer, dem_step)["spacing"]
 
     def _recommended_hyeol_count(self, dem_layer, spacing):
         rules = self._rules_section("hyeol_selection")
@@ -1256,11 +1274,9 @@ class FengShuiAnalyzer:
         water_index=None,
         water_geoms=None,
     ):
-        rules = analysis_rules().get("hyeol_candidate", {})
-        tpi_min = float(rules.get("tpi_min", -0.45))
-        tpi_max = float(rules.get("tpi_max", 0.35))
-        tpi_target = float(profile.get("tpi_target", rules.get("tpi_target", -0.08)))
-        tpi_sigma = float(profile.get("tpi_sigma", rules.get("tpi_sigma", 0.30)))
+        rules = self._rules_section("hyeol_candidate")
+        tpi_min = float(rules["tpi_min"])
+        tpi_max = float(rules["tpi_max"])
         candidates = []
         for point in self._grid_points(dem_layer, spacing):
             center = self._sample_dem(provider, point)
@@ -1389,23 +1405,23 @@ class FengShuiAnalyzer:
         scales = term_radius_scales()
         inner_radius = (
             dem_step
-            * float(scales.get("inner", 18.0))
-            * context.get("micro_radius_multiplier", 1.0)
+            * float(scales["inner"])
+            * float(context["micro_radius_multiplier"])
         )
         outer_radius = (
             dem_step
-            * float(scales.get("outer", 38.0))
-            * context.get("macro_radius_multiplier", 1.0)
+            * float(scales["outer"])
+            * float(context["macro_radius_multiplier"])
         )
         far_radius = (
             dem_step
-            * float(scales.get("far", 65.0))
-            * context.get("macro_radius_multiplier", 1.0)
+            * float(scales["far"])
+            * float(context["macro_radius_multiplier"])
         )
-        culture_id = context.get("culture_key", "east_asia")
-        period_id = context.get("period_key", "early_modern")
+        culture_id = context["culture_key"]
+        period_id = context["period_key"]
         term_bias = context.get("term_bias", {})
-        term_target_shift = context.get("term_target_shift", 0.0)
+        term_target_shift = float(context["term_target_shift"])
         hyeol_rules = self._rules_section("hyeol_selection")
         min_score_floor = self._rule_float(
             hyeol_rules, "min_score_floor", 0.42, min_value=0.0, max_value=1.0
@@ -1419,7 +1435,7 @@ class FengShuiAnalyzer:
         )
         term_min_score = max(
             min_score_floor,
-            context.get("hyeol_threshold", 0.62) * threshold_multiplier,
+            float(context["hyeol_threshold"]) * threshold_multiplier,
         )
 
         def add_term(
@@ -1546,16 +1562,28 @@ class FengShuiAnalyzer:
                 reason_text=hyeol_reason,
             )
 
+            radius_map = {"inner": inner_radius, "outer": outer_radius, "far": far_radius}
+            special_terms = special_term_specs()
+            myeongdang_spec = special_terms["myeongdang"]
+            myeongdang_radius = radius_map[myeongdang_spec["radius"]]
             myeongdang_point = self._offset_point(
-                center_point, inner_radius * 0.35, card["front"]
+                center_point,
+                myeongdang_radius * float(myeongdang_spec["offset_factor"]),
+                card[myeongdang_spec["direction"]],
             )
             myeongdang_elev = self._sample_dem(provider, myeongdang_point)
             if myeongdang_elev is None:
                 myeongdang_point = center_point
                 myeongdang_elev = center_elev
             myeongdang_delta = (myeongdang_elev - center_elev) / relief
-            myeongdang_target = -0.03 + (term_target_shift * 0.4)
-            myeongdang_fit = self._score_gaussian(myeongdang_delta, myeongdang_target, 0.24)
+            myeongdang_target = float(myeongdang_spec["target"]) + (
+                term_target_shift * float(myeongdang_spec["target_shift_scale"])
+            )
+            myeongdang_fit = self._score_gaussian(
+                myeongdang_delta,
+                myeongdang_target,
+                float(myeongdang_spec["sigma"]),
+            )
             myeongdang_score = self._mean_scores(base_score, myeongdang_fit)
             add_term(
                 term_id="myeongdang",
@@ -1571,21 +1599,19 @@ class FengShuiAnalyzer:
                 delta_rel=myeongdang_delta,
                 target_rel=myeongdang_target,
                 fit_score=myeongdang_fit,
-                radius_m=inner_radius * 0.35,
-                azimuth=card["front"],
+                radius_m=myeongdang_radius * float(myeongdang_spec["offset_factor"]),
+                azimuth=card[myeongdang_spec["direction"]],
                 mode="refine",
                 relief_m=relief,
             )
-
-            radius_map = {"inner": inner_radius, "outer": outer_radius, "far": far_radius}
             for spec in term_specs():
                 term_id = spec["term_id"]
                 term_name = term_label(term_id, "en")
-                radius = radius_map.get(spec.get("radius", "inner"), inner_radius)
-                azimuth = card.get(spec.get("direction", "front"), card["front"])
-                mode = spec.get("mode", "max")
-                target = float(spec.get("target", 0.0))
-                sigma = float(spec.get("sigma", 0.3))
+                radius = radius_map[spec["radius"]]
+                azimuth = card[spec["direction"]]
+                mode = spec["mode"]
+                target = float(spec["target"])
+                sigma = float(spec["sigma"])
                 point, elev, _ = self._sector_extreme(
                     provider=provider,
                     center_point=center_point,
@@ -1621,16 +1647,22 @@ class FengShuiAnalyzer:
                     relief_m=relief,
                 )
 
+            ipsu_spec = special_terms["ipsu"]
+            ipsu_radius = radius_map[ipsu_spec["radius"]]
             ipsu_point, ipsu_elev, _ = self._ring_extreme(
                 provider=provider,
                 center_point=center_point,
-                radius=outer_radius,
-                mode="min",
+                radius=ipsu_radius,
+                mode=ipsu_spec["mode"],
             )
             if ipsu_point is not None:
                 delta = (ipsu_elev - center_elev) / relief
-                target_rel = -0.22 + term_target_shift
-                fit_score = self._score_gaussian(delta, target_rel, 0.35)
+                target_rel = float(ipsu_spec["target"]) + term_target_shift
+                fit_score = self._score_gaussian(
+                    delta,
+                    target_rel,
+                    float(ipsu_spec["sigma"]),
+                )
                 score = self._mean_scores(
                     base_score,
                     fit_score,
@@ -1648,23 +1680,30 @@ class FengShuiAnalyzer:
                     delta_rel=delta,
                     target_rel=target_rel,
                     fit_score=fit_score,
-                    radius_m=outer_radius,
+                    radius_m=ipsu_radius,
                     azimuth=None,
-                    mode="min",
+                    mode=ipsu_spec["mode"],
                     relief_m=relief,
                 )
 
             misa_point, misa_elev = self._sector_gentle_point(
                 provider=provider,
                 center_point=center_point,
-                radius=inner_radius,
-                center_azimuth=card["front"],
+                radius=radius_map[special_terms["misa"]["radius"]],
+                center_azimuth=card[special_terms["misa"]["direction"]],
                 reference=center_elev,
             )
             if misa_point is not None:
+                misa_spec = special_terms["misa"]
                 delta = (misa_elev - center_elev) / relief
-                target_rel = -0.03 + (term_target_shift * 0.5)
-                fit_score = self._score_gaussian(delta, target_rel, 0.20)
+                target_rel = float(misa_spec["target"]) + (
+                    term_target_shift * float(misa_spec["target_shift_scale"])
+                )
+                fit_score = self._score_gaussian(
+                    delta,
+                    target_rel,
+                    float(misa_spec["sigma"]),
+                )
                 score = self._mean_scores(
                     base_score,
                     fit_score,
@@ -1682,8 +1721,8 @@ class FengShuiAnalyzer:
                     delta_rel=delta,
                     target_rel=target_rel,
                     fit_score=fit_score,
-                    radius_m=inner_radius,
-                    azimuth=card["front"],
+                    radius_m=radius_map[misa_spec["radius"]],
+                    azimuth=card[misa_spec["direction"]],
                     mode="gentle",
                     relief_m=relief,
                 )

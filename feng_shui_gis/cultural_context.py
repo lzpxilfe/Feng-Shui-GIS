@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Country/period context profiles for Feng Shui archaeology workflows."""
+"""Country and period context profiles for Feng Shui archaeology workflows."""
 
 from copy import deepcopy
 from html import escape
@@ -12,67 +12,42 @@ _CONFIG_FILE = "contexts.json"
 _LEVEL_ORDER = {"A": 0, "B": 1, "C": 2, "U": 3}
 _NEUTRAL_CONTEXT_KEY = "__neutral__"
 
-
-def _config():
-    return load_json(_CONFIG_FILE)
-
-
-def _cultures():
-    return _config().get("cultures", {})
-
-
-def _periods():
-    return _config().get("periods", {})
+_REQUIRED_CULTURE_FIELDS = (
+    "aspect_sharpness",
+    "water_distance_target",
+    "water_distance_sigma",
+    "macro_radius_multiplier",
+    "micro_radius_multiplier",
+    "hyeol_threshold",
+    "term_target_shift",
+)
+_REQUIRED_PERIOD_FIELDS = (
+    "water_target_shift",
+    "water_sigma_shift",
+    "macro_radius_multiplier",
+    "micro_radius_multiplier",
+    "hyeol_threshold_shift",
+    "term_target_shift",
+)
 
 
 def _default_meta():
     return {"source_doi": [], "evidence_level": "U", "note": ""}
 
 
-def neutral_context_key():
-    return _NEUTRAL_CONTEXT_KEY
+def _require_dict(value, context, allow_empty=False):
+    if not isinstance(value, dict):
+        raise RuntimeError(f"{context} must be a JSON object.")
+    if not allow_empty and not value:
+        raise RuntimeError(f"{context} must not be empty.")
+    return value
 
 
-def _neutral_context(hemisphere):
-    aspect_target = 180.0 if hemisphere == "north" else 0.0
-    neutral_note = "General principles mode: regional/period biases disabled."
-
-    def _entry(value):
-        return {
-            "value": float(value),
-            "source_doi": [],
-            "evidence_level": "U",
-            "note": neutral_note,
-        }
-
-    return {
-        "culture_key": _NEUTRAL_CONTEXT_KEY,
-        "period_key": _NEUTRAL_CONTEXT_KEY,
-        "aspect_target": float(aspect_target),
-        "aspect_sharpness": 1.0,
-        "water_distance_target": 220.0,
-        "water_distance_sigma": 350.0,
-        "macro_radius_multiplier": 1.0,
-        "micro_radius_multiplier": 1.0,
-        "hyeol_threshold": 0.62,
-        "weight_bias": {},
-        "term_bias": {},
-        "term_target_shift": 0.0,
-        "evidence": {
-            "parameters": {
-                "aspect_target": _entry(aspect_target),
-                "aspect_sharpness": _entry(1.0),
-                "water_distance_target": _entry(220.0),
-                "water_distance_sigma": _entry(350.0),
-                "macro_radius_multiplier": _entry(1.0),
-                "micro_radius_multiplier": _entry(1.0),
-                "hyeol_threshold": _entry(0.62),
-                "term_target_shift": _entry(0.0),
-            },
-            "weight_bias": {},
-            "term_bias": {},
-        },
-    }
+def _require_text(value, context):
+    text = str(value or "").strip()
+    if not text:
+        raise RuntimeError(f"{context} must not be empty.")
+    return text
 
 
 def _meta_from_node(node):
@@ -91,24 +66,14 @@ def _meta_from_node(node):
     return {"source_doi": dois, "evidence_level": level, "note": note}
 
 
-def _value_and_meta(node, default_value):
+def _numeric_value(node, context):
+    raw_value = node
     if isinstance(node, dict) and "value" in node:
-        return node.get("value", default_value), _meta_from_node(node)
-    if node is None:
-        return default_value, _default_meta()
-    return node, _default_meta()
-
-
-def _dict_values_and_meta(node):
-    if not isinstance(node, dict):
-        return {}, {}
-    values = {}
-    metas = {}
-    for key, raw_value in node.items():
-        value, meta = _value_and_meta(raw_value, 0.0)
-        values[key] = value
-        metas[key] = meta
-    return values, metas
+        raw_value = node.get("value")
+    try:
+        return float(raw_value), _meta_from_node(node)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"{context} must be numeric.") from exc
 
 
 def _merge_meta(first_meta, second_meta):
@@ -121,7 +86,10 @@ def _merge_meta(first_meta, second_meta):
         if source not in seen:
             seen.add(source)
             unique_sources.append(source)
-    levels = [first_meta.get("evidence_level", "U"), second_meta.get("evidence_level", "U")]
+    levels = [
+        first_meta.get("evidence_level", "U"),
+        second_meta.get("evidence_level", "U"),
+    ]
     levels = [item for item in levels if item in _LEVEL_ORDER]
     level = sorted(levels, key=lambda item: _LEVEL_ORDER[item])[0] if levels else "U"
     notes = [first_meta.get("note", "").strip(), second_meta.get("note", "").strip()]
@@ -129,34 +97,77 @@ def _merge_meta(first_meta, second_meta):
     return {"source_doi": unique_sources, "evidence_level": level, "note": note}
 
 
-def _normalize_scalar_map(node):
-    values, _ = _dict_values_and_meta(node)
+def _normalize_scalar_map_with_meta(node, context):
+    if node is None:
+        return {}, {}
+    node = _require_dict(node, context, allow_empty=True)
     normalized = {}
-    for key, value in values.items():
-        try:
-            normalized[key] = float(value)
-        except (TypeError, ValueError):
-            normalized[key] = 0.0
-    return normalized
-
-
-def _normalize_scalar_map_with_meta(node):
-    values, metas = _dict_values_and_meta(node)
-    normalized = {}
-    for key, value in values.items():
-        try:
-            normalized[key] = float(value)
-        except (TypeError, ValueError):
-            normalized[key] = 0.0
+    metas = {}
+    for key, raw_value in node.items():
+        value, meta = _numeric_value(raw_value, f"{context}.{key}")
+        normalized[key] = value
+        metas[key] = meta
     return normalized, metas
 
 
+def _merge_dicts(first, second):
+    merged = {}
+    keys = set(first.keys()) | set(second.keys())
+    for key in keys:
+        merged[key] = first.get(key, 0.0) + second.get(key, 0.0)
+    return merged
+
+
+def _config():
+    config = load_json(_CONFIG_FILE)
+    return _require_dict(config, _CONFIG_FILE)
+
+
+def _cultures():
+    return _require_dict(_config().get("cultures"), f"{_CONFIG_FILE}.cultures")
+
+
+def _periods():
+    return _require_dict(_config().get("periods"), f"{_CONFIG_FILE}.periods")
+
+
+def _neutral_defaults():
+    defaults = _require_dict(
+        _config().get("neutral_defaults"),
+        f"{_CONFIG_FILE}.neutral_defaults",
+    )
+    aspect_targets = _require_dict(
+        defaults.get("aspect_targets"),
+        f"{_CONFIG_FILE}.neutral_defaults.aspect_targets",
+    )
+    for hemisphere in ("north", "south"):
+        if hemisphere not in aspect_targets:
+            raise RuntimeError(
+                f"Missing hemisphere '{hemisphere}' in {_CONFIG_FILE}.neutral_defaults.aspect_targets."
+            )
+        _numeric_value(
+            aspect_targets[hemisphere],
+            f"{_CONFIG_FILE}.neutral_defaults.aspect_targets.{hemisphere}",
+        )
+    for field_name in _REQUIRED_CULTURE_FIELDS:
+        if field_name not in defaults:
+            raise RuntimeError(
+                f"Missing field '{field_name}' in {_CONFIG_FILE}.neutral_defaults."
+            )
+        _numeric_value(defaults[field_name], f"{_CONFIG_FILE}.neutral_defaults.{field_name}")
+    return defaults
+
+
+def neutral_context_key():
+    return _NEUTRAL_CONTEXT_KEY
+
+
 def base_culture_key():
-    return _config().get("base_culture_key", "east_asia")
+    return _require_text(_config().get("base_culture_key"), f"{_CONFIG_FILE}.base_culture_key")
 
 
 def base_period_key():
-    return _config().get("base_period_key", "early_modern")
+    return _require_text(_config().get("base_period_key"), f"{_CONFIG_FILE}.base_period_key")
 
 
 def available_cultures():
@@ -177,6 +188,134 @@ def period_label(period_key, language):
     return labels.get(language) or labels.get("en") or period_key
 
 
+def _neutral_context(hemisphere):
+    defaults = _neutral_defaults()
+    aspect_targets = defaults["aspect_targets"]
+    aspect_target, aspect_target_meta = _numeric_value(
+        aspect_targets[hemisphere],
+        f"{_CONFIG_FILE}.neutral_defaults.aspect_targets.{hemisphere}",
+    )
+    aspect_sharpness, aspect_sharpness_meta = _numeric_value(
+        defaults["aspect_sharpness"],
+        f"{_CONFIG_FILE}.neutral_defaults.aspect_sharpness",
+    )
+    water_target, water_target_meta = _numeric_value(
+        defaults["water_distance_target"],
+        f"{_CONFIG_FILE}.neutral_defaults.water_distance_target",
+    )
+    water_sigma, water_sigma_meta = _numeric_value(
+        defaults["water_distance_sigma"],
+        f"{_CONFIG_FILE}.neutral_defaults.water_distance_sigma",
+    )
+    macro_multiplier, macro_multiplier_meta = _numeric_value(
+        defaults["macro_radius_multiplier"],
+        f"{_CONFIG_FILE}.neutral_defaults.macro_radius_multiplier",
+    )
+    micro_multiplier, micro_multiplier_meta = _numeric_value(
+        defaults["micro_radius_multiplier"],
+        f"{_CONFIG_FILE}.neutral_defaults.micro_radius_multiplier",
+    )
+    hyeol_threshold, hyeol_threshold_meta = _numeric_value(
+        defaults["hyeol_threshold"],
+        f"{_CONFIG_FILE}.neutral_defaults.hyeol_threshold",
+    )
+    term_target_shift, term_target_shift_meta = _numeric_value(
+        defaults["term_target_shift"],
+        f"{_CONFIG_FILE}.neutral_defaults.term_target_shift",
+    )
+    if water_sigma <= 0:
+        raise RuntimeError("Neutral context water_distance_sigma must be greater than 0.")
+    if not 0.0 <= hyeol_threshold <= 1.0:
+        raise RuntimeError("Neutral context hyeol_threshold must be between 0 and 1.")
+
+    return {
+        "culture_key": _NEUTRAL_CONTEXT_KEY,
+        "period_key": _NEUTRAL_CONTEXT_KEY,
+        "aspect_target": aspect_target,
+        "aspect_sharpness": aspect_sharpness,
+        "water_distance_target": water_target,
+        "water_distance_sigma": water_sigma,
+        "macro_radius_multiplier": macro_multiplier,
+        "micro_radius_multiplier": micro_multiplier,
+        "hyeol_threshold": hyeol_threshold,
+        "weight_bias": {},
+        "term_bias": {},
+        "term_target_shift": term_target_shift,
+        "evidence": {
+            "parameters": {
+                "aspect_target": {"value": aspect_target, **aspect_target_meta},
+                "aspect_sharpness": {"value": aspect_sharpness, **aspect_sharpness_meta},
+                "water_distance_target": {"value": water_target, **water_target_meta},
+                "water_distance_sigma": {"value": water_sigma, **water_sigma_meta},
+                "macro_radius_multiplier": {
+                    "value": macro_multiplier,
+                    **macro_multiplier_meta,
+                },
+                "micro_radius_multiplier": {
+                    "value": micro_multiplier,
+                    **micro_multiplier_meta,
+                },
+                "hyeol_threshold": {"value": hyeol_threshold, **hyeol_threshold_meta},
+                "term_target_shift": {
+                    "value": term_target_shift,
+                    **term_target_shift_meta,
+                },
+            },
+            "weight_bias": {},
+            "term_bias": {},
+        },
+    }
+
+
+def _validated_culture(culture_id):
+    cultures = _cultures()
+    culture = _require_dict(
+        cultures.get(culture_id),
+        f"{_CONFIG_FILE}.cultures.{culture_id}",
+    )
+    aspect_targets = _require_dict(
+        culture.get("aspect_targets"),
+        f"{_CONFIG_FILE}.cultures.{culture_id}.aspect_targets",
+    )
+    for hemisphere in ("north", "south"):
+        if hemisphere not in aspect_targets:
+            raise RuntimeError(
+                f"Missing hemisphere '{hemisphere}' in {_CONFIG_FILE}.cultures.{culture_id}.aspect_targets."
+            )
+        _numeric_value(
+            aspect_targets[hemisphere],
+            f"{_CONFIG_FILE}.cultures.{culture_id}.aspect_targets.{hemisphere}",
+        )
+    for field_name in _REQUIRED_CULTURE_FIELDS:
+        if field_name not in culture:
+            raise RuntimeError(
+                f"Missing field '{field_name}' in {_CONFIG_FILE}.cultures.{culture_id}."
+            )
+        _numeric_value(
+            culture[field_name],
+            f"{_CONFIG_FILE}.cultures.{culture_id}.{field_name}",
+        )
+    return culture
+
+
+def _validated_period(period_id):
+    periods = _periods()
+    period = _require_dict(
+        periods.get(period_id),
+        f"{_CONFIG_FILE}.periods.{period_id}",
+    )
+    for field_name in _REQUIRED_PERIOD_FIELDS:
+        if field_name not in period:
+            raise RuntimeError(
+                f"Missing field '{field_name}' in {_CONFIG_FILE}.periods.{period_id}."
+            )
+        _numeric_value(
+            period[field_name],
+            f"{_CONFIG_FILE}.periods.{period_id}.{field_name}",
+        )
+    return period
+
+
 def build_context(culture_key, period_key, hemisphere):
     if (
         str(culture_key).strip().lower() == _NEUTRAL_CONTEXT_KEY
@@ -187,114 +326,99 @@ def build_context(culture_key, period_key, hemisphere):
     cultures = _cultures()
     periods = _periods()
 
-    if not cultures:
-        cultures = {
-            "east_asia": {
-                "aspect_targets": {"north": 180.0, "south": 0.0},
-                "aspect_sharpness": 1.0,
-                "water_distance_target": 220.0,
-                "water_distance_sigma": 350.0,
-                "macro_radius_multiplier": 1.0,
-                "micro_radius_multiplier": 1.0,
-                "hyeol_threshold": 0.62,
-                "weight_bias": {},
-                "term_bias": {},
-                "term_target_shift": 0.0,
-            }
-        }
-    if not periods:
-        periods = {
-            "early_modern": {
-                "water_target_shift": 0.0,
-                "water_sigma_shift": 0.0,
-                "macro_radius_multiplier": 1.0,
-                "micro_radius_multiplier": 1.0,
-                "hyeol_threshold_shift": 0.0,
-                "weight_bias": {},
-                "term_target_shift": 0.0,
-            }
-        }
-
     culture_default = base_culture_key()
     if culture_default not in cultures:
-        culture_default = next(iter(cultures.keys()))
+        raise RuntimeError(
+            f"Configured base culture '{culture_default}' is missing from {_CONFIG_FILE}.cultures."
+        )
     period_default = base_period_key()
     if period_default not in periods:
-        period_default = next(iter(periods.keys()))
+        raise RuntimeError(
+            f"Configured base period '{period_default}' is missing from {_CONFIG_FILE}.periods."
+        )
 
     culture_id = culture_key if culture_key in cultures else culture_default
     period_id = period_key if period_key in periods else period_default
 
-    culture = cultures[culture_id]
-    period = periods[period_id]
+    culture = _validated_culture(culture_id)
+    period = _validated_period(period_id)
 
-    aspect_targets = culture.get("aspect_targets", {})
-    aspect_default = 180.0 if hemisphere == "north" else 0.0
-    aspect_target, aspect_target_meta = _value_and_meta(
-        aspect_targets.get(hemisphere),
-        aspect_default,
+    aspect_targets = culture["aspect_targets"]
+    aspect_target, aspect_target_meta = _numeric_value(
+        aspect_targets[hemisphere],
+        f"{_CONFIG_FILE}.cultures.{culture_id}.aspect_targets.{hemisphere}",
     )
-    aspect_sharpness, aspect_sharpness_meta = _value_and_meta(
-        culture.get("aspect_sharpness"),
-        1.0,
+    aspect_sharpness, aspect_sharpness_meta = _numeric_value(
+        culture["aspect_sharpness"],
+        f"{_CONFIG_FILE}.cultures.{culture_id}.aspect_sharpness",
     )
-    water_target, water_target_meta = _value_and_meta(
-        culture.get("water_distance_target"),
-        220.0,
+    water_target, water_target_meta = _numeric_value(
+        culture["water_distance_target"],
+        f"{_CONFIG_FILE}.cultures.{culture_id}.water_distance_target",
     )
-    water_target_shift, water_target_shift_meta = _value_and_meta(
-        period.get("water_target_shift"),
-        0.0,
+    water_target_shift, water_target_shift_meta = _numeric_value(
+        period["water_target_shift"],
+        f"{_CONFIG_FILE}.periods.{period_id}.water_target_shift",
     )
-    water_sigma, water_sigma_meta = _value_and_meta(
-        culture.get("water_distance_sigma"),
-        350.0,
+    water_sigma, water_sigma_meta = _numeric_value(
+        culture["water_distance_sigma"],
+        f"{_CONFIG_FILE}.cultures.{culture_id}.water_distance_sigma",
     )
-    water_sigma_shift, water_sigma_shift_meta = _value_and_meta(
-        period.get("water_sigma_shift"),
-        0.0,
+    water_sigma_shift, water_sigma_shift_meta = _numeric_value(
+        period["water_sigma_shift"],
+        f"{_CONFIG_FILE}.periods.{period_id}.water_sigma_shift",
     )
-    macro_multiplier, macro_multiplier_meta = _value_and_meta(
-        culture.get("macro_radius_multiplier"),
-        1.0,
+    macro_multiplier, macro_multiplier_meta = _numeric_value(
+        culture["macro_radius_multiplier"],
+        f"{_CONFIG_FILE}.cultures.{culture_id}.macro_radius_multiplier",
     )
-    macro_period, macro_period_meta = _value_and_meta(
-        period.get("macro_radius_multiplier"),
-        1.0,
+    macro_period, macro_period_meta = _numeric_value(
+        period["macro_radius_multiplier"],
+        f"{_CONFIG_FILE}.periods.{period_id}.macro_radius_multiplier",
     )
-    micro_multiplier, micro_multiplier_meta = _value_and_meta(
-        culture.get("micro_radius_multiplier"),
-        1.0,
+    micro_multiplier, micro_multiplier_meta = _numeric_value(
+        culture["micro_radius_multiplier"],
+        f"{_CONFIG_FILE}.cultures.{culture_id}.micro_radius_multiplier",
     )
-    micro_period, micro_period_meta = _value_and_meta(
-        period.get("micro_radius_multiplier"),
-        1.0,
+    micro_period, micro_period_meta = _numeric_value(
+        period["micro_radius_multiplier"],
+        f"{_CONFIG_FILE}.periods.{period_id}.micro_radius_multiplier",
     )
-    hyeol_threshold, hyeol_threshold_meta = _value_and_meta(
-        culture.get("hyeol_threshold"),
-        0.62,
+    hyeol_threshold, hyeol_threshold_meta = _numeric_value(
+        culture["hyeol_threshold"],
+        f"{_CONFIG_FILE}.cultures.{culture_id}.hyeol_threshold",
     )
-    hyeol_threshold_shift, hyeol_threshold_shift_meta = _value_and_meta(
-        period.get("hyeol_threshold_shift"),
-        0.0,
+    hyeol_threshold_shift, hyeol_threshold_shift_meta = _numeric_value(
+        period["hyeol_threshold_shift"],
+        f"{_CONFIG_FILE}.periods.{period_id}.hyeol_threshold_shift",
     )
-    term_target_shift, term_target_shift_meta = _value_and_meta(
-        culture.get("term_target_shift"),
-        0.0,
+    term_target_shift, term_target_shift_meta = _numeric_value(
+        culture["term_target_shift"],
+        f"{_CONFIG_FILE}.cultures.{culture_id}.term_target_shift",
     )
-    term_period_shift, term_period_shift_meta = _value_and_meta(
-        period.get("term_target_shift"),
-        0.0,
+    term_period_shift, term_period_shift_meta = _numeric_value(
+        period["term_target_shift"],
+        f"{_CONFIG_FILE}.periods.{period_id}.term_target_shift",
     )
+
+    water_distance_sigma = water_sigma + water_sigma_shift
+    if water_distance_sigma <= 0:
+        raise RuntimeError("water_distance_sigma must remain greater than 0 after shifts.")
+    combined_hyeol_threshold = hyeol_threshold + hyeol_threshold_shift
+    if not 0.0 <= combined_hyeol_threshold <= 1.0:
+        raise RuntimeError("hyeol_threshold must remain between 0 and 1 after shifts.")
 
     weight_bias_culture, weight_meta_culture = _normalize_scalar_map_with_meta(
-        culture.get("weight_bias", {})
+        culture.get("weight_bias", {}),
+        f"{_CONFIG_FILE}.cultures.{culture_id}.weight_bias",
     )
     weight_bias_period, weight_meta_period = _normalize_scalar_map_with_meta(
-        period.get("weight_bias", {})
+        period.get("weight_bias", {}),
+        f"{_CONFIG_FILE}.periods.{period_id}.weight_bias",
     )
     term_bias_culture, term_bias_meta_culture = _normalize_scalar_map_with_meta(
-        culture.get("term_bias", {})
+        culture.get("term_bias", {}),
+        f"{_CONFIG_FILE}.cultures.{culture_id}.term_bias",
     )
 
     merged_weight_bias = _merge_dicts(weight_bias_culture, weight_bias_period)
@@ -308,60 +432,42 @@ def build_context(culture_key, period_key, hemisphere):
     context = {
         "culture_key": culture_id,
         "period_key": period_id,
-        "aspect_target": float(aspect_target),
-        "aspect_sharpness": float(aspect_sharpness),
-        "water_distance_target": float(water_target) + float(water_target_shift),
-        "water_distance_sigma": max(
-            120.0,
-            float(water_sigma) + float(water_sigma_shift),
-        ),
-        "macro_radius_multiplier": float(macro_multiplier) * float(macro_period),
-        "micro_radius_multiplier": float(micro_multiplier) * float(micro_period),
-        "hyeol_threshold": max(
-            0.50,
-            min(
-                0.90,
-                float(hyeol_threshold) + float(hyeol_threshold_shift),
-            ),
-        ),
+        "aspect_target": aspect_target,
+        "aspect_sharpness": aspect_sharpness,
+        "water_distance_target": water_target + water_target_shift,
+        "water_distance_sigma": water_distance_sigma,
+        "macro_radius_multiplier": macro_multiplier * macro_period,
+        "micro_radius_multiplier": micro_multiplier * micro_period,
+        "hyeol_threshold": combined_hyeol_threshold,
         "weight_bias": merged_weight_bias,
         "term_bias": deepcopy(term_bias_culture),
-        "term_target_shift": float(term_target_shift) + float(term_period_shift),
+        "term_target_shift": term_target_shift + term_period_shift,
         "evidence": {
             "parameters": {
-                "aspect_target": {
-                    "value": float(aspect_target),
-                    **aspect_target_meta,
-                },
-                "aspect_sharpness": {
-                    "value": float(aspect_sharpness),
-                    **aspect_sharpness_meta,
-                },
+                "aspect_target": {"value": aspect_target, **aspect_target_meta},
+                "aspect_sharpness": {"value": aspect_sharpness, **aspect_sharpness_meta},
                 "water_distance_target": {
-                    "value": float(water_target) + float(water_target_shift),
+                    "value": water_target + water_target_shift,
                     **_merge_meta(water_target_meta, water_target_shift_meta),
                 },
                 "water_distance_sigma": {
-                    "value": max(120.0, float(water_sigma) + float(water_sigma_shift)),
+                    "value": water_distance_sigma,
                     **_merge_meta(water_sigma_meta, water_sigma_shift_meta),
                 },
                 "macro_radius_multiplier": {
-                    "value": float(macro_multiplier) * float(macro_period),
+                    "value": macro_multiplier * macro_period,
                     **_merge_meta(macro_multiplier_meta, macro_period_meta),
                 },
                 "micro_radius_multiplier": {
-                    "value": float(micro_multiplier) * float(micro_period),
+                    "value": micro_multiplier * micro_period,
                     **_merge_meta(micro_multiplier_meta, micro_period_meta),
                 },
                 "hyeol_threshold": {
-                    "value": max(
-                        0.50,
-                        min(0.90, float(hyeol_threshold) + float(hyeol_threshold_shift)),
-                    ),
+                    "value": combined_hyeol_threshold,
                     **_merge_meta(hyeol_threshold_meta, hyeol_threshold_shift_meta),
                 },
                 "term_target_shift": {
-                    "value": float(term_target_shift) + float(term_period_shift),
+                    "value": term_target_shift + term_period_shift,
                     **_merge_meta(term_target_shift_meta, term_period_shift_meta),
                 },
             },
@@ -480,7 +586,7 @@ def context_evidence_html(culture_key, period_key, hemisphere, language=None):
     col_doi = ui_text(
         "context_evidence_col_reference",
         lang,
-        default="참고문헌" if lang == "ko" else "reference",
+        default="reference",
     )
     col_note = ui_text("context_evidence_col_note", lang, default="note")
     level_note = ui_text(
@@ -509,11 +615,3 @@ def context_evidence_html(culture_key, period_key, hemisphere, language=None):
         f"{rows_html}</table>"
         f"<p><small>{escape(level_note)}</small></p>"
     )
-
-
-def _merge_dicts(first, second):
-    merged = {}
-    keys = set(first.keys()) | set(second.keys())
-    for key in keys:
-        merged[key] = first.get(key, 0.0) + second.get(key, 0.0)
-    return merged

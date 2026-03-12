@@ -21,6 +21,29 @@
     "outer": 38.0,
     "far": 65.0
   },
+  "special_terms": {
+    "myeongdang": {
+      "radius": "inner",
+      "direction": "front",
+      "offset_factor": 0.35,
+      "target": -0.03,
+      "target_shift_scale": 0.4,
+      "sigma": 0.24
+    },
+    "ipsu": {
+      "radius": "outer",
+      "mode": "min",
+      "target": -0.22,
+      "sigma": 0.35
+    },
+    "misa": {
+      "radius": "inner",
+      "direction": "front",
+      "target": -0.03,
+      "target_shift_scale": 0.5,
+      "sigma": 0.20
+    }
+  },
   "term_specs": [
     { "term_id": "jusan", "radius": "inner", "direction": "back", "mode": "max", "target": 0.33, "sigma": 0.33 },
     { "term_id": "jojongsan", "radius": "far", "direction": "back", "mode": "max", "target": 0.42, "sigma": 0.35 },
