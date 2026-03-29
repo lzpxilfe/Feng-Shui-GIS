@@ -1,7 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 from html import escape
 
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import QSettings, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -34,12 +34,14 @@ from .cultural_context import (
     period_label,
 )
 from .locale import language_code, tr
+from .locale import set_language_code
 from .mountain_options import mountain_options
 from .profile_catalog import (
     analysis_rules,
     available_profiles,
     line_styles,
     profile_label,
+    term_label,
     term_label_ko,
 )
 from .reference_catalog import reference_display_text, references_help_html
@@ -139,15 +141,16 @@ class FengShuiHelpDialog(QDialog):
         """
 
     @staticmethod
-    def _line_legend_rows():
-        meanings = ui_term_meanings("ko")
+    def _line_legend_rows(language=None):
+        lang = language if language else language_code()
+        meanings = ui_term_meanings(lang)
         rows = []
         for term_id, style in line_styles().items():
             color, width = style
             rows.append(
                 (
                     "<tr>"
-                    f"<td>{escape(term_label_ko(term_id))}</td>"
+                    f"<td>{escape(term_label(term_id, lang))}</td>"
                     f"<td>{escape(str(meanings.get(term_id, '')))}</td>"
                     f"<td><code>{escape(color)}</code></td>"
                     f"<td>{width:.1f}</td>"
@@ -157,9 +160,10 @@ class FengShuiHelpDialog(QDialog):
         return "".join(rows)
 
     @staticmethod
-    def _ridge_legend_rows():
+    def _ridge_legend_rows(language=None):
+        lang = language if language else language_code()
         rows = []
-        for item in ui_ridge_legend("ko"):
+        for item in ui_ridge_legend(lang):
             rows.append(
                 (
                     "<tr>"
@@ -173,9 +177,10 @@ class FengShuiHelpDialog(QDialog):
         return "".join(rows)
 
     @staticmethod
-    def _hydro_legend_rows():
+    def _hydro_legend_rows(language=None):
+        lang = language if language else language_code()
         rows = []
-        for item in ui_hydro_legend("ko"):
+        for item in ui_hydro_legend(lang):
             rows.append(
                 (
                     "<tr>"
@@ -196,9 +201,10 @@ class FengShuiHelpDialog(QDialog):
         return ui_help_html("quick_terms")
 
     def _symbols_html(self):
-        line_rows = self._line_legend_rows()
-        ridge_rows = self._ridge_legend_rows()
-        hydro_rows = self._hydro_legend_rows()
+        lang = language_code()
+        line_rows = self._line_legend_rows(lang)
+        ridge_rows = self._ridge_legend_rows(lang)
+        hydro_rows = self._hydro_legend_rows(lang)
         return ui_help_html(
             "symbols",
             line_rows=line_rows,
@@ -233,6 +239,7 @@ class ContextEvidenceDialog(QDialog):
 
 class FengShuiDockWidget(QWidget):
     run_requested = pyqtSignal(object, object, object, str, str, str, str, bool)
+    compare_requested = pyqtSignal(object, object, object, str, str, str, str, str, bool)
     terms_requested = pyqtSignal(object, object, str, str, str, str, bool, bool)
     calibration_requested = pyqtSignal(
         object,
@@ -249,6 +256,7 @@ class FengShuiDockWidget(QWidget):
     GOAL_PROFILE_MAP = {
         "tomb": "tomb",
         "house": "house",
+        "settlement": "village",
         "general": "general",
     }
     PROFILE_GOAL_MAP = {
@@ -257,8 +265,27 @@ class FengShuiDockWidget(QWidget):
         "general": "general",
     }
 
+    @classmethod
+    def _resolved_goal_profile_map(cls):
+        goal_profile_map = dict(cls.GOAL_PROFILE_MAP)
+        for profile_key in available_profiles():
+            goal_profile_map.setdefault(profile_key, profile_key)
+        return goal_profile_map
+
+    @classmethod
+    def _resolved_profile_goal_map(cls):
+        profile_goal_map = dict(cls.PROFILE_GOAL_MAP)
+        for goal_key, profile_key in cls._resolved_goal_profile_map().items():
+            profile_goal_map.setdefault(profile_key, goal_key)
+        return profile_goal_map
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        saved_ui_language = str(
+            QSettings().value("feng_shui_gis/ui_language", "") or ""
+        ).strip()
+        if saved_ui_language:
+            set_language_code(saved_ui_language)
         self.setWindowFlags(Qt.Window)
         self.setWindowTitle(tr("panel_title"))
         self.resize(640, 720)
@@ -267,13 +294,391 @@ class FengShuiDockWidget(QWidget):
         self._context_evidence_dialog = None
         self._context_records = []
         self._syncing_goal_controls = False
+        self._rebuilding_ui = False
         self.setStyleSheet(self._main_stylesheet())
         self._build_ui()
 
+    @staticmethod
+    def _clear_layout(layout):
+        while layout is not None and layout.count():
+            item = layout.takeAt(0)
+            child_layout = item.layout()
+            child_widget = item.widget()
+            if child_layout is not None:
+                FengShuiDockWidget._clear_layout(child_layout)
+            if child_widget is not None:
+                child_widget.deleteLater()
+
+    @staticmethod
+    def _set_combo_data(combo, value):
+        if combo is None:
+            return
+        index = combo.findData(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
+    def _reset_transient_dialogs(self):
+        for attr_name in ("_help_dialog", "_context_evidence_dialog"):
+            dialog = getattr(self, attr_name, None)
+            if dialog is not None:
+                dialog.close()
+                dialog.deleteLater()
+                setattr(self, attr_name, None)
+
+    def _snapshot_ui_state(self):
+        return {
+            "sites_layer": self.sites_combo.currentLayer() if hasattr(self, "sites_combo") else None,
+            "dem_layer": self.dem_combo.currentLayer() if hasattr(self, "dem_combo") else None,
+            "water_layer": self.water_combo.currentLayer() if hasattr(self, "water_combo") else None,
+            "ui_language": self.ui_language(),
+            "label_language": self.label_language(),
+            "purpose_key": self.purpose_combo.currentData() if hasattr(self, "purpose_combo") else None,
+            "hemisphere": self.hemisphere_combo.currentData() if hasattr(self, "hemisphere_combo") else None,
+            "web_mountain_enabled": (
+                bool(self.web_mountain_checkbox.isChecked())
+                if hasattr(self, "web_mountain_checkbox")
+                else False
+            ),
+            "web_mountain_radius": (
+                int(self.web_mountain_radius_spin.value())
+                if hasattr(self, "web_mountain_radius_spin")
+                else None
+            ),
+            "web_mountain_limit": (
+                int(self.web_mountain_limit_spin.value())
+                if hasattr(self, "web_mountain_limit_spin")
+                else None
+            ),
+            "web_mountain_lang": (
+                self.web_mountain_lang_combo.currentData()
+                if hasattr(self, "web_mountain_lang_combo")
+                else None
+            ),
+            "advanced_options_open": (
+                bool(self.advanced_options_button.isChecked())
+                if hasattr(self, "advanced_options_button")
+                else False
+            ),
+            "profile_key": self.profile_combo.currentData() if hasattr(self, "profile_combo") else None,
+            "advanced_context_enabled": (
+                bool(self.advanced_context_checkbox.isChecked())
+                if hasattr(self, "advanced_context_checkbox")
+                else False
+            ),
+            "culture_key": self.culture_combo.currentData() if hasattr(self, "culture_combo") else None,
+            "period_key": self.period_combo.currentData() if hasattr(self, "period_combo") else None,
+            "mode_tab_index": self.mode_tabs.currentIndex() if hasattr(self, "mode_tabs") else 0,
+            "landscape_auto_hydro": (
+                bool(self.landscape_auto_hydro_checkbox.isChecked())
+                if hasattr(self, "landscape_auto_hydro_checkbox")
+                else True
+            ),
+            "include_terms": (
+                bool(self.include_terms_checkbox.isChecked())
+                if hasattr(self, "include_terms_checkbox")
+                else False
+            ),
+            "analysis_auto_hydro": (
+                bool(self.analysis_auto_hydro_checkbox.isChecked())
+                if hasattr(self, "analysis_auto_hydro_checkbox")
+                else True
+            ),
+            "negative_ratio": (
+                self.negative_ratio_combo.currentData()
+                if hasattr(self, "negative_ratio_combo")
+                else None
+            ),
+            "calibration_seed": (
+                int(self.calibration_seed_spin.value())
+                if hasattr(self, "calibration_seed_spin")
+                else None
+            ),
+            "status_text": self.status_label.text() if hasattr(self, "status_label") else "",
+        }
+
+    def _persist_language_preferences(self, *_args):
+        settings = QSettings()
+        settings.setValue("feng_shui_gis/ui_language", self.ui_language())
+        settings.setValue("feng_shui_gis/label_language", self.label_language())
+
+    def _restore_ui_state(self, state):
+        if not isinstance(state, dict):
+            return
+
+        widgets = [
+            getattr(self, "sites_combo", None),
+            getattr(self, "dem_combo", None),
+            getattr(self, "water_combo", None),
+            getattr(self, "ui_language_combo", None),
+            getattr(self, "label_language_combo", None),
+            getattr(self, "purpose_combo", None),
+            getattr(self, "hemisphere_combo", None),
+            getattr(self, "web_mountain_checkbox", None),
+            getattr(self, "web_mountain_radius_spin", None),
+            getattr(self, "web_mountain_limit_spin", None),
+            getattr(self, "web_mountain_lang_combo", None),
+            getattr(self, "advanced_options_button", None),
+            getattr(self, "profile_combo", None),
+            getattr(self, "advanced_context_checkbox", None),
+            getattr(self, "culture_combo", None),
+            getattr(self, "period_combo", None),
+            getattr(self, "mode_tabs", None),
+            getattr(self, "landscape_auto_hydro_checkbox", None),
+            getattr(self, "include_terms_checkbox", None),
+            getattr(self, "analysis_auto_hydro_checkbox", None),
+            getattr(self, "negative_ratio_combo", None),
+            getattr(self, "calibration_seed_spin", None),
+        ]
+        for widget in widgets:
+            if widget is not None:
+                widget.blockSignals(True)
+
+        try:
+            if hasattr(self, "sites_combo"):
+                self.sites_combo.setLayer(state.get("sites_layer"))
+            if hasattr(self, "dem_combo"):
+                self.dem_combo.setLayer(state.get("dem_layer"))
+            if hasattr(self, "water_combo"):
+                self.water_combo.setLayer(state.get("water_layer"))
+            self._set_combo_data(getattr(self, "ui_language_combo", None), state.get("ui_language"))
+            self._set_combo_data(getattr(self, "label_language_combo", None), state.get("label_language"))
+            self._set_combo_data(getattr(self, "purpose_combo", None), state.get("purpose_key"))
+            self._set_combo_data(getattr(self, "hemisphere_combo", None), state.get("hemisphere"))
+            if hasattr(self, "web_mountain_checkbox"):
+                self.web_mountain_checkbox.setChecked(bool(state.get("web_mountain_enabled")))
+            if hasattr(self, "web_mountain_radius_spin") and state.get("web_mountain_radius") is not None:
+                self.web_mountain_radius_spin.setValue(int(state.get("web_mountain_radius")))
+            if hasattr(self, "web_mountain_limit_spin") and state.get("web_mountain_limit") is not None:
+                self.web_mountain_limit_spin.setValue(int(state.get("web_mountain_limit")))
+            self._set_combo_data(
+                getattr(self, "web_mountain_lang_combo", None),
+                state.get("web_mountain_lang"),
+            )
+            if hasattr(self, "advanced_options_button"):
+                self.advanced_options_button.setChecked(bool(state.get("advanced_options_open")))
+            self._set_combo_data(getattr(self, "profile_combo", None), state.get("profile_key"))
+            if hasattr(self, "advanced_context_checkbox"):
+                self.advanced_context_checkbox.setChecked(
+                    bool(state.get("advanced_context_enabled"))
+                )
+            self._set_combo_data(getattr(self, "culture_combo", None), state.get("culture_key"))
+            self._set_combo_data(getattr(self, "period_combo", None), state.get("period_key"))
+            if hasattr(self, "mode_tabs"):
+                tab_index = int(state.get("mode_tab_index", 0))
+                if 0 <= tab_index < self.mode_tabs.count():
+                    self.mode_tabs.setCurrentIndex(tab_index)
+            if hasattr(self, "landscape_auto_hydro_checkbox"):
+                self.landscape_auto_hydro_checkbox.setChecked(
+                    bool(state.get("landscape_auto_hydro"))
+                )
+            if hasattr(self, "include_terms_checkbox"):
+                self.include_terms_checkbox.setChecked(bool(state.get("include_terms")))
+            if hasattr(self, "analysis_auto_hydro_checkbox"):
+                self.analysis_auto_hydro_checkbox.setChecked(
+                    bool(state.get("analysis_auto_hydro"))
+                )
+            self._set_combo_data(
+                getattr(self, "negative_ratio_combo", None),
+                state.get("negative_ratio"),
+            )
+            if hasattr(self, "calibration_seed_spin") and state.get("calibration_seed") is not None:
+                self.calibration_seed_spin.setValue(int(state.get("calibration_seed")))
+            if hasattr(self, "status_label"):
+                self.status_label.setText(str(state.get("status_text", "") or ""))
+        finally:
+            for widget in widgets:
+                if widget is not None:
+                    widget.blockSignals(False)
+
+        self._toggle_advanced_options_panel(
+            bool(state.get("advanced_options_open", False))
+        )
+        self._toggle_advanced_context_controls()
+        self._toggle_web_mountain_controls()
+        self._update_usage_goal_guidance()
+        self._update_context_evidence_hint()
+        self._update_profile_recommendation_hint()
+        self._update_metric_help_hint()
+        self._update_quick_number_widget()
+        self._update_dem_diagnostics_hint()
+        self._update_evidence_summary_widget()
+        self._refresh_progress_guide()
+
+    def ui_language(self):
+        if hasattr(self, "ui_language_combo"):
+            code = self.ui_language_combo.currentData()
+            if code in ("ko", "en"):
+                return code
+        code = language_code()
+        return code if code in ("ko", "en") else "ko"
+
+    def _apply_ui_language_choice(self, *_args):
+        if self._rebuilding_ui or not hasattr(self, "ui_language_combo"):
+            return
+        next_language = self.ui_language_combo.currentData()
+        if next_language not in ("ko", "en") or next_language == language_code():
+            return
+        state = self._snapshot_ui_state()
+        state["ui_language"] = next_language
+        set_language_code(next_language)
+        self._persist_language_preferences()
+        self._reset_transient_dialogs()
+        self.setWindowTitle(tr("panel_title"))
+        self._rebuilding_ui = True
+        try:
+            self._build_ui()
+            self._restore_ui_state(state)
+        finally:
+            self._rebuilding_ui = False
+
+    def _reload_profile_options(self, *_args):
+        if self._rebuilding_ui:
+            return
+        state = self._snapshot_ui_state()
+        self._reset_transient_dialogs()
+        self._rebuilding_ui = True
+        try:
+            self._build_ui()
+            self._restore_ui_state(state)
+        finally:
+            self._rebuilding_ui = False
+        self.set_status(
+            ui_text("reload_profiles_status", default="Reloaded local profile list.")
+        )
+
+    def _apply_recommended_profile(self, *_args):
+        if self._rebuilding_ui or not hasattr(self, "profile_combo"):
+            return
+        recommended_key = self._recommended_local_profile_key()
+        if not recommended_key:
+            return
+        index = self.profile_combo.findData(recommended_key)
+        if index < 0:
+            return
+        self.profile_combo.setCurrentIndex(index)
+        self.set_status(
+            ui_text(
+                "recommended_profile_applied",
+                default="Applied the recommended calibrated profile.",
+            )
+        )
+
+    def _comparison_profile_keys(self):
+        current_profile_key = self.profile_combo.currentData() if hasattr(self, "profile_combo") else None
+        recommended_key = self._recommended_local_profile_key()
+        if not current_profile_key:
+            return None, None
+        current_text = str(current_profile_key)
+        if recommended_key and recommended_key != current_profile_key:
+            return current_profile_key, recommended_key
+        if "_cal_" not in current_text:
+            return None, None
+        culture_key, period_key = self._effective_context_keys()
+        suffix = f"_{culture_key}_{period_key}_cal_"
+        lower_text = current_text.lower()
+        lower_suffix = suffix.lower()
+        index = lower_text.find(lower_suffix)
+        if index <= 0:
+            return None, None
+        base_profile_key = current_text[:index]
+        if base_profile_key not in available_profiles():
+            return None, None
+        return base_profile_key, current_profile_key
+
+    def _emit_compare_requested(self):
+        base_profile_key, compare_profile_key = self._comparison_profile_keys()
+        if not base_profile_key or not compare_profile_key:
+            return
+        culture_key, period_key = self._effective_context_keys()
+        self.compare_requested.emit(
+            self.sites_combo.currentLayer(),
+            self.dem_combo.currentLayer(),
+            self.water_combo.currentLayer(),
+            self.hemisphere_combo.currentData(),
+            base_profile_key,
+            compare_profile_key,
+            culture_key,
+            period_key,
+            self.analysis_auto_hydro_checkbox.isChecked(),
+        )
+
+    def _recommended_local_profile_key(self):
+        if not hasattr(self, "profile_combo"):
+            return None
+        current_profile_key = self.profile_combo.currentData()
+        if not current_profile_key:
+            return None
+        current_profile_text = str(current_profile_key)
+        if "_cal_" in current_profile_text:
+            return current_profile_key
+        culture_key, period_key = self._effective_context_keys()
+        prefix = f"{current_profile_text}_{culture_key}_{period_key}_cal_".lower()
+        matches = [
+            profile_key
+            for profile_key in available_profiles()
+            if str(profile_key).lower().startswith(prefix)
+        ]
+        if not matches:
+            return None
+        return sorted(matches)[-1]
+
+    def _update_profile_recommendation_hint(self, *_args):
+        if not hasattr(self, "profile_recommendation_hint"):
+            return
+        if hasattr(self, "apply_recommended_profile_button"):
+            self.apply_recommended_profile_button.setEnabled(False)
+        if hasattr(self, "compare_profiles_button"):
+            self.compare_profiles_button.setEnabled(False)
+        recommended_key = self._recommended_local_profile_key()
+        current_profile_key = self.profile_combo.currentData() if hasattr(self, "profile_combo") else None
+        if not recommended_key:
+            comparison_base_key, comparison_profile_key = self._comparison_profile_keys()
+            if comparison_base_key and comparison_profile_key:
+                if hasattr(self, "compare_profiles_button"):
+                    self.compare_profiles_button.setEnabled(True)
+                self.profile_recommendation_hint.setText(
+                    ui_text(
+                        "recommended_profile_compare_only",
+                        default="You can run a quick comparison between the calibrated profile and its base preset.",
+                    )
+                )
+                return
+            self.profile_recommendation_hint.setText(
+                ui_text(
+                    "recommended_profile_none",
+                    default="No saved local calibrated profile exists for this context yet.",
+                )
+            )
+            return
+        recommended_label = profile_label(recommended_key, language_code())
+        if recommended_key == current_profile_key:
+            self.profile_recommendation_hint.setText(
+                ui_text(
+                    "recommended_profile_active_template",
+                    default="Using the recommended calibrated profile: {profile}",
+                ).format(profile=recommended_label)
+            )
+            return
+        if hasattr(self, "apply_recommended_profile_button"):
+            self.apply_recommended_profile_button.setEnabled(True)
+        if hasattr(self, "compare_profiles_button"):
+            self.compare_profiles_button.setEnabled(True)
+        self.profile_recommendation_hint.setText(
+            ui_text(
+                "recommended_profile_hint_template",
+                default="Recommended calibrated profile: {profile} ({key})",
+            ).format(profile=recommended_label, key=recommended_key)
+        )
+
     def _build_ui(self):
-        root_layout = QVBoxLayout(self)
+        root_layout = self.layout()
+        if root_layout is None:
+            root_layout = QVBoxLayout(self)
+        else:
+            self._clear_layout(root_layout)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
+        self.setWindowTitle(tr("panel_title"))
 
         scroll = QScrollArea(self)
         scroll.setObjectName("panelScroll")
@@ -326,9 +731,20 @@ class FengShuiDockWidget(QWidget):
             "house",
         )
         self.purpose_combo.addItem(
+            ui_text("goal_settlement_label", default="고대 정착지 패턴"),
+            "settlement",
+        )
+        self.purpose_combo.addItem(
             ui_text("goal_general_label", default="일반 지형 읽기"),
             "general",
         )
+        for profile_key in available_profiles():
+            if profile_key in ("tomb", "house", "village", "general"):
+                continue
+            self.purpose_combo.addItem(
+                profile_label(profile_key, language_code()),
+                profile_key,
+            )
         self.purpose_combo.addItem(
             ui_text("goal_custom_label", default="직접 설정"),
             "custom",
@@ -356,10 +772,29 @@ class FengShuiDockWidget(QWidget):
         self.hemisphere_combo.addItem(tr("hemisphere_south"), "south")
         form.addRow(tr("hemisphere_label"), self.hemisphere_combo)
 
+        self.ui_language_combo = QComboBox(self)
+        self.ui_language_combo.addItem(ui_text("language_ko", default="Korean"), "ko")
+        self.ui_language_combo.addItem(ui_text("language_en", default="English"), "en")
+        current_ui_language = language_code()
+        if current_ui_language not in ("ko", "en"):
+            current_ui_language = "ko"
+        ui_language_index = self.ui_language_combo.findData(current_ui_language)
+        self.ui_language_combo.setCurrentIndex(max(0, ui_language_index))
+        form.addRow(
+            ui_text("ui_language_label", default="UI Language"),
+            self.ui_language_combo,
+        )
+
         self.label_language_combo = QComboBox(self)
         self.label_language_combo.addItem(ui_text("language_ko", default="Korean"), "ko")
         self.label_language_combo.addItem(ui_text("language_en", default="English"), "en")
-        self.label_language_combo.setCurrentIndex(0)
+        saved_label_language = str(
+            QSettings().value("feng_shui_gis/label_language", "ko") or "ko"
+        ).strip().lower()
+        label_language_index = self.label_language_combo.findData(
+            saved_label_language if saved_label_language in ("ko", "en") else "ko"
+        )
+        self.label_language_combo.setCurrentIndex(max(0, label_language_index))
         form.addRow(ui_text("label_language", default="Label Language"), self.label_language_combo)
 
         self.web_mountain_checkbox = QCheckBox(
@@ -459,7 +894,18 @@ class FengShuiDockWidget(QWidget):
         profile_keys = list(available_profiles()) or ["general"]
         for profile_key in profile_keys:
             self.profile_combo.addItem(profile_label(profile_key, lang), profile_key)
-        advanced_form.addRow(tr("model_label"), self.profile_combo)
+        profile_row_widget = QWidget(self)
+        profile_row_layout = QHBoxLayout(profile_row_widget)
+        profile_row_layout.setContentsMargins(0, 0, 0, 0)
+        profile_row_layout.setSpacing(8)
+        profile_row_layout.addWidget(self.profile_combo, 1)
+        self.reload_profiles_button = QPushButton(
+            ui_text("reload_profiles_button", default="Reload Profiles"),
+            self,
+        )
+        self.reload_profiles_button.setObjectName("helpButton")
+        profile_row_layout.addWidget(self.reload_profiles_button)
+        advanced_form.addRow(tr("model_label"), profile_row_widget)
 
         self.advanced_context_checkbox = QCheckBox(
             ui_text(
@@ -495,6 +941,32 @@ class FengShuiDockWidget(QWidget):
         )
         advanced_layout.addLayout(advanced_form)
 
+        self.profile_recommendation_hint = QLabel("", self)
+        self.profile_recommendation_hint.setObjectName("contextHint")
+        self.profile_recommendation_hint.setWordWrap(True)
+        advanced_layout.addWidget(self.profile_recommendation_hint)
+
+        recommendation_row = QHBoxLayout()
+        self.apply_recommended_profile_button = QPushButton(
+            ui_text(
+                "apply_recommended_profile_button",
+                default="Use Recommended Profile",
+            ),
+            self,
+        )
+        self.apply_recommended_profile_button.setObjectName("helpButton")
+        self.apply_recommended_profile_button.setEnabled(False)
+        recommendation_row.addWidget(self.apply_recommended_profile_button)
+        self.compare_profiles_button = QPushButton(
+            ui_text("compare_profiles_button", default="Quick Compare"),
+            self,
+        )
+        self.compare_profiles_button.setObjectName("helpButton")
+        self.compare_profiles_button.setEnabled(False)
+        recommendation_row.addWidget(self.compare_profiles_button)
+        recommendation_row.addStretch(1)
+        advanced_layout.addLayout(recommendation_row)
+
         evidence_row = QHBoxLayout()
         self.context_evidence_button = QPushButton(
             ui_text("context_evidence_button", default="View Context Evidence"),
@@ -524,6 +996,15 @@ class FengShuiDockWidget(QWidget):
         self.hemisphere_combo.currentIndexChanged.connect(self._update_context_evidence_hint)
         self.context_param_combo.currentIndexChanged.connect(self._update_selected_param_evidence_hint)
         self.purpose_combo.currentIndexChanged.connect(self._apply_usage_goal_presets)
+        self.ui_language_combo.currentIndexChanged.connect(self._apply_ui_language_choice)
+        self.ui_language_combo.currentIndexChanged.connect(self._persist_language_preferences)
+        self.reload_profiles_button.clicked.connect(self._reload_profile_options)
+        self.apply_recommended_profile_button.clicked.connect(self._apply_recommended_profile)
+        self.compare_profiles_button.clicked.connect(self._emit_compare_requested)
+        self.profile_combo.currentIndexChanged.connect(self._update_profile_recommendation_hint)
+        self.culture_combo.currentIndexChanged.connect(self._update_profile_recommendation_hint)
+        self.period_combo.currentIndexChanged.connect(self._update_profile_recommendation_hint)
+        self.advanced_context_checkbox.toggled.connect(self._update_profile_recommendation_hint)
         self.advanced_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
         self.advanced_options_button.toggled.connect(self._toggle_advanced_options_panel)
         self.advanced_options_button.toggled.connect(self._refresh_progress_guide)
@@ -533,6 +1014,7 @@ class FengShuiDockWidget(QWidget):
         self.web_mountain_limit_spin.valueChanged.connect(self._refresh_progress_guide)
         self.web_mountain_lang_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self._update_context_evidence_hint()
+        self._update_profile_recommendation_hint()
 
         self.mode_tabs = QTabWidget(self)
         self.mode_tabs.setDocumentMode(True)
@@ -574,11 +1056,16 @@ class FengShuiDockWidget(QWidget):
         self.label_language_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.advanced_context_checkbox.toggled.connect(self._refresh_progress_guide)
         self.label_language_combo.currentIndexChanged.connect(self._update_quick_number_widget)
+        self.label_language_combo.currentIndexChanged.connect(self._persist_language_preferences)
 
         self._toggle_advanced_options_panel(False)
         self._toggle_advanced_context_controls()
         self._toggle_web_mountain_controls()
-        default_goal_index = max(0, self.purpose_combo.findData("tomb"))
+        default_goal_index = self.purpose_combo.findData("settlement")
+        if default_goal_index < 0:
+            default_goal_index = max(0, self.purpose_combo.findData("house"))
+        if default_goal_index < 0:
+            default_goal_index = max(0, self.purpose_combo.findData("tomb"))
         self.purpose_combo.setCurrentIndex(default_goal_index)
         self._apply_usage_goal_presets()
         self._update_metric_help_hint()
@@ -849,15 +1336,15 @@ class FengShuiDockWidget(QWidget):
 
     @classmethod
     def _goal_profile_key(cls, goal_key):
-        return cls.GOAL_PROFILE_MAP.get(goal_key)
+        return cls._resolved_goal_profile_map().get(goal_key)
 
     @classmethod
     def _goal_key_for_profile(cls, profile_key):
-        return cls.PROFILE_GOAL_MAP.get(profile_key, "custom")
+        return cls._resolved_profile_goal_map().get(profile_key, "custom")
 
     @staticmethod
     def _goal_include_terms(goal_key):
-        return goal_key in ("tomb", "house")
+        return goal_key in ("tomb", "house", "settlement")
 
     def _goal_hint_html(self, goal_key):
         profile_key = self._goal_profile_key(goal_key)
@@ -873,7 +1360,15 @@ class FengShuiDockWidget(QWidget):
                 ),
             ).format(profile=escape(profile_label_text))
 
-        profile_label_text = profile_label(profile_key, language_code())
+        if profile_key:
+            profile_label_text = profile_label(profile_key, language_code())
+        else:
+            current_profile = self.profile_combo.currentData()
+            profile_label_text = (
+                profile_label(current_profile, language_code())
+                if current_profile
+                else ""
+            )
         return ui_text(
             f"goal_hint_{goal_key}",
             default=(
@@ -946,8 +1441,10 @@ class FengShuiDockWidget(QWidget):
         goal_key = self._goal_key_for_profile(self.profile_combo.currentData())
         index = self.purpose_combo.findData(goal_key)
         if index < 0:
-            self._update_usage_goal_guidance()
-            return
+            index = self.purpose_combo.findData("custom")
+            if index < 0:
+                self._update_usage_goal_guidance()
+                return
 
         self._syncing_goal_controls = True
         try:
@@ -1024,7 +1521,7 @@ class FengShuiDockWidget(QWidget):
                 culture_key=culture_key,
                 period_key=period_key,
                 hemisphere=self.hemisphere_combo.currentData(),
-                language=self.label_language(),
+                language=self.ui_language(),
             )
         else:
             html = ui_text(
@@ -1103,16 +1600,15 @@ class FengShuiDockWidget(QWidget):
             period=self.period_combo.currentText(),
             button=ui_text("context_evidence_button", default="View Context Evidence"),
         )
-        references_text = reference_display_text(source_list, limit=2)
+        references_text = reference_display_text(
+            source_list,
+            language=self.ui_language(),
+            limit=2,
+        )
         if references_text:
-            prefix_default = (
-                " 대표 참고문헌: "
-                if language_code() == "ko"
-                else " Representative references: "
-            )
             hint += ui_text(
                 "context_hint_reference_prefix",
-                default=prefix_default,
+                default=" Representative references: ",
             )
             hint += references_text
         self.context_evidence_hint.setText(hint)
@@ -1145,23 +1641,22 @@ class FengShuiDockWidget(QWidget):
         else:
             value_text = str(value)
         level = item.get("evidence_level", "U")
-        references_text = reference_display_text(item.get("source_doi", []))
+        references_text = reference_display_text(
+            item.get("source_doi", []),
+            language=self.ui_language(),
+        )
         if not references_text:
             references_text = ui_text(
                 "context_no_reference",
-                default="참고문헌 없음" if language_code() == "ko" else "No reference",
+                default="No reference",
             )
         note = item.get("note") or ui_text("context_no_note", default="No note")
         self.context_param_hint.setText(
             ui_text(
                 "context_param_reference_template",
                 default=(
-                    "[{group}.{name}] 값={value} | 근거수준={level} | 참고문헌={reference} | 메모={note}"
-                    if language_code() == "ko"
-                    else (
-                        "[{group}.{name}] value={value} | evidence={level} | "
-                        "reference={reference} | note={note}"
-                    )
+                    "[{group}.{name}] value={value} | evidence={level} | "
+                    "reference={reference} | note={note}"
                 ),
             ).format(
                 group=item.get("group", "-"),
@@ -1334,7 +1829,7 @@ class FengShuiDockWidget(QWidget):
         goal_key = self._usage_goal_key()
         terms_ready = (
             self.include_terms_checkbox.isChecked()
-            if goal_key in ("tomb", "house")
+            if goal_key in ("tomb", "house", "settlement")
             else True
         )
 
@@ -1361,7 +1856,7 @@ class FengShuiDockWidget(QWidget):
                         "workflow_check_terms_recommended",
                         default="Turn on term points for site-shape reading",
                     )
-                    if goal_key in ("tomb", "house")
+                    if goal_key in ("tomb", "house", "settlement")
                     else ui_text(
                         "workflow_check_terms_option",
                         default="Check term point/link options",
