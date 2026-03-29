@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 """Profile, term, and rules catalogs loaded from validated JSON configs."""
 
+import json
+import os
+
 from .config_loader import load_json
 
 _PROFILE_FILE = "profiles.json"
+_LOCAL_PROFILE_FILE = "local_profiles.json"
 _TERM_FILE = "terms.json"
 _RULE_FILE = "analysis_rules.json"
 
@@ -62,10 +66,10 @@ def _require_string(container, key, context):
     return value
 
 
-def _validate_profiles(data):
-    profiles = _require_dict(data, _PROFILE_FILE)
+def _validate_profiles(data, context_name=_PROFILE_FILE, allow_empty=False):
+    profiles = _require_dict(data, context_name, allow_empty=allow_empty)
     for profile_key, spec in profiles.items():
-        context = f"{_PROFILE_FILE}:{profile_key}"
+        context = f"{context_name}:{profile_key}"
         spec = _require_dict(spec, context)
         _require_dict(spec.get("label"), f"{context}.label")
         weights = _require_dict(spec.get("weights"), f"{context}.weights")
@@ -79,6 +83,18 @@ def _validate_profiles(data):
         for field_name in ("slope_target", "slope_sigma", "tpi_target", "tpi_sigma"):
             _require_number(spec, field_name, context)
     return profiles
+
+
+def _load_local_profiles():
+    path = os.path.join(os.path.dirname(__file__), "config", _LOCAL_PROFILE_FILE)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Invalid JSON config: {path}") from exc
+    return _validate_profiles(data, _LOCAL_PROFILE_FILE, allow_empty=True)
 
 
 def _validate_term_catalog(data):
@@ -150,7 +166,9 @@ def _validate_analysis_rules(data):
 
 
 def profile_specs():
-    return _validate_profiles(load_json(_PROFILE_FILE))
+    profiles = dict(_validate_profiles(load_json(_PROFILE_FILE)))
+    profiles.update(_load_local_profiles())
+    return profiles
 
 
 def available_profiles():

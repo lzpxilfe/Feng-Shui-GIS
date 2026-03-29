@@ -30,6 +30,10 @@ Each paper or field dataset should be represented as one case sheet containing:
 - Metrics to compare
 - Acceptance threshold or qualitative expectation
 
+Before adding a country or period split, compare the same case against the
+neutral/general context. Keep the split only when it improves held-out
+performance or the source study explicitly depends on that historical context.
+
 ## 3. Split the Work Correctly
 
 - Use calibration only on a training split.
@@ -55,6 +59,7 @@ Report mismatches directly. Do not hide them inside narrative text.
 - If a water layer was unavailable and DEM auto-hydro was used, say so.
 - If the plugin required local calibration to match the paper, report the delta from default config.
 - If results are unstable under small threshold changes, include a sensitivity note.
+- If present-day DEM or hydrography was compared against ancient tombs or settlement remains, report preservation uncertainty such as mound truncation, terracing, stream relocation, or modern earthworks.
 
 ## 6. Publication Checklist
 

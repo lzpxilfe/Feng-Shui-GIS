@@ -1,18 +1,18 @@
-# ⛰️ Feng Shui GIS for QGIS
+# ⛰️ Asian Landscape Reader (Feng Shui GIS)
 
-> DEM-first terrain and water interpretation for Feng Shui-informed landscape analysis, archaeology support, and reproducible research workflows.
+> DEM-first terrain and hydro interpretation for historical landscape reading, especially for East Asian and premodern settlement studies.
 
 ## ✨ What This Plugin Does
 
-Feng Shui GIS is built around a simple idea: start from terrain and water first, then layer on optional interpretation.
+This plugin is built around a simple idea: start from terrain structure and water flow first, then layer on optional interpretation suitable for historical landscape and settlement analysis.
 
 - ⛰️ Extracts ridge hierarchy from DEMs (`daegan`, `jeongmaek`, `gimaek`, `jimaek`)
 - 🌊 Uses a supplied water layer first, or derives a hydro network from DEM when needed
 - 🧭 Optionally derives Feng Shui term points and structural links
 - 📍 Optionally scores candidate sites with `fs_score`
 - 🏷️ Optionally enriches outputs with nearby mountain names from OSM/Overpass
-- 📚 Shows context evidence in the UI with source attribution (`source_doi`, `evidence_level`)
-- 🧪 Runs SHP-based calibration and writes report outputs to `reports/*.json` and `reports/*.md`
+- 📚 Shows context evidence in the UI with source attribution (`source_doi`, catalog reference ids, `evidence_level`)
+- 🧪 Runs local site-layer calibration with threshold fitting and indicator-weight reweighting, then writes report outputs to `reports/*.json` and `reports/*.md`
 
 ## 🧠 Core Design
 
@@ -27,8 +27,10 @@ As of `v0.1.2`, the plugin includes:
 
 - 🎛️ General-principles default mode for lower-friction landscape extraction
 - 🌍 Optional advanced context toggle for culture/period-aware analysis
+- ⚖️ Calibration respects the selected neutral/general mode or region/period context instead of silently forcing a fixed baseline
 - 🏔️ OSM mountain-name enrichment with preferred language selection (`local` / `ko` / `en`)
 - 🔎 Reason fields such as `reason_ko` and `fs_reason` on output layers
+- 🧭 Calibration output fields (`cal_score`, `cal_f1_th`, `cal_yj_th`, `cal_f1_ok`, `cal_yj_ok`) for map-side threshold inspection
 - 📖 Evidence dialogs and context parameter inspection in the UI
 - 📏 Reproducibility-oriented config files under `feng_shui_gis/config/`
 
@@ -54,8 +56,8 @@ As of `v0.1.2`, the plugin includes:
 2. Select a DEM raster.
 3. Add a curated water layer if you have one.
 4. If no water layer is available, enable DEM auto-hydro.
-5. Run `Extract Landscape Flow / Maek`.
-6. Turn on term extraction only when you need Feng Shui term geometry.
+5. Run `Extract Landscape Structure`.
+6. Turn on term extraction only when you need terrain-structure term geometry.
 7. Run site scoring only when you have point data to evaluate.
 8. If needed, enable mountain-name enrichment for presentation or inspection.
 
@@ -95,6 +97,7 @@ Important limits:
 
 - ✅ DEM / ridge / hydro extraction is the most reproducible part of the stack
 - ⚠️ Country and period context profiles are still research priors unless locally validated
+- ⚠️ Premodern texts such as `임원경제지` are best treated as interpretation sources until they are translated into tested spatial variables
 - ⚠️ Automated output should not be presented as a final archaeological conclusion by itself
 
 ## 🧾 Reproducibility Support

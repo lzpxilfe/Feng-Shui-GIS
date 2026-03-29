@@ -1,26 +1,28 @@
 # -*- coding: utf-8 -*-
 from qgis.PyQt.QtCore import QLocale
 
+_LANGUAGE_OVERRIDE = None
+
 _MESSAGES = {
     "en": {
-        "plugin_title": "Feng Shui GIS",
-        "menu_title": "Feng Shui GIS",
-        "panel_title": "Feng Shui GIS",
-        "panel_subtitle": "DEM and water-first landscape reading with optional archaeology scoring.",
+        "plugin_title": "Asian Landscape Reader",
+        "menu_title": "Asian Landscape Reader",
+        "panel_title": "Asian Landscape Reader",
+        "panel_subtitle": "Read East Asian and cross-regional terrain form before scoring: ridges, hydro structure, and historical settlement clues.",
         "sites_label": "Site points",
         "dem_label": "DEM raster",
         "water_label": "Water layer (optional)",
         "hemisphere_label": "Hemisphere",
         "hemisphere_north": "Northern",
         "hemisphere_south": "Southern",
-        "model_label": "Archaeology profile",
-        "model_general": "General",
-        "model_tomb": "Tomb",
-        "model_house": "House",
-        "model_village": "Village",
+        "model_label": "Reading profile",
+        "model_general": "General terrain",
+        "model_tomb": "Ritual/Burial terrain",
+        "model_house": "Settlement / Domestic landscape",
+        "model_village": "Village / Rural landscape",
         "model_well": "Well",
         "model_temple": "Temple",
-        "culture_label": "Region profile",
+        "culture_label": "Region profile (East Asian focus)",
         "culture_east_asia": "East Asia baseline",
         "culture_korea": "Korea",
         "culture_china": "China",
@@ -31,16 +33,16 @@ _MESSAGES = {
         "period_medieval": "Medieval",
         "period_early_modern": "Early modern",
         "period_modern": "Modern/Contemporary",
-        "tab_landscape": "Landscape",
-        "tab_analysis": "Advanced Analysis",
-        "landscape_desc": "Base mode: extract ridgeline hierarchy and hydro network from DEM first. Add Feng Shui terms only when needed.",
-        "analysis_desc": "Optional mode: run candidate-site scoring (fs_score) for archaeology.",
+        "tab_landscape": "Terrain Reading",
+        "tab_analysis": "Scoring / Interpretation",
+        "landscape_desc": "First extract terrain skeleton (ridges + hydrography) from DEM, then add spatial-hierarchy terms when needed.",
+        "analysis_desc": "Optional scoring mode for settlement/ritual candidate points and historical location comparison.",
         "auto_hydro_label": "If water layer is missing, derive hydro network from DEM automatically",
-        "include_terms_label": "Also create Feng Shui term points and structural links",
+        "include_terms_label": "Also create terrain structure terms and links",
         "analysis_auto_hydro_label": "Use DEM-derived hydro network when water layer is missing",
-        "extract_landscape_button": "Extract Landscape Flow / Maek",
+        "extract_landscape_button": "Extract Landscape Structure",
         "help_button": "Detailed Help",
-        "help_dialog_title": "Feng Shui GIS - Detailed Guide",
+        "help_dialog_title": "Asian Landscape Reader - Detailed Guide",
         "help_tab_overview": "Workflow",
         "help_tab_symbols": "Symbols",
         "help_tab_references": "References",
@@ -59,24 +61,24 @@ _MESSAGES = {
         "ok_landscape_finished": "Created landscape flow layers",
     },
     "ko": {
-        "plugin_title": "Feng Shui GIS",
-        "menu_title": "Feng Shui GIS",
-        "panel_title": "Feng Shui GIS",
-        "panel_subtitle": "DEM/수계를 우선으로 읽고, 필요할 때만 고급 입지 점수를 계산합니다.",
+        "plugin_title": "아시아 고대공간 리더",
+        "menu_title": "아시아 고대공간 리더",
+        "panel_title": "아시아 고대공간 리더",
+        "panel_subtitle": "DEM으로 지형의 능선·수계 골격을 먼저 읽고, 필요 시 후보지 점수까지 이어가는 고고·공간지리 도구입니다.",
         "sites_label": "후보지 포인트",
         "dem_label": "DEM 래스터",
         "water_label": "수계 레이어(선택)",
         "hemisphere_label": "반구",
         "hemisphere_north": "북반구",
         "hemisphere_south": "남반구",
-        "model_label": "고고학 프리셋",
-        "model_general": "일반 풍수",
-        "model_tomb": "무덤",
-        "model_house": "주거",
-        "model_village": "마을",
+        "model_label": "공간해석 프리셋",
+        "model_general": "일반 지형",
+        "model_tomb": "의식/무덤 지형",
+        "model_house": "주거·정착지",
+        "model_village": "마을/촌락",
         "model_well": "우물",
         "model_temple": "사찰",
-        "culture_label": "지역/국가 프로파일",
+        "culture_label": "지역 프로파일(동아시아 중심)",
         "culture_east_asia": "동아시아 기본",
         "culture_korea": "한국",
         "culture_china": "중국",
@@ -87,16 +89,16 @@ _MESSAGES = {
         "period_medieval": "중세",
         "period_early_modern": "근세",
         "period_modern": "근현대",
-        "tab_landscape": "기본 지형",
-        "tab_analysis": "고급 분석",
-        "landscape_desc": "기본 모드: DEM에서 능선 계층(대간/정맥/기맥/지맥)과 수계 흐름을 먼저 추출합니다.",
-        "analysis_desc": "선택 모드: 후보지 포인트가 있을 때만 점수 기반 입지 분석(fs_score)을 실행합니다.",
+        "tab_landscape": "지형 읽기",
+        "tab_analysis": "해석/채점",
+        "landscape_desc": "기본 모드: DEM에서 능선 계층과 수계 구조를 먼저 읽어 정형화한 뒤, 필요할 때만 용어 구조를 덧씌웁니다.",
+        "analysis_desc": "후보지 포인트가 있을 때만 정착지·의식/무덤 후보에 대해 점수 기반 비교분석(fs_score)을 실행합니다.",
         "auto_hydro_label": "수계 레이어가 없으면 DEM 기반 자동 수문 추출 사용",
-        "include_terms_label": "풍수 용어 포인트/구조 연결선도 함께 생성",
+        "include_terms_label": "지형 구조 용어 포인트·연결선도 함께 생성",
         "analysis_auto_hydro_label": "분석 시 수계가 없으면 DEM 자동 수문 추출 사용",
-        "extract_landscape_button": "지형 흐름/맥 추출",
+        "extract_landscape_button": "지형 구조 추출",
         "help_button": "상세 도움말",
-        "help_dialog_title": "Feng Shui GIS - 상세 가이드",
+        "help_dialog_title": "아시아 고대공간 리더 - 상세 가이드",
         "help_tab_overview": "워크플로우",
         "help_tab_symbols": "심볼",
         "help_tab_references": "레퍼런스",
@@ -205,12 +207,30 @@ _MESSAGES = {
 }
 
 
+def _normalize_language_code(code):
+    if code is None:
+        return None
+    normalized = str(code).strip().split("_", maxsplit=1)[0].lower()
+    if normalized in _MESSAGES:
+        return normalized
+    return None
+
+
 def _language_code():
+    override = _normalize_language_code(_LANGUAGE_OVERRIDE)
+    if override is not None:
+        return override
     # Prefer system locale when available, then fall back to English.
-    code = QLocale.system().name().split("_", maxsplit=1)[0].lower()
-    if code in _MESSAGES:
+    code = _normalize_language_code(QLocale.system().name())
+    if code is not None:
         return code
     return "en"
+
+
+def set_language_code(code=None):
+    global _LANGUAGE_OVERRIDE
+    _LANGUAGE_OVERRIDE = _normalize_language_code(code)
+    return language_code()
 
 
 def language_code():

@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+from html import escape
 from datetime import datetime
 
 from qgis.PyQt.QtCore import QVariant
-from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtWidgets import QAction, QDialog, QVBoxLayout, QTextBrowser
 from qgis.core import (
+    QgsCategorizedSymbolRenderer,
+    QgsFeature,
     QgsFeatureRequest,
     QgsField,
     QgsProject,
     QgsProcessingContext,
     QgsProcessingFeedback,
+    QgsRendererCategory,
+    QgsSymbol,
     QgsWkbTypes,
     QgsVectorLayer,
     edit,
@@ -28,14 +33,25 @@ from .locale import tr
 from .mountain_lookup import MountainNameService
 from .mountain_options import mountain_options
 from .profile_catalog import analysis_rules
+from .reference_catalog import reference_display_text
 from .ui_catalog import ui_text
 
 
 class FengShuiGisPlugin:
+    _COMPARE_DELTA_EPSILON = 0.01
+    _COMPARE_TOP_CHANGE_LIMIT = 8
+    _COMPARE_REASON_EXCERPT = 96
+    _COMPARE_REPORT_REASON_EXCERPT = 44
+    _COMPARE_TREND_STYLES = (
+        ("gain", "#1f7a4f", "compare_trend_gain", "Gain"),
+        ("drop", "#b14a3b", "compare_trend_drop", "Drop"),
+        ("neutral", "#b8933f", "compare_trend_neutral", "Near neutral"),
+    )
     _OUTPUT_SUFFIXES = {
         "en": {
             "analysis": "fengshui",
             "calibration": "calibration",
+            "compare_changes": "compare_changes",
             "ridge": "fengshui_ridges",
             "hydro": "fengshui_hydro",
             "terms": "fengshui_terms",
@@ -46,6 +62,7 @@ class FengShuiGisPlugin:
         "ko": {
             "analysis": "풍수_입지평가",
             "calibration": "풍수_보정",
+            "compare_changes": "풍수_변화지점",
             "ridge": "풍수_산줄기",
             "hydro": "풍수_수계",
             "terms": "풍수_용어",
@@ -66,6 +83,8 @@ class FengShuiGisPlugin:
         self._reason_browser = None
         self._report_dialog = None
         self._report_browser = None
+        self._compare_dialog = None
+        self._compare_browser = None
         self._context_warning_cache = set()
 
     def initGui(self):
@@ -118,10 +137,17 @@ class FengShuiGisPlugin:
             self._report_dialog = None
             self._report_browser = None
 
+        if self._compare_dialog:
+            self._compare_dialog.close()
+            self._compare_dialog.deleteLater()
+            self._compare_dialog = None
+            self._compare_browser = None
+
     def toggle_panel(self):
         if self.dock is None:
             self.dock = FengShuiDockWidget(self.iface.mainWindow())
             self.dock.run_requested.connect(self.run_analysis)
+            self.dock.compare_requested.connect(self.run_profile_compare)
             self.dock.terms_requested.connect(self.run_term_extraction)
             self.dock.calibration_requested.connect(self.run_calibration)
         if self.dock.isVisible():
@@ -130,6 +156,18 @@ class FengShuiGisPlugin:
             self.dock.show()
             self.dock.raise_()
             self.dock.activateWindow()
+
+    @staticmethod
+    def _runtime_error_message(context, exc):
+        return f"{context}: {type(exc).__name__}: {exc}"
+
+    def _report_dir(self):
+        project_home = QgsProject.instance().homePath().strip()
+        if not project_home:
+            project_home = os.path.abspath(os.path.join(self.plugin_dir, ".."))
+        report_dir = os.path.join(project_home, "reports")
+        os.makedirs(report_dir, exist_ok=True)
+        return report_dir
 
     def run_analysis(
         self,
@@ -200,13 +238,17 @@ class FengShuiGisPlugin:
             QgsProject.instance().addMapLayer(output_layer)
             self._configure_layer_click_info(output_layer, label_lang)
 
-        except Exception as exc:  # pylint: disable=broad-except
-            self.iface.messageBar().pushCritical(
-                tr("warn_failed"),
-                str(exc),
-            )
+        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
+            message = self._runtime_error_message("Analysis failed", exc)
+            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
             if self.dock:
-                self.dock.set_status(f"{tr('warn_failed')}: {exc}")
+                self.dock.set_status(message)
+            return
+        except Exception as exc:  # pylint: disable=broad-except
+            message = self._runtime_error_message(tr("warn_failed"), exc)
+            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
+            if self.dock:
+                self.dock.set_status(message)
             return
 
         self.iface.messageBar().pushSuccess(
@@ -319,13 +361,17 @@ class FengShuiGisPlugin:
                     preferred_language=mountain_lang,
                 )
             self._insert_output_layers(layers_top_to_bottom, label_lang)
-        except Exception as exc:  # pylint: disable=broad-except
-            self.iface.messageBar().pushCritical(
-                tr("warn_failed"),
-                str(exc),
-            )
+        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
+            message = self._runtime_error_message("Landscape extraction failed", exc)
+            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
             if self.dock:
-                self.dock.set_status(f"{tr('warn_failed')}: {exc}")
+                self.dock.set_status(message)
+            return
+        except Exception as exc:  # pylint: disable=broad-except
+            message = self._runtime_error_message(tr("warn_failed"), exc)
+            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
+            if self.dock:
+                self.dock.set_status(message)
             return
 
         created = [f"{ridge_layer.name()} ({ridge_layer.featureCount()})"]
@@ -346,6 +392,778 @@ class FengShuiGisPlugin:
             )
         if self.dock:
             self.dock.set_status(tr("status_done"))
+
+    @staticmethod
+    def _score_stats(layer):
+        if layer is None:
+            return {"count": 0, "mean": 0.0, "min": 0.0, "max": 0.0}
+        scores = []
+        for feature in layer.getFeatures():
+            try:
+                value = float(feature["fs_score"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            scores.append(value)
+        if not scores:
+            return {"count": 0, "mean": 0.0, "min": 0.0, "max": 0.0}
+        return {
+            "count": len(scores),
+            "mean": sum(scores) / len(scores),
+            "min": min(scores),
+            "max": max(scores),
+        }
+
+    @staticmethod
+    def _pairwise_score_delta(base_layer, compare_layer):
+        if base_layer is None or compare_layer is None:
+            return None
+        base_scores = []
+        compare_scores = []
+        for feature in base_layer.getFeatures():
+            try:
+                base_scores.append(float(feature["fs_score"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+        for feature in compare_layer.getFeatures():
+            try:
+                compare_scores.append(float(feature["fs_score"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+        pair_count = min(len(base_scores), len(compare_scores))
+        if pair_count <= 0:
+            return None
+        deltas = [
+            compare_scores[index] - base_scores[index] for index in range(pair_count)
+        ]
+        return {
+            "count": pair_count,
+            "mean_delta": sum(deltas) / pair_count,
+            "max_gain": max(deltas),
+            "max_drop": min(deltas),
+        }
+
+    @staticmethod
+    def _feature_display_name(feature):
+        if feature is None:
+            return ""
+        field_candidates = (
+            "name",
+            "site_name",
+            "site",
+            "title",
+            "label",
+            "site_id",
+            "id",
+        )
+        field_names = feature.fields().names()
+        lowered = {name.lower(): name for name in field_names}
+        for candidate in field_candidates:
+            if candidate in lowered:
+                try:
+                    value = feature[lowered[candidate]]
+                except (KeyError, TypeError, ValueError):
+                    continue
+                text = str(value or "").strip()
+                if text:
+                    return text
+        return f"fid:{int(feature.id())}"
+
+    @staticmethod
+    def _feature_reason_text(feature):
+        if feature is None:
+            return ""
+        field_candidates = ("fs_reason", "reason", "fs_note")
+        field_names = feature.fields().names()
+        lowered = {name.lower(): name for name in field_names}
+        for candidate in field_candidates:
+            if candidate in lowered:
+                try:
+                    value = feature[lowered[candidate]]
+                except (KeyError, TypeError, ValueError):
+                    continue
+                text = str(value or "").strip()
+                if text:
+                    return text
+        return ""
+
+    @staticmethod
+    def _reason_excerpt(text, limit=None):
+        if limit is None:
+            limit = FengShuiGisPlugin._COMPARE_REASON_EXCERPT
+        clean = str(text or "").strip().replace("\n", " ")
+        if len(clean) <= max(1, int(limit)):
+            return clean
+        return clean[: max(1, int(limit)) - 1].rstrip() + "…"
+
+    @classmethod
+    def _compare_trend(cls, delta_value):
+        if float(delta_value) > cls._COMPARE_DELTA_EPSILON:
+            return "gain"
+        if float(delta_value) < (-cls._COMPARE_DELTA_EPSILON):
+            return "drop"
+        return "neutral"
+
+    def _top_score_changes(self, base_layer, compare_layer, limit=None):
+        if base_layer is None or compare_layer is None:
+            return []
+        if limit is None:
+            limit = self._COMPARE_TOP_CHANGE_LIMIT
+        base_by_id = {}
+        compare_by_id = {}
+        for feature in base_layer.getFeatures():
+            try:
+                score = float(feature["fs_score"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            feature_id = int(feature.id())
+            base_by_id[feature_id] = {
+                "label": self._feature_display_name(feature),
+                "score": score,
+                "reason": self._feature_reason_text(feature),
+            }
+        for feature in compare_layer.getFeatures():
+            try:
+                score = float(feature["fs_score"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            feature_id = int(feature.id())
+            compare_by_id[feature_id] = {
+                "label": self._feature_display_name(feature),
+                "score": score,
+                "reason": self._feature_reason_text(feature),
+            }
+        shared_ids = sorted(set(base_by_id.keys()) & set(compare_by_id.keys()))
+        rows = []
+        for feature_id in shared_ids:
+            base_entry = base_by_id[feature_id]
+            compare_entry = compare_by_id[feature_id]
+            delta = compare_entry["score"] - base_entry["score"]
+            rows.append(
+                {
+                    "feature_id": feature_id,
+                    "label": compare_entry.get("label") or base_entry.get("label") or f"fid:{feature_id}",
+                    "base_score": base_entry["score"],
+                    "compare_score": compare_entry["score"],
+                    "delta": delta,
+                    "base_reason": base_entry.get("reason", ""),
+                    "compare_reason": compare_entry.get("reason", ""),
+                }
+            )
+        rows.sort(
+            key=lambda item: (abs(float(item.get("delta", 0.0))), float(item.get("delta", 0.0))),
+            reverse=True,
+        )
+        return rows[: max(1, int(limit))]
+
+    @staticmethod
+    def _feature_ids_from_change_rows(change_rows):
+        feature_ids = []
+        for row in change_rows or []:
+            try:
+                feature_id = int(row.get("feature_id"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            feature_ids.append(feature_id)
+        return feature_ids
+
+    def _select_top_changed_features(self, base_layer, compare_layer, change_rows):
+        feature_ids = self._feature_ids_from_change_rows(change_rows)
+        if not feature_ids:
+            return 0
+        selected_count = 0
+        for layer in (base_layer, compare_layer):
+            if layer is None:
+                continue
+            try:
+                layer.removeSelection()
+            except Exception:  # pylint: disable=broad-except
+                pass
+            try:
+                layer.selectByIds(feature_ids)
+                selected_count = max(selected_count, len(layer.selectedFeatureIds()))
+            except Exception:  # pylint: disable=broad-except
+                continue
+        if compare_layer is not None:
+            try:
+                self.iface.setActiveLayer(compare_layer)
+            except Exception:  # pylint: disable=broad-except
+                pass
+        return selected_count
+
+    def _zoom_to_selected_features(self, layer):
+        if layer is None:
+            return False
+        try:
+            selected_ids = layer.selectedFeatureIds()
+        except Exception:  # pylint: disable=broad-except
+            return False
+        if not selected_ids:
+            return False
+        try:
+            self.iface.mapCanvas().zoomToSelected(layer)
+            return True
+        except Exception:  # pylint: disable=broad-except
+            return False
+
+    def _export_top_changed_features_layer(
+        self,
+        compare_layer,
+        top_changes,
+        compare_profile_key,
+        label_lang,
+    ):
+        if compare_layer is None or not top_changes:
+            return None
+        feature_map = {}
+        for row in top_changes:
+            try:
+                feature_id = int(row.get("feature_id"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            feature_map[feature_id] = row
+        if not feature_map:
+            return None
+
+        geometry_name = QgsWkbTypes.displayString(compare_layer.wkbType()) or "Point"
+        crs_authid = compare_layer.crs().authid() or "EPSG:4326"
+        layer_name = self._output_layer_name(
+            compare_layer.name(),
+            "compare_changes",
+            label_lang,
+        )
+        export_layer = QgsVectorLayer(
+            f"{geometry_name}?crs={crs_authid}",
+            layer_name,
+            "memory",
+        )
+        if not export_layer.isValid():
+            return None
+
+        provider = export_layer.dataProvider()
+        provider.addAttributes(list(compare_layer.fields()))
+        provider.addAttributes(
+            [
+                QgsField("cmp_label", QVariant.String, "string", 120),
+                QgsField("cmp_base", QVariant.Double, "double", 7, 4),
+                QgsField("cmp_score", QVariant.Double, "double", 7, 4),
+                QgsField("cmp_delta", QVariant.Double, "double", 7, 4),
+                QgsField("cmp_trend", QVariant.String, "string", 16),
+                QgsField("cmp_reason_b", QVariant.String, "string", 1024),
+                QgsField("cmp_reason_c", QVariant.String, "string", 1024),
+                QgsField("cmp_model", QVariant.String, "string", 80),
+            ]
+        )
+        export_layer.updateFields()
+
+        new_features = []
+        output_fields = export_layer.fields()
+        original_field_names = compare_layer.fields().names()
+        for source_feature in compare_layer.getFeatures(
+            QgsFeatureRequest().setFilterFids(list(feature_map.keys()))
+        ):
+            feature_id = int(source_feature.id())
+            row = feature_map.get(feature_id)
+            if row is None:
+                continue
+            new_feature = QgsFeature(output_fields)
+            new_feature.setGeometry(source_feature.geometry())
+            for field_name in original_field_names:
+                try:
+                    new_feature[field_name] = source_feature[field_name]
+                except (KeyError, TypeError, ValueError):
+                    continue
+            new_feature["cmp_label"] = str(row.get("label", ""))
+            new_feature["cmp_base"] = float(row.get("base_score", 0.0))
+            new_feature["cmp_score"] = float(row.get("compare_score", 0.0))
+            new_feature["cmp_delta"] = float(row.get("delta", 0.0))
+            delta_value = float(row.get("delta", 0.0))
+            trend = self._compare_trend(delta_value)
+            new_feature["cmp_trend"] = trend
+            base_reason = str(row.get("base_reason", "") or "")
+            compare_reason = str(row.get("compare_reason", "") or "")
+            new_feature["cmp_reason_b"] = base_reason
+            new_feature["cmp_reason_c"] = compare_reason
+            if "fs_reason" in original_field_names:
+                if label_lang == "ko":
+                    reason_summary = (
+                        f"[기준] {self._reason_excerpt(base_reason)} | "
+                        f"[보정] {self._reason_excerpt(compare_reason)}"
+                    )
+                else:
+                    reason_summary = (
+                        f"[Base] {self._reason_excerpt(base_reason)} | "
+                        f"[Calibrated] {self._reason_excerpt(compare_reason)}"
+                    )
+                new_feature["fs_reason"] = reason_summary
+            new_feature["cmp_model"] = str(compare_profile_key)
+            new_features.append(new_feature)
+
+        if not new_features:
+            return None
+        provider.addFeatures(new_features)
+        export_layer.updateExtents()
+        return export_layer
+
+    def _write_profile_compare_report(
+        self,
+        site_layer_name,
+        base_profile_key,
+        compare_profile_key,
+        base_stats,
+        compare_stats,
+        delta_stats,
+        top_changes,
+        change_layer_name,
+    ):
+        report_dir = self._report_dir()
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name = f"feng_shui_compare_{stamp}"
+        json_path = os.path.join(report_dir, f"{base_name}.json")
+        md_path = os.path.join(report_dir, f"{base_name}.md")
+        text_lang = self._label_language()
+
+        payload = {
+            "timestamp": stamp,
+            "site_layer_name": site_layer_name,
+            "base_profile_key": base_profile_key,
+            "compare_profile_key": compare_profile_key,
+            "base_stats": dict(base_stats or {}),
+            "compare_stats": dict(compare_stats or {}),
+            "delta_stats": dict(delta_stats or {}),
+            "top_changes": list(top_changes or []),
+            "change_layer_name": change_layer_name,
+        }
+        with open(json_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+        top_change_rows = []
+        for row in top_changes or []:
+            reason_compare = ui_text(
+                "compare_report_reason_compare_template",
+                text_lang,
+                default="Base: {base} / Calibrated: {calibrated}",
+            ).format(
+                base=self._reason_excerpt(
+                    row.get("base_reason", ""),
+                    self._COMPARE_REPORT_REASON_EXCERPT,
+                ),
+                calibrated=self._reason_excerpt(
+                    row.get("compare_reason", ""),
+                    self._COMPARE_REPORT_REASON_EXCERPT,
+                ),
+            )
+            top_change_rows.append(
+                [
+                    row.get("label", ""),
+                    f"{float(row.get('base_score', 0.0)):.4f}",
+                    f"{float(row.get('compare_score', 0.0)):.4f}",
+                    f"{float(row.get('delta', 0.0)):+.4f}",
+                    reason_compare,
+                ]
+            )
+
+        if top_change_rows:
+            top_change_table = self._markdown_table(
+                (
+                    [
+                        ui_text("compare_report_feature_label", text_lang, default="Feature"),
+                        ui_text("compare_report_base_label", text_lang, default="Base"),
+                        ui_text("compare_report_calibrated_label", text_lang, default="Calibrated"),
+                        ui_text("compare_report_delta_label", text_lang, default="Delta"),
+                        ui_text("compare_report_reason_compare_label", text_lang, default="Reason compare"),
+                    ]
+                ),
+                top_change_rows,
+            )
+        else:
+            top_change_table = ui_text(
+                "compare_report_no_top_changes",
+                text_lang,
+                default="No top-changed features were recorded.",
+            )
+
+        markdown = (
+            f"# {ui_text('compare_report_title_template', text_lang, default='Feng Shui Comparison Report ({stamp})').format(stamp=stamp)}\n\n"
+            f"- {ui_text('compare_report_site_layer_label', text_lang, default='Site layer')}: {site_layer_name}\n"
+            f"- {ui_text('compare_report_base_profile_label', text_lang, default='Base profile')}: {base_profile_key}\n"
+            f"- {ui_text('compare_report_calibrated_profile_label', text_lang, default='Calibrated profile')}: {compare_profile_key}\n"
+            f"- {ui_text('compare_report_change_layer_label', text_lang, default='Change layer')}: {change_layer_name or 'n/a'}\n\n"
+            f"## {ui_text('compare_report_summary_title', text_lang, default='Summary statistics')}\n\n"
+            f"- {ui_text('compare_report_base_mean_label', text_lang, default='Base mean')}: {float(base_stats.get('mean', 0.0) if isinstance(base_stats, dict) else 0.0):.4f}\n"
+            f"- {ui_text('compare_report_calibrated_mean_label', text_lang, default='Calibrated mean')}: {float(compare_stats.get('mean', 0.0) if isinstance(compare_stats, dict) else 0.0):.4f}\n"
+            f"- {ui_text('compare_report_mean_delta_label', text_lang, default='Mean score delta')}: {float(delta_stats.get('mean_delta', 0.0) if isinstance(delta_stats, dict) else 0.0):+.4f}\n"
+            f"- {ui_text('compare_report_max_gain_label', text_lang, default='Max gain')}: {float(delta_stats.get('max_gain', 0.0) if isinstance(delta_stats, dict) else 0.0):+.4f}\n"
+            f"- {ui_text('compare_report_max_drop_label', text_lang, default='Max drop')}: {float(delta_stats.get('max_drop', 0.0) if isinstance(delta_stats, dict) else 0.0):+.4f}\n\n"
+            f"## {ui_text('compare_report_top_changes_title', text_lang, default='Top changed features')}\n\n"
+            f"{top_change_table}\n"
+        )
+        with open(md_path, "w", encoding="utf-8") as handle:
+            handle.write(markdown)
+        return json_path, md_path
+
+    def _style_compare_change_layer(self, layer, label_lang):
+        if layer is None or not isinstance(layer, QgsVectorLayer):
+            return
+        categories = []
+        for value, color_hex, label_key, default_label in self._COMPARE_TREND_STYLES:
+            symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            if symbol is None:
+                continue
+            symbol.setColor(QColor(color_hex))
+            symbol.setOpacity(0.88)
+            try:
+                symbol.setWidth(0.9)
+            except AttributeError:
+                pass
+            try:
+                symbol.setSize(4.6)
+            except AttributeError:
+                pass
+            categories.append(
+                QgsRendererCategory(
+                    value,
+                    symbol,
+                    ui_text(label_key, label_lang, default=default_label),
+                )
+            )
+        if not categories:
+            return
+        layer.setRenderer(QgsCategorizedSymbolRenderer("cmp_trend", categories))
+        layer.triggerRepaint()
+
+    def _show_profile_compare_popup(
+        self,
+        base_profile_key,
+        compare_profile_key,
+        base_stats,
+        compare_stats,
+        delta_stats,
+        top_changes,
+        selected_change_count,
+        zoom_applied,
+        change_layer_name,
+        json_path,
+        md_path,
+        base_layer_name,
+        compare_layer_name,
+    ):
+        text_lang = self._label_language()
+        if self._compare_dialog is None:
+            self._compare_dialog = QDialog(self.iface.mainWindow())
+            self._compare_dialog.resize(760, 420)
+            layout = QVBoxLayout(self._compare_dialog)
+            self._compare_browser = QTextBrowser(self._compare_dialog)
+            self._compare_browser.setOpenExternalLinks(True)
+            self._compare_browser.setReadOnly(True)
+            layout.addWidget(self._compare_browser)
+        self._compare_dialog.setWindowTitle(
+            ui_text(
+                "profile_compare_dialog_title",
+                text_lang,
+                default="Base vs calibrated quick comparison",
+            )
+        )
+        delta_html = ""
+        if isinstance(delta_stats, dict):
+            delta_label = ui_text(
+                "profile_compare_delta_label",
+                text_lang,
+                default="Mean score delta",
+            )
+            gain_label = ui_text(
+                "profile_compare_max_gain_label",
+                text_lang,
+                default="Max gain",
+            )
+            drop_label = ui_text(
+                "profile_compare_max_drop_label",
+                text_lang,
+                default="Max drop",
+            )
+            delta_html = (
+                f"<p><b>{delta_label}</b>: {delta_stats.get('mean_delta', 0.0):+.4f}<br/>"
+                f"<b>{gain_label}</b>: {delta_stats.get('max_gain', 0.0):+.4f}<br/>"
+                f"<b>{drop_label}</b>: {delta_stats.get('max_drop', 0.0):+.4f}</p>"
+            )
+        top_change_html = ""
+        if top_changes:
+            header_cells = (
+                f"<th>{escape(ui_text('profile_compare_feature_label', text_lang, default='Feature'))}</th>"
+                f"<th>{escape(ui_text('profile_compare_base_short_label', text_lang, default='Base'))}</th>"
+                f"<th>{escape(ui_text('profile_compare_calibrated_short_label', text_lang, default='Calibrated'))}</th>"
+                f"<th>{escape(ui_text('profile_compare_delta_short_label', text_lang, default='Delta'))}</th>"
+            )
+            row_html = []
+            base_reason_label = ui_text(
+                "profile_compare_base_reason_label",
+                text_lang,
+                default="Base",
+            )
+            compare_reason_label = ui_text(
+                "profile_compare_calibrated_reason_label",
+                text_lang,
+                default="Calibrated",
+            )
+            for row in top_changes:
+                base_reason_text = self._reason_excerpt(row.get("base_reason", ""), limit=88)
+                compare_reason_text = self._reason_excerpt(row.get("compare_reason", ""), limit=88)
+                reason_html = (
+                    f"<div style='font-size:11px;color:#5f5646;'>"
+                    f"{escape(base_reason_label)}: {escape(base_reason_text or '-')}<br/>"
+                    f"{escape(compare_reason_label)}: {escape(compare_reason_text or '-')}"
+                    f"</div>"
+                )
+                row_html.append(
+                    "<tr>"
+                    f"<td>{escape(str(row.get('label', '')))}{reason_html}</td>"
+                    f"<td>{float(row.get('base_score', 0.0)):.4f}</td>"
+                    f"<td>{float(row.get('compare_score', 0.0)):.4f}</td>"
+                    f"<td>{float(row.get('delta', 0.0)):+.4f}</td>"
+                    "</tr>"
+                )
+            title = (
+                ui_text(
+                    "profile_compare_top_changes_title",
+                    text_lang,
+                    default="Top changed features",
+                )
+            )
+            selection_note = (
+                (
+                    "<p><b>"
+                    + escape(
+                        ui_text(
+                            "profile_compare_auto_selected_template",
+                            text_lang,
+                            default="Auto-selected: selected {count} top changed features on the map.",
+                        ).format(count=selected_change_count)
+                    )
+                    + "</b></p>"
+                )
+                if selected_change_count > 0
+                else ""
+            )
+            zoom_note = (
+                (
+                    "<p><b>"
+                    + escape(
+                        ui_text(
+                            "profile_compare_auto_zoom_note",
+                            text_lang,
+                            default="Auto-zoom: moved to the selected calibrated features.",
+                        )
+                    )
+                    + "</b></p>"
+                )
+                if zoom_applied
+                else ""
+            )
+            export_note = (
+                (
+                    f"<p><b>{escape(ui_text('profile_compare_change_layer_label', text_lang, default='Change layer'))}</b>: "
+                    f"{escape(change_layer_name)}</p>"
+                )
+                if change_layer_name
+                else ""
+            )
+            report_note = (
+                f"<p><b>{escape(ui_text('profile_compare_json_label', text_lang, default='Compare JSON'))}</b>: {escape(json_path)}<br/>"
+                f"<b>{escape(ui_text('profile_compare_markdown_label', text_lang, default='Compare Markdown'))}</b>: {escape(md_path)}</p>"
+            )
+            top_change_html = (
+                f"<h4>{escape(title)}</h4>"
+                f"{selection_note}"
+                f"{zoom_note}"
+                f"{export_note}"
+                f"{report_note}"
+                "<table border='1' cellspacing='0' cellpadding='4'>"
+                f"<thead><tr>{header_cells}</tr></thead>"
+                f"<tbody>{''.join(row_html)}</tbody>"
+                "</table>"
+            )
+        html = (
+            f"<h3>{escape(ui_text('profile_compare_heading_template', text_lang, default='{base} vs {calibrated}').format(base=base_profile_key, calibrated=compare_profile_key))}</h3>"
+            f"<p><b>{escape(ui_text('profile_compare_base_layer_label', text_lang, default='Base layer'))}</b>: {escape(base_layer_name)}<br/>"
+            f"<b>{escape(ui_text('profile_compare_calibrated_layer_label', text_lang, default='Calibrated layer'))}</b>: {escape(compare_layer_name)}</p>"
+            f"<table border='1' cellspacing='0' cellpadding='4'>"
+            f"<thead><tr>"
+            f"<th>{escape(ui_text('profile_compare_profile_label', text_lang, default='Profile'))}</th>"
+            f"<th>{escape(ui_text('profile_compare_count_label', text_lang, default='Count'))}</th>"
+            f"<th>{escape(ui_text('profile_compare_mean_label', text_lang, default='Mean'))}</th>"
+            f"<th>{escape(ui_text('profile_compare_min_label', text_lang, default='Min'))}</th>"
+            f"<th>{escape(ui_text('profile_compare_max_label', text_lang, default='Max'))}</th>"
+            f"</tr></thead><tbody>"
+            f"<tr><td>{escape(str(base_profile_key))}</td><td>{base_stats.get('count', 0)}</td>"
+            f"<td>{base_stats.get('mean', 0.0):.4f}</td><td>{base_stats.get('min', 0.0):.4f}</td>"
+            f"<td>{base_stats.get('max', 0.0):.4f}</td></tr>"
+            f"<tr><td>{escape(str(compare_profile_key))}</td><td>{compare_stats.get('count', 0)}</td>"
+            f"<td>{compare_stats.get('mean', 0.0):.4f}</td><td>{compare_stats.get('min', 0.0):.4f}</td>"
+            f"<td>{compare_stats.get('max', 0.0):.4f}</td></tr>"
+            f"</tbody></table>"
+            f"{delta_html}"
+            f"{top_change_html}"
+        )
+        self._compare_browser.setHtml(html)
+        self._compare_dialog.show()
+        self._compare_dialog.raise_()
+        self._compare_dialog.activateWindow()
+
+    def run_profile_compare(
+        self,
+        site_layer,
+        dem_layer,
+        water_layer,
+        hemisphere,
+        base_profile_key,
+        compare_profile_key,
+        culture_key,
+        period_key,
+        auto_hydro,
+    ):
+        if not site_layer or not dem_layer:
+            self.iface.messageBar().pushWarning(
+                tr("plugin_title"),
+                tr("warn_missing_layers"),
+            )
+            if self.dock:
+                self.dock.set_status(tr("warn_missing_layers"))
+            return
+
+        if self.dock:
+            self.dock.set_status(
+                ui_text(
+                    "profile_compare_status_running",
+                    self._label_language(),
+                    default="Comparing base and calibrated profiles...",
+                )
+            )
+        label_lang = self._label_language()
+        mountain_enabled, mountain_radius_m, mountain_max_features, mountain_lang = (
+            self._mountain_name_options()
+        )
+        self._warn_low_evidence_context(culture_key, period_key, hemisphere)
+        if not self._require_projected_dem_crs(dem_layer):
+            return
+        self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
+
+        try:
+            context = QgsProcessingContext()
+            context.setProject(QgsProject.instance())
+            feedback = QgsProcessingFeedback()
+            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
+            prepared_water = water_layer
+            if prepared_water is None and auto_hydro:
+                auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
+                if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
+                    analyzer.style_hydro_network(auto_hydro_layer)
+                    auto_hydro_layer.setName(
+                        self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
+                    )
+                    QgsProject.instance().addMapLayer(auto_hydro_layer)
+                    prepared_water = auto_hydro_layer
+
+            base_layer = analyzer.run(
+                site_layer,
+                dem_layer,
+                water_layer=prepared_water,
+                hemisphere=hemisphere,
+                profile_key=base_profile_key,
+                culture_key=culture_key,
+                period_key=period_key,
+            )
+            compare_layer = analyzer.run(
+                site_layer,
+                dem_layer,
+                water_layer=prepared_water,
+                hemisphere=hemisphere,
+                profile_key=compare_profile_key,
+                culture_key=culture_key,
+                period_key=period_key,
+            )
+            base_layer.setName(
+                f"{self._output_layer_name(site_layer.name(), 'analysis', label_lang)}_{base_profile_key}"
+            )
+            compare_layer.setName(
+                f"{self._output_layer_name(site_layer.name(), 'analysis', label_lang)}_{compare_profile_key}"
+            )
+            if mountain_enabled:
+                self._enrich_layers_with_mountain_names(
+                    [base_layer, compare_layer],
+                    radius_m=mountain_radius_m,
+                    max_features=mountain_max_features,
+                    preferred_language=mountain_lang,
+                )
+            QgsProject.instance().addMapLayer(base_layer)
+            QgsProject.instance().addMapLayer(compare_layer)
+            self._configure_layer_click_info(base_layer, label_lang)
+            self._configure_layer_click_info(compare_layer, label_lang)
+
+            base_stats = self._score_stats(base_layer)
+            compare_stats = self._score_stats(compare_layer)
+            delta_stats = self._pairwise_score_delta(base_layer, compare_layer)
+            top_changes = self._top_score_changes(base_layer, compare_layer)
+            selected_change_count = self._select_top_changed_features(
+                base_layer,
+                compare_layer,
+                top_changes,
+            )
+            zoom_applied = self._zoom_to_selected_features(compare_layer)
+            change_layer = self._export_top_changed_features_layer(
+                compare_layer,
+                top_changes,
+                compare_profile_key,
+                label_lang,
+            )
+            if change_layer is not None:
+                self._style_compare_change_layer(change_layer, label_lang)
+                QgsProject.instance().addMapLayer(change_layer)
+                self._configure_layer_click_info(change_layer, label_lang)
+            json_path, md_path = self._write_profile_compare_report(
+                site_layer_name=site_layer.name(),
+                base_profile_key=base_profile_key,
+                compare_profile_key=compare_profile_key,
+                base_stats=base_stats,
+                compare_stats=compare_stats,
+                delta_stats=delta_stats,
+                top_changes=top_changes,
+                change_layer_name=change_layer.name() if change_layer is not None else "",
+            )
+            self._show_profile_compare_popup(
+                base_profile_key=base_profile_key,
+                compare_profile_key=compare_profile_key,
+                base_stats=base_stats,
+                compare_stats=compare_stats,
+                delta_stats=delta_stats,
+                top_changes=top_changes,
+                selected_change_count=selected_change_count,
+                zoom_applied=zoom_applied,
+                change_layer_name=change_layer.name() if change_layer is not None else "",
+                json_path=json_path,
+                md_path=md_path,
+                base_layer_name=base_layer.name(),
+                compare_layer_name=compare_layer.name(),
+            )
+        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
+            message = self._runtime_error_message("Profile comparison failed", exc)
+            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
+            if self.dock:
+                self.dock.set_status(message)
+            return
+        except Exception as exc:  # pylint: disable=broad-except
+            message = self._runtime_error_message(tr("warn_failed"), exc)
+            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
+            if self.dock:
+                self.dock.set_status(message)
+            return
+
+        success_message = ui_text(
+            "profile_compare_status_done",
+            label_lang,
+            default="Created base/calibrated comparison layers.",
+        )
+        self.iface.messageBar().pushSuccess(tr("plugin_title"), success_message)
+        if self.dock:
+            self.dock.set_status(success_message)
 
     def run_calibration(
         self,
@@ -378,12 +1196,10 @@ class FengShuiGisPlugin:
             self._mountain_name_options()
         )
 
-        calibration_rules = analysis_rules().get("calibration", {})
-        calibration_culture = calibration_rules.get("default_culture", "korea")
-        if not isinstance(calibration_culture, str) or not calibration_culture.strip():
-            calibration_culture = "korea"
-        calibration_culture = calibration_culture.strip().lower()
-        calibration_period = self._resolved_calibration_period(period_key)
+        calibration_culture, calibration_period = self._resolved_calibration_context(
+            culture_key,
+            period_key,
+        )
         self._warn_low_evidence_context(
             calibration_culture,
             calibration_period,
@@ -392,14 +1208,6 @@ class FengShuiGisPlugin:
         if not self._require_projected_dem_crs(dem_layer):
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
-        if culture_key != calibration_culture:
-            self.iface.messageBar().pushWarning(
-                tr("plugin_title"),
-                ui_text(
-                    "calibration_warning_template",
-                    default="Calibration uses SHP baseline context: {culture}.",
-                ).format(culture=calibration_culture),
-            )
 
         try:
             context = QgsProcessingContext()
@@ -449,13 +1257,17 @@ class FengShuiGisPlugin:
             json_path, md_path = self._write_calibration_report(report)
             self._show_report_popup(report, json_path, md_path)
 
-        except Exception as exc:  # pylint: disable=broad-except
-            self.iface.messageBar().pushCritical(
-                tr("warn_failed"),
-                str(exc),
-            )
+        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
+            message = self._runtime_error_message("Calibration failed", exc)
+            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
             if self.dock:
-                self.dock.set_status(f"{tr('warn_failed')}: {exc}")
+                self.dock.set_status(message)
+            return
+        except Exception as exc:  # pylint: disable=broad-except
+            message = self._runtime_error_message(tr("warn_failed"), exc)
+            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
+            if self.dock:
+                self.dock.set_status(message)
             return
 
         self.iface.messageBar().pushSuccess(
@@ -519,14 +1331,9 @@ class FengShuiGisPlugin:
 
         text_lang = self._label_language()
         default_message = (
-            "DEM 좌표계가 경위도(도 단위)입니다. 이 플러그인의 거리·반경 계산은 투영 좌표계가 필요합니다. "
-            "미터 기반 CRS로 재투영한 뒤 다시 실행하세요."
-            if text_lang == "ko"
-            else (
-                "DEM CRS is geographic (degrees). This plugin's distance and radius "
-                "calculations require a projected CRS. Reproject the DEM to a meter-based "
-                "CRS and run again."
-            )
+            "DEM CRS is geographic (degrees). This plugin's distance and radius "
+            "calculations require a projected CRS. Reproject the DEM to a meter-based "
+            "CRS and run again."
         )
         message = ui_text(
             "projected_crs_required",
@@ -626,12 +1433,21 @@ class FengShuiGisPlugin:
         return template.format(count=max(0, int(count)), source=source)
 
     @staticmethod
-    def _resolved_calibration_period(period_key):
+    def _resolved_calibration_context(culture_key, period_key):
         neutral_key = neutral_context_key()
-        normalized = str(period_key or "").strip().lower()
-        if not normalized or normalized == neutral_key:
-            return base_period_key()
-        return period_key
+        culture_value = str(culture_key or "").strip()
+        period_value = str(period_key or "").strip()
+        if culture_value.lower() == neutral_key or period_value.lower() == neutral_key:
+            return neutral_key, neutral_key
+
+        if not culture_value:
+            calibration_rules = analysis_rules().get("calibration", {})
+            culture_value = str(
+                calibration_rules.get("default_culture", "korea")
+            ).strip() or "korea"
+        if not period_value:
+            period_value = base_period_key()
+        return culture_value.lower(), period_value.lower()
 
     @staticmethod
     def _feature_anchor_point(feature):
@@ -1281,6 +2097,28 @@ class FengShuiGisPlugin:
             return
 
         if "fs_reason" in field_names:
+            score_field = "cal_score" if "cal_score" in field_names else "fs_score"
+            site_score_band_expr = self._score_band_expr(score_field)
+            score_title = (
+                ui_text("cal_score_title", text_lang, default="Calibrated Score")
+                if score_field == "cal_score"
+                else fs_score_title
+            )
+            cal_score_alias = ui_text(
+                "cal_score_alias",
+                text_lang,
+                default="Calibrated score (0-1)",
+            )
+            cal_f1_alias = ui_text(
+                "cal_f1_alias",
+                text_lang,
+                default="Best F1 threshold",
+            )
+            cal_youden_alias = ui_text(
+                "cal_youden_alias",
+                text_lang,
+                default="Best Youden threshold",
+            )
             self._set_field_aliases(
                 layer,
                 {
@@ -1294,13 +2132,35 @@ class FengShuiGisPlugin:
                     "fs_demwtr": site_alias_dem_water,
                     "fs_tpi": site_alias_tpi,
                     "fs_conv": site_alias_conv,
+                    "cal_score": cal_score_alias,
+                    "cal_f1_th": cal_f1_alias,
+                    "cal_yj_th": cal_youden_alias,
                 },
             )
-            layer.setDisplayExpression("'fs_score=' || to_string(round(\"fs_score\", 3))")
+            layer.setDisplayExpression(
+                f"'{score_field}=' || to_string(round(\"{score_field}\", 3))"
+            )
+            threshold_tip = ""
+            if "cal_score" in field_names:
+                threshold_tip = (
+                    "<p><b>base_fs_score</b>: [% round(\"fs_score\", 3) %]"
+                    + (
+                        ", <b>best_f1_th</b>: [% round(\"cal_f1_th\", 3) %]"
+                        if "cal_f1_th" in field_names
+                        else ""
+                    )
+                    + (
+                        ", <b>best_youden_th</b>: [% round(\"cal_yj_th\", 3) %]"
+                        if "cal_yj_th" in field_names
+                        else ""
+                    )
+                    + "</p>"
+                )
             layer.setMapTipTemplate(
-                f"<h3>{fs_score_title}</h3>"
-                f"<p><b>{maptip_score}</b>: [% round(\"fs_score\", 3) %] ([% {fs_score_band_expr} %]), "
+                f"<h3>{score_title}</h3>"
+                f"<p><b>{maptip_score}</b>: [% round(\"{score_field}\", 3) %] ([% {site_score_band_expr} %]), "
                 f"<b>{maptip_confidence}</b>: [% round(\"fs_conf\", 3) %] ([% {fs_conf_band_expr} %])</p>"
+                f"{threshold_tip}"
                 f"<p><b>{maptip_components}</b>: "
                 "slope=[% round(\"fs_slope\", 3) %], "
                 "aspect=[% round(\"fs_aspect\", 3) %], "
@@ -1396,20 +2256,24 @@ class FengShuiGisPlugin:
         self._reason_dialog.activateWindow()
 
     def _write_calibration_report(self, report):
-        project_home = QgsProject.instance().homePath().strip()
-        if not project_home:
-            project_home = os.path.abspath(os.path.join(self.plugin_dir, ".."))
-        report_dir = os.path.join(project_home, "reports")
-        os.makedirs(report_dir, exist_ok=True)
+        report_dir = self._report_dir()
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         base_name = f"feng_shui_calibration_{stamp}"
         json_path = os.path.join(report_dir, f"{base_name}.json")
         md_path = os.path.join(report_dir, f"{base_name}.md")
+        report.update(self._export_calibrated_profile(report, stamp, report_dir))
 
         with open(json_path, "w", encoding="utf-8") as handle:
             json.dump(report, handle, ensure_ascii=False, indent=2)
+        history_records = self._collect_calibration_history(report_dir)
 
         text_lang = self._label_language()
+        paper_evidence_summary = str(report.get("paper_evidence_summary", "") or "").strip()
+        paper_evidence_references = reference_display_text(
+            self._paper_evidence_sources(report.get("paper_evidence_records")),
+            language=text_lang,
+            limit=10,
+        ).strip()
         md_title = ui_text(
             "calibration_md_title_template",
             text_lang,
@@ -1446,6 +2310,91 @@ class FengShuiGisPlugin:
             text_lang,
             default="random_seed",
         )
+        md_scope = ui_text(
+            "calibration_md_scope_label",
+            text_lang,
+            default="calibration_scope",
+        )
+        md_weight_summary = ui_text(
+            "calibration_md_weight_summary_label",
+            text_lang,
+            default="weight_update",
+        )
+        md_parameter_summary = ui_text(
+            "calibration_md_parameter_summary_label",
+            text_lang,
+            default="parameter_update",
+        )
+        md_base_roc_auc = ui_text(
+            "calibration_md_base_roc_auc_label",
+            text_lang,
+            default="Base ROC AUC",
+        )
+        md_base_pr_auc = ui_text(
+            "calibration_md_base_pr_auc_label",
+            text_lang,
+            default="Base PR AUC",
+        )
+        md_export_title = ui_text(
+            "calibration_md_export_title",
+            text_lang,
+            default="Calibrated profile export",
+        )
+        md_export_key = ui_text(
+            "calibration_md_export_key_label",
+            text_lang,
+            default="profile_key",
+        )
+        md_export_snapshot = ui_text(
+            "calibration_md_export_snapshot_label",
+            text_lang,
+            default="snapshot_path",
+        )
+        md_export_registry = ui_text(
+            "calibration_md_export_registry_label",
+            text_lang,
+            default="local_profile_registry",
+        )
+        md_export_status = ui_text(
+            "calibration_md_export_status_label",
+            text_lang,
+            default="export_status",
+        )
+        md_metric_compare_title = ui_text(
+            "calibration_md_metric_compare_title",
+            text_lang,
+            default="Metric comparison",
+        )
+        md_metadata_title = ui_text(
+            "calibration_md_metadata_title",
+            text_lang,
+            default="Site group / country / period mix",
+        )
+        md_history_title = ui_text(
+            "calibration_md_history_title",
+            text_lang,
+            default="Calibration history comparison",
+        )
+        md_paper_title = ui_text(
+            "calibration_md_paper_evidence_title",
+            text_lang,
+            default="Paper evidence",
+        )
+        md_paper_summary_label = ui_text(
+            "calibration_md_paper_evidence_summary_label",
+            text_lang,
+            default="Paper evidence summary",
+        )
+        md_paper_references_label = ui_text(
+            "calibration_md_paper_evidence_references_label",
+            text_lang,
+            default="Paper references",
+        )
+        md_paper_evidence_missing = ui_text(
+            "calibration_md_paper_evidence_missing",
+            text_lang,
+            default="No profile-level paper evidence was applied.",
+        )
 
         markdown = (
             f"# {md_title}\n\n"
@@ -1463,11 +2412,635 @@ class FengShuiGisPlugin:
             f"- {md_hemisphere}: {report.get('hemisphere')}\n"
             f"- {md_negative_ratio}: {report.get('negative_ratio')}\n"
             f"- {md_random_seed}: {report.get('random_seed')}\n"
+            f"- {md_scope}: {report.get('calibration_scope', 'threshold_only')}\n"
+            f"- {md_weight_summary}: {report.get('tuned_weight_summary', 'n/a')}\n"
+            f"- {md_parameter_summary}: {report.get('tuned_parameter_summary', 'n/a')}\n"
+            f"- {md_base_roc_auc}: {report.get('base_roc_auc', 0):.6f}\n"
+            f"- {md_base_pr_auc}: {report.get('base_pr_auc', 0):.6f}\n"
+            f"\n## {md_export_title}\n\n"
+            f"- {md_export_status}: {report.get('profile_export_status', 'n/a')}\n"
+            f"- {md_export_key}: {report.get('exported_profile_key', 'n/a')}\n"
+            f"- {md_export_snapshot}: {report.get('profile_export_path', 'n/a')}\n"
+            f"- {md_export_registry}: {report.get('local_profile_registry_path', 'n/a')}\n"
+            f"\n## {md_metric_compare_title}\n\n"
+            f"{self._calibration_metric_comparison_markdown(report, text_lang)}\n"
+            f"\n## {md_metadata_title}\n\n"
+            f"{self._calibration_metadata_markdown(report, text_lang)}\n"
+            f"\n## {md_history_title}\n\n"
+            f"{self._calibration_history_markdown(history_records, text_lang)}\n"
+            f"\n## {md_paper_title}\n\n"
+            f"- {md_paper_summary_label}: {paper_evidence_summary or md_paper_evidence_missing}\n"
+            f"- {md_paper_references_label}: "
+            f"{paper_evidence_references or md_paper_evidence_missing}\n"
         )
         with open(md_path, "w", encoding="utf-8") as handle:
             handle.write(markdown)
 
         return json_path, md_path
+
+    @staticmethod
+    def _paper_evidence_sources(paper_evidence_records):
+        if not isinstance(paper_evidence_records, list):
+            return []
+        sources = []
+        seen = set()
+        for record in paper_evidence_records:
+            if not isinstance(record, dict):
+                continue
+            for source in record.get("source_doi", []):
+                source_text = str(source or "").strip()
+                if not source_text or source_text in seen:
+                    continue
+                seen.add(source_text)
+                sources.append(source_text)
+                if len(sources) >= 12:
+                    break
+            if len(sources) >= 12:
+                break
+        return sources
+
+    def _export_calibrated_profile(self, report, stamp, report_dir):
+        export_info = {
+            "profile_export_status": "skipped-no-change",
+            "exported_profile_key": "",
+            "profile_export_path": "",
+            "local_profile_registry_path": "",
+        }
+        tuned_weights = report.get("tuned_weights") or {}
+        tuned_parameters = report.get("tuned_profile_parameters") or {}
+        if not report.get("calibration_applied") or not tuned_weights or not tuned_parameters:
+            return export_info
+
+        from .config_loader import clear_cache
+        from .profile_catalog import profile_label
+
+        base_profile_key = str(report.get("profile_key") or "profile").strip() or "profile"
+        culture_key = str(report.get("culture_key") or "context").strip() or "context"
+        period_key = str(report.get("period_key") or "period").strip() or "period"
+        exported_profile_key = (
+            f"{base_profile_key}_{culture_key}_{period_key}_cal_{stamp}".lower()
+        )
+        base_label_ko = profile_label(base_profile_key, "ko")
+        base_label_en = profile_label(base_profile_key, "en")
+        profile_spec = {
+            "label": {
+                "ko": f"{base_label_ko} 보정 {culture_key}/{period_key}",
+                "en": f"{base_label_en} Calibrated {culture_key}/{period_key}",
+            },
+            "weights": dict(tuned_weights),
+            "slope_target": float(tuned_parameters.get("slope_target", 0.0)),
+            "slope_sigma": float(tuned_parameters.get("slope_sigma", 1.0)),
+            "tpi_target": float(tuned_parameters.get("tpi_target", 0.0)),
+            "tpi_sigma": float(tuned_parameters.get("tpi_sigma", 0.1)),
+            "derived_from": {
+                "profile_key": base_profile_key,
+                "culture_key": culture_key,
+                "period_key": period_key,
+                "hemisphere": report.get("hemisphere"),
+                "negative_ratio": report.get("negative_ratio"),
+                "random_seed": report.get("random_seed"),
+                "base_roc_auc": report.get("base_roc_auc"),
+                "roc_auc": report.get("roc_auc"),
+                "base_pr_auc": report.get("base_pr_auc"),
+                "pr_auc": report.get("pr_auc"),
+                "tuned_weight_summary": report.get("tuned_weight_summary"),
+                "tuned_parameter_summary": report.get("tuned_parameter_summary"),
+            },
+        }
+
+        snapshot_path = os.path.join(report_dir, f"feng_shui_profile_{stamp}.json")
+        with open(snapshot_path, "w", encoding="utf-8") as handle:
+            json.dump(
+                {exported_profile_key: profile_spec},
+                handle,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        local_profile_path = os.path.join(self.plugin_dir, "config", "local_profiles.json")
+        try:
+            with open(local_profile_path, "r", encoding="utf-8") as handle:
+                local_profiles = json.load(handle)
+        except FileNotFoundError:
+            local_profiles = {}
+        except json.JSONDecodeError:
+            local_profiles = {}
+        if not isinstance(local_profiles, dict):
+            local_profiles = {}
+        local_profiles[exported_profile_key] = profile_spec
+        with open(local_profile_path, "w", encoding="utf-8") as handle:
+            json.dump(local_profiles, handle, ensure_ascii=False, indent=2)
+        clear_cache()
+
+        export_info.update(
+            {
+                "profile_export_status": "saved",
+                "exported_profile_key": exported_profile_key,
+                "profile_export_path": snapshot_path,
+                "local_profile_registry_path": local_profile_path,
+            }
+        )
+        return export_info
+
+    @staticmethod
+    def _markdown_table(headers, rows):
+        safe_headers = [str(header).replace("|", "/") for header in headers]
+        lines = [
+            "| " + " | ".join(safe_headers) + " |",
+            "| " + " | ".join(["---"] * len(safe_headers)) + " |",
+        ]
+        for row in rows:
+            safe_row = [str(cell).replace("|", "/") for cell in row]
+            lines.append("| " + " | ".join(safe_row) + " |")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _html_table(headers, rows):
+        head_cells = "".join(f"<th>{escape(str(header))}</th>" for header in headers)
+        body_rows = []
+        for row in rows:
+            body_rows.append(
+                "<tr>" + "".join(f"<td>{escape(str(cell))}</td>" for cell in row) + "</tr>"
+            )
+        return (
+            "<table border='1' cellspacing='0' cellpadding='4'>"
+            f"<thead><tr>{head_cells}</tr></thead>"
+            f"<tbody>{''.join(body_rows)}</tbody>"
+            "</table>"
+        )
+
+    def _calibration_metric_rows(self, report):
+        return [
+            ("ROC AUC", report.get("base_roc_auc", 0.0), report.get("roc_auc", 0.0)),
+            ("PR AUC", report.get("base_pr_auc", 0.0), report.get("pr_auc", 0.0)),
+            ("Best F1", report.get("base_best_f1", 0.0), report.get("best_f1", 0.0)),
+            (
+                "Best Youden J",
+                report.get("base_best_youden_j", 0.0),
+                report.get("best_youden_j", 0.0),
+            ),
+        ]
+
+    def _calibration_metric_comparison_markdown(self, report, text_lang):
+        headers = [
+            ui_text("calibration_metric_header_metric", text_lang, default="Metric"),
+            ui_text("calibration_metric_header_base", text_lang, default="Base"),
+            ui_text("calibration_metric_header_tuned", text_lang, default="Tuned"),
+            ui_text("calibration_metric_header_delta", text_lang, default="Delta"),
+        ]
+        rows = []
+        for label, base_value, tuned_value in self._calibration_metric_rows(report):
+            delta = float(tuned_value or 0.0) - float(base_value or 0.0)
+            rows.append(
+                [
+                    label,
+                    f"{float(base_value or 0.0):.4f}",
+                    f"{float(tuned_value or 0.0):.4f}",
+                    f"{delta:+.4f}",
+                ]
+            )
+        return self._markdown_table(headers, rows)
+
+    def _calibration_metric_comparison_html(self, report, text_lang):
+        headers = [
+            ui_text("calibration_metric_header_metric", text_lang, default="Metric"),
+            ui_text("calibration_metric_header_base", text_lang, default="Base"),
+            ui_text("calibration_metric_header_tuned", text_lang, default="Tuned"),
+            ui_text("calibration_metric_header_delta", text_lang, default="Delta"),
+        ]
+        rows = []
+        for label, base_value, tuned_value in self._calibration_metric_rows(report):
+            delta = float(tuned_value or 0.0) - float(base_value or 0.0)
+            rows.append(
+                [
+                    label,
+                    f"{float(base_value or 0.0):.4f}",
+                    f"{float(tuned_value or 0.0):.4f}",
+                    f"{delta:+.4f}",
+                ]
+            )
+        return self._html_table(headers, rows)
+
+    def _calibration_metadata_markdown(self, report, text_lang):
+        summary = report.get("site_metadata_summary") or {}
+        groupings = summary.get("groupings", [])
+        layer_name = summary.get("layer_name") or report.get("site_layer_name") or "n/a"
+        feature_count = int(report.get("positive_count", 0) or 0)
+        layer_label = ui_text("calibration_metadata_layer_label", text_lang, default="Layer")
+        positive_count_label = ui_text(
+            "calibration_metadata_positive_count_label",
+            text_lang,
+            default="Positive sample count",
+        )
+        lines = [f"- {layer_label}: {layer_name}\n- {positive_count_label}: {feature_count}"]
+        kind_labels = {
+            "site_group": ui_text(
+                "calibration_metadata_kind_site_group",
+                text_lang,
+                default="Site group",
+            ),
+            "country": ui_text(
+                "calibration_metadata_kind_country",
+                text_lang,
+                default="Country/region",
+            ),
+            "period": ui_text(
+                "calibration_metadata_kind_period",
+                text_lang,
+                default="Period",
+            ),
+        }
+        if not groupings:
+            lines.append(
+                ui_text(
+                    "calibration_metadata_no_groupings",
+                    text_lang,
+                    default="No attribute fields were detected for site-group/country/period comparison.",
+                )
+            )
+            return "\n\n".join(lines)
+        for grouping in groupings:
+            title = kind_labels.get(grouping.get("kind"), grouping.get("kind"))
+            field_name = grouping.get("field", "")
+            headers = [
+                ui_text("calibration_metadata_value_header", text_lang, default="Value"),
+                ui_text("calibration_metadata_count_header", text_lang, default="Count"),
+                ui_text("calibration_metadata_share_header", text_lang, default="Share"),
+            ]
+            rows = []
+            for row in grouping.get("rows", []):
+                rows.append(
+                    [
+                        row.get("value", ""),
+                        str(row.get("count", 0)),
+                        f"{float(row.get('share', 0.0)) * 100.0:.1f}%",
+                    ]
+                )
+            lines.append(f"### {title} (`{field_name}`)\n\n{self._markdown_table(headers, rows)}")
+        return "\n\n".join(lines)
+
+    def _calibration_metadata_html(self, report, text_lang):
+        summary = report.get("site_metadata_summary") or {}
+        groupings = summary.get("groupings", [])
+        layer_name = summary.get("layer_name") or report.get("site_layer_name") or "n/a"
+        feature_count = int(report.get("positive_count", 0) or 0)
+        layer_label = ui_text("calibration_metadata_layer_label", text_lang, default="Layer")
+        positive_count_label = ui_text(
+            "calibration_metadata_positive_count_label",
+            text_lang,
+            default="Positive sample count",
+        )
+        parts = [
+            (
+                f"<p><b>{escape(layer_label)}</b>: {escape(str(layer_name))}"
+                f"<br/><b>{escape(positive_count_label)}</b>: {feature_count}</p>"
+            )
+        ]
+        kind_labels = {
+            "site_group": ui_text(
+                "calibration_metadata_kind_site_group",
+                text_lang,
+                default="Site group",
+            ),
+            "country": ui_text(
+                "calibration_metadata_kind_country",
+                text_lang,
+                default="Country/region",
+            ),
+            "period": ui_text(
+                "calibration_metadata_kind_period",
+                text_lang,
+                default="Period",
+            ),
+        }
+        if not groupings:
+            parts.append(
+                f"<p>{escape(ui_text('calibration_metadata_no_groupings', text_lang, default='No attribute fields were detected for site-group/country/period comparison.'))}</p>"
+            )
+            return "".join(parts)
+        for grouping in groupings:
+            title = kind_labels.get(grouping.get("kind"), grouping.get("kind"))
+            field_name = grouping.get("field", "")
+            headers = [
+                ui_text("calibration_metadata_value_header", text_lang, default="Value"),
+                ui_text("calibration_metadata_count_header", text_lang, default="Count"),
+                ui_text("calibration_metadata_share_header", text_lang, default="Share"),
+            ]
+            rows = []
+            for row in grouping.get("rows", []):
+                rows.append(
+                    [
+                        row.get("value", ""),
+                        str(row.get("count", 0)),
+                        f"{float(row.get('share', 0.0)) * 100.0:.1f}%",
+                    ]
+                )
+            parts.append(f"<p><b>{escape(str(title))}</b> ({escape(str(field_name))})</p>")
+            parts.append(self._html_table(headers, rows))
+        return "".join(parts)
+
+    def _collect_calibration_history(self, report_dir, limit=40):
+        if not report_dir or not os.path.isdir(report_dir):
+            return []
+        records = []
+        for filename in sorted(os.listdir(report_dir), reverse=True):
+            if not filename.startswith("feng_shui_calibration_") or not filename.endswith(".json"):
+                continue
+            path = os.path.join(report_dir, filename)
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    record = json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(record, dict):
+                continue
+            record["report_file"] = filename
+            record["report_path"] = path
+            records.append(record)
+            if len(records) >= max(1, int(limit)):
+                break
+        return records
+
+    @staticmethod
+    def _history_context_key(record):
+        return (
+            str(record.get("culture_key") or ""),
+            str(record.get("period_key") or ""),
+            str(record.get("profile_key") or ""),
+        )
+
+    def _calibration_history_summary_rows(self, history_records):
+        grouped = {}
+        for record in history_records:
+            key = self._history_context_key(record)
+            bucket = grouped.setdefault(
+                key,
+                {
+                    "runs": 0,
+                    "roc_auc_total": 0.0,
+                    "pr_auc_total": 0.0,
+                    "best_roc_auc": 0.0,
+                    "latest_layer": "",
+                    "latest_file": "",
+                },
+            )
+            bucket["runs"] += 1
+            bucket["roc_auc_total"] += float(record.get("roc_auc", 0.0) or 0.0)
+            bucket["pr_auc_total"] += float(record.get("pr_auc", 0.0) or 0.0)
+            bucket["best_roc_auc"] = max(
+                bucket["best_roc_auc"],
+                float(record.get("roc_auc", 0.0) or 0.0),
+            )
+            latest_file = str(record.get("report_file") or "")
+            if latest_file >= bucket["latest_file"]:
+                bucket["latest_file"] = latest_file
+                bucket["latest_layer"] = str(record.get("site_layer_name") or "")
+
+        rows = []
+        for key, bucket in sorted(
+            grouped.items(),
+            key=lambda item: (
+                -item[1]["runs"],
+                -item[1]["roc_auc_total"],
+                item[0],
+            ),
+        ):
+            culture_key, period_key, profile_key = key
+            runs = max(1, int(bucket["runs"]))
+            rows.append(
+                [
+                    culture_key or "-",
+                    period_key or "-",
+                    profile_key or "-",
+                    str(runs),
+                    f"{bucket['roc_auc_total'] / runs:.4f}",
+                    f"{bucket['pr_auc_total'] / runs:.4f}",
+                    f"{bucket['best_roc_auc']:.4f}",
+                    bucket.get("latest_layer") or "-",
+                ]
+            )
+        return rows[:10]
+
+    @staticmethod
+    def _calibration_history_recent_rows(history_records):
+        rows = []
+        for record in history_records[:8]:
+            rows.append(
+                [
+                    str(record.get("report_file") or "").replace(".json", ""),
+                    str(record.get("culture_key") or "-"),
+                    str(record.get("period_key") or "-"),
+                    str(record.get("profile_key") or "-"),
+                    str(record.get("site_layer_name") or "-"),
+                    f"{float(record.get('roc_auc', 0.0) or 0.0):.4f}",
+                    f"{float(record.get('pr_auc', 0.0) or 0.0):.4f}",
+                ]
+            )
+        return rows
+
+    @staticmethod
+    def _record_site_group_rows(record):
+        summary = record.get("site_metadata_summary") or {}
+        if not isinstance(summary, dict):
+            return []
+        groupings = summary.get("groupings") or []
+        if not isinstance(groupings, list):
+            return []
+        for grouping in groupings:
+            if not isinstance(grouping, dict):
+                continue
+            if grouping.get("kind") == "site_group":
+                rows = grouping.get("rows") or []
+                return rows if isinstance(rows, list) else []
+        return []
+
+    def _calibration_site_group_history_rows(self, history_records):
+        buckets = {}
+        for record in history_records:
+            report_file = str(record.get("report_file") or "")
+            roc_auc = float(record.get("roc_auc", 0.0) or 0.0)
+            pr_auc = float(record.get("pr_auc", 0.0) or 0.0)
+            culture_key = str(record.get("culture_key") or "-")
+            period_key = str(record.get("period_key") or "-")
+            profile_key = str(record.get("profile_key") or "-")
+            for row in self._record_site_group_rows(record):
+                value = str(row.get("value") or "(empty)")
+                bucket = buckets.setdefault(
+                    value,
+                    {
+                        "runs": 0,
+                        "share_total": 0.0,
+                        "roc_total": 0.0,
+                        "pr_total": 0.0,
+                        "latest_file": "",
+                        "latest_context": "",
+                    },
+                )
+                bucket["runs"] += 1
+                bucket["share_total"] += float(row.get("share", 0.0) or 0.0)
+                bucket["roc_total"] += roc_auc
+                bucket["pr_total"] += pr_auc
+                if report_file >= bucket["latest_file"]:
+                    bucket["latest_file"] = report_file
+                    bucket["latest_context"] = f"{culture_key}/{period_key}/{profile_key}"
+
+        rows = []
+        for value, bucket in sorted(
+            buckets.items(),
+            key=lambda item: (-item[1]["runs"], -item[1]["share_total"], item[0]),
+        ):
+            runs = max(1, int(bucket["runs"]))
+            rows.append(
+                [
+                    value,
+                    str(runs),
+                    f"{(bucket['share_total'] / runs) * 100.0:.1f}%",
+                    f"{bucket['roc_total'] / runs:.4f}",
+                    f"{bucket['pr_total'] / runs:.4f}",
+                    bucket.get("latest_context") or "-",
+                ]
+            )
+        return rows[:10]
+
+    def _calibration_history_markdown(self, history_records, text_lang):
+        if not history_records:
+            return ui_text(
+                "calibration_history_no_records",
+                text_lang,
+                default="No prior calibration history was found.",
+            )
+        summary_headers = [
+            ui_text("calibration_history_summary_header_culture", text_lang, default="Culture"),
+            ui_text("calibration_history_summary_header_period", text_lang, default="Period"),
+            ui_text("calibration_history_summary_header_profile", text_lang, default="Profile"),
+            ui_text("calibration_history_summary_header_runs", text_lang, default="Runs"),
+            ui_text("calibration_history_summary_header_avg_roc", text_lang, default="Avg ROC"),
+            ui_text("calibration_history_summary_header_avg_pr", text_lang, default="Avg PR"),
+            ui_text("calibration_history_summary_header_best_roc", text_lang, default="Best ROC"),
+            ui_text("calibration_history_summary_header_latest_layer", text_lang, default="Latest layer"),
+        ]
+        recent_headers = [
+            ui_text("calibration_history_recent_header_run_file", text_lang, default="Run file"),
+            ui_text("calibration_history_recent_header_culture", text_lang, default="Culture"),
+            ui_text("calibration_history_recent_header_period", text_lang, default="Period"),
+            ui_text("calibration_history_recent_header_profile", text_lang, default="Profile"),
+            ui_text("calibration_history_recent_header_layer", text_lang, default="Layer"),
+            ui_text("calibration_history_recent_header_roc", text_lang, default="ROC"),
+            ui_text("calibration_history_recent_header_pr", text_lang, default="PR"),
+        ]
+        site_group_headers = [
+            ui_text("calibration_history_site_group_header_name", text_lang, default="Site group"),
+            ui_text("calibration_history_site_group_header_runs", text_lang, default="Runs"),
+            ui_text("calibration_history_site_group_header_avg_share", text_lang, default="Avg share"),
+            ui_text("calibration_history_site_group_header_avg_roc", text_lang, default="Avg ROC"),
+            ui_text("calibration_history_site_group_header_avg_pr", text_lang, default="Avg PR"),
+            ui_text(
+                "calibration_history_site_group_header_latest_context",
+                text_lang,
+                default="Latest context",
+            ),
+        ]
+        summary_title = ui_text(
+            "calibration_history_summary_title",
+            text_lang,
+            default="Context summary",
+        )
+        site_group_title = ui_text(
+            "calibration_history_site_group_title",
+            text_lang,
+            default="Site-group summary",
+        )
+        recent_title = ui_text(
+            "calibration_history_recent_title",
+            text_lang,
+            default="Recent runs",
+        )
+        site_group_rows = self._calibration_site_group_history_rows(history_records)
+        site_group_block = (
+            self._markdown_table(site_group_headers, site_group_rows)
+            if site_group_rows
+            else ui_text(
+                "calibration_history_no_site_groups",
+                text_lang,
+                default="No calibration history with site-group fields was found yet.",
+            )
+        )
+        return (
+            f"### {summary_title}\n\n"
+            f"{self._markdown_table(summary_headers, self._calibration_history_summary_rows(history_records))}\n\n"
+            f"### {site_group_title}\n\n"
+            f"{site_group_block}\n\n"
+            f"### {recent_title}\n\n"
+            f"{self._markdown_table(recent_headers, self._calibration_history_recent_rows(history_records))}"
+        )
+
+    def _calibration_history_html(self, history_records, text_lang):
+        if not history_records:
+            return (
+                f"<p>{escape(ui_text('calibration_history_no_records', text_lang, default='No prior calibration history was found.'))}</p>"
+            )
+        summary_headers = [
+            ui_text("calibration_history_summary_header_culture", text_lang, default="Culture"),
+            ui_text("calibration_history_summary_header_period", text_lang, default="Period"),
+            ui_text("calibration_history_summary_header_profile", text_lang, default="Profile"),
+            ui_text("calibration_history_summary_header_runs", text_lang, default="Runs"),
+            ui_text("calibration_history_summary_header_avg_roc", text_lang, default="Avg ROC"),
+            ui_text("calibration_history_summary_header_avg_pr", text_lang, default="Avg PR"),
+            ui_text("calibration_history_summary_header_best_roc", text_lang, default="Best ROC"),
+            ui_text("calibration_history_summary_header_latest_layer", text_lang, default="Latest layer"),
+        ]
+        recent_headers = [
+            ui_text("calibration_history_recent_header_run_file", text_lang, default="Run file"),
+            ui_text("calibration_history_recent_header_culture", text_lang, default="Culture"),
+            ui_text("calibration_history_recent_header_period", text_lang, default="Period"),
+            ui_text("calibration_history_recent_header_profile", text_lang, default="Profile"),
+            ui_text("calibration_history_recent_header_layer", text_lang, default="Layer"),
+            ui_text("calibration_history_recent_header_roc", text_lang, default="ROC"),
+            ui_text("calibration_history_recent_header_pr", text_lang, default="PR"),
+        ]
+        site_group_headers = [
+            ui_text("calibration_history_site_group_header_name", text_lang, default="Site group"),
+            ui_text("calibration_history_site_group_header_runs", text_lang, default="Runs"),
+            ui_text("calibration_history_site_group_header_avg_share", text_lang, default="Avg share"),
+            ui_text("calibration_history_site_group_header_avg_roc", text_lang, default="Avg ROC"),
+            ui_text("calibration_history_site_group_header_avg_pr", text_lang, default="Avg PR"),
+            ui_text(
+                "calibration_history_site_group_header_latest_context",
+                text_lang,
+                default="Latest context",
+            ),
+        ]
+        summary_title = ui_text(
+            "calibration_history_summary_title",
+            text_lang,
+            default="Context summary",
+        )
+        site_group_title = ui_text(
+            "calibration_history_site_group_title",
+            text_lang,
+            default="Site-group summary",
+        )
+        recent_title = ui_text(
+            "calibration_history_recent_title",
+            text_lang,
+            default="Recent runs",
+        )
+        site_group_rows = self._calibration_site_group_history_rows(history_records)
+        site_group_block = (
+            self._html_table(site_group_headers, site_group_rows)
+            if site_group_rows
+            else (
+                f"<p>{escape(ui_text('calibration_history_no_site_groups', text_lang, default='No calibration history with site-group fields was found yet.'))}</p>"
+            )
+        )
+        return (
+            f"<p><b>{escape(summary_title)}</b></p>"
+            f"{self._html_table(summary_headers, self._calibration_history_summary_rows(history_records))}"
+            f"<p><b>{escape(site_group_title)}</b></p>"
+            f"{site_group_block}"
+            f"<p><b>{escape(recent_title)}</b></p>"
+            f"{self._html_table(recent_headers, self._calibration_history_recent_rows(history_records))}"
+        )
 
     def _show_report_popup(self, report, json_path, md_path):
         text_lang = self._label_language()
@@ -1503,12 +3076,105 @@ class FengShuiGisPlugin:
             text_lang,
             default="threshold",
         )
+        scope_label = ui_text(
+            "calibration_html_scope_label",
+            text_lang,
+            default="Calibration scope",
+        )
+        weight_summary_label = ui_text(
+            "calibration_html_weight_summary_label",
+            text_lang,
+            default="Weight update",
+        )
+        parameter_summary_label = ui_text(
+            "calibration_html_parameter_summary_label",
+            text_lang,
+            default="Parameter update",
+        )
+        export_title = ui_text(
+            "calibration_html_export_title",
+            text_lang,
+            default="Calibrated profile export",
+        )
+        export_status_label = ui_text(
+            "calibration_html_export_status_label",
+            text_lang,
+            default="Export status",
+        )
+        export_key_label = ui_text(
+            "calibration_html_export_key_label",
+            text_lang,
+            default="Profile key",
+        )
+        export_snapshot_label = ui_text(
+            "calibration_html_export_snapshot_label",
+            text_lang,
+            default="Snapshot path",
+        )
+        export_registry_label = ui_text(
+            "calibration_html_export_registry_label",
+            text_lang,
+            default="Local profile registry",
+        )
+        metric_compare_title = ui_text(
+            "calibration_html_metric_compare_title",
+            text_lang,
+            default="Metric comparison",
+        )
+        metadata_title = ui_text(
+            "calibration_html_metadata_title",
+            text_lang,
+            default="Site group / country / period mix",
+        )
+        history_title = ui_text(
+            "calibration_html_history_title",
+            text_lang,
+            default="Calibration history comparison",
+        )
+        base_roc_auc_label = ui_text(
+            "calibration_html_base_roc_auc_label",
+            text_lang,
+            default="Base ROC AUC",
+        )
+        base_pr_auc_label = ui_text(
+            "calibration_html_base_pr_auc_label",
+            text_lang,
+            default="Base PR AUC",
+        )
         json_label = ui_text("calibration_html_json_label", text_lang, default="JSON")
         markdown_label = ui_text(
             "calibration_html_markdown_label",
             text_lang,
             default="Markdown",
         )
+        paper_title = ui_text(
+            "calibration_html_paper_evidence_title",
+            text_lang,
+            default="Paper evidence",
+        )
+        paper_summary_label = ui_text(
+            "calibration_html_paper_evidence_summary_label",
+            text_lang,
+            default="Paper evidence summary",
+        )
+        paper_references_label = ui_text(
+            "calibration_html_paper_evidence_references_label",
+            text_lang,
+            default="Paper references",
+        )
+        paper_missing = ui_text(
+            "calibration_html_paper_evidence_missing",
+            text_lang,
+            default="No profile-level paper evidence was applied.",
+        )
+        paper_summary = str(report.get("paper_evidence_summary", "") or "").strip()
+        paper_references = reference_display_text(
+            self._paper_evidence_sources(report.get("paper_evidence_records")),
+            language=text_lang,
+            limit=10,
+        ).strip()
+        paper_summary_text = escape(paper_summary or paper_missing)
+        paper_references_text = escape(paper_references or paper_missing)
 
         html = (
             f"<h3>{ui_text('calibration_report_heading', text_lang, default='Calibration Result')}</h3>"
@@ -1520,7 +3186,26 @@ class FengShuiGisPlugin:
             f"<p><b>{best_f1_label}</b>: {report.get('best_f1', 0):.4f} "
             f"({threshold_label}={report.get('best_f1_threshold', 0):.4f})<br/>"
             f"<b>{best_youden_label}</b>: {report.get('best_youden_j', 0):.4f} "
-            f"({threshold_label}={report.get('best_youden_threshold', 0):.4f})</p>"
+            f"({threshold_label}={report.get('best_youden_threshold', 0):.4f})<br/>"
+            f"<b>{scope_label}</b>: {escape(str(report.get('calibration_scope', 'threshold_only')))}<br/>"
+            f"<b>{weight_summary_label}</b>: {escape(str(report.get('tuned_weight_summary', 'n/a')))}<br/>"
+            f"<b>{parameter_summary_label}</b>: {escape(str(report.get('tuned_parameter_summary', 'n/a')))}<br/>"
+            f"<b>{base_roc_auc_label}</b>: {report.get('base_roc_auc', 0):.4f}<br/>"
+            f"<b>{base_pr_auc_label}</b>: {report.get('base_pr_auc', 0):.4f}</p>"
+            f"<p><b>{export_title}</b><br/>"
+            f"{export_status_label}: {escape(str(report.get('profile_export_status', 'n/a')))}<br/>"
+            f"{export_key_label}: {escape(str(report.get('exported_profile_key', 'n/a')))}<br/>"
+            f"{export_snapshot_label}: {escape(str(report.get('profile_export_path', 'n/a')))}<br/>"
+            f"{export_registry_label}: {escape(str(report.get('local_profile_registry_path', 'n/a')))}</p>"
+            f"<h4>{metric_compare_title}</h4>"
+            f"{self._calibration_metric_comparison_html(report, text_lang)}"
+            f"<h4>{metadata_title}</h4>"
+            f"{self._calibration_metadata_html(report, text_lang)}"
+            f"<h4>{history_title}</h4>"
+            f"{self._calibration_history_html(self._collect_calibration_history(os.path.dirname(json_path)), text_lang)}"
+            f"<p><b>{paper_title}</b><br/>"
+            f"{paper_summary_label}: {paper_summary_text}<br/>"
+            f"{paper_references_label}: {paper_references_text}</p>"
             f"<p><b>{json_label}</b>: {json_path}<br/><b>{markdown_label}</b>: {md_path}</p>"
         )
         self._report_browser.setHtml(html)
