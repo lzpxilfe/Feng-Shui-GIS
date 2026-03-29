@@ -1,0 +1,64 @@
+{
+  "dataset": {
+    "id": "replace-me",
+    "study_label": "replace-me",
+    "dem_path": "data/raw/dem.tif",
+    "water_path": "data/raw/water.gpkg",
+    "sites_path": "data/raw/sites.gpkg",
+    "crs": "EPSG:0000"
+  },
+  "plugin": {
+    "name": "Feng Shui GIS",
+    "version": "0.1.2",
+    "qgis_version": "replace-me",
+    "qgis_minimum_version": "3.28"
+  },
+  "repository": {
+    "url": "https://github.com/lzpxilfe/Feng-Shui-GIS",
+    "commit": "replace-me",
+    "working_tree_dirty": false
+  },
+  "config_snapshot": [
+    {
+      "path": "feng_shui_gis/config/analysis_rules.json",
+      "sha256": "replace-me"
+    },
+    {
+      "path": "feng_shui_gis/config/contexts.json",
+      "sha256": "replace-me"
+    },
+    {
+      "path": "feng_shui_gis/config/profiles.json",
+      "sha256": "replace-me"
+    },
+    {
+      "path": "feng_shui_gis/config/references.json",
+      "sha256": "replace-me"
+    },
+    {
+      "path": "feng_shui_gis/config/terms.json",
+      "sha256": "replace-me"
+    },
+    {
+      "path": "feng_shui_gis/config/ui_texts.json",
+      "sha256": "replace-me"
+    }
+  ],
+  "run": {
+    "operator": "replace-me",
+    "generated_at_utc": "replace-me",
+    "hemisphere": "north",
+    "profile": "general",
+    "culture_key": "korea",
+    "period_key": "early_modern",
+    "auto_hydro": false,
+    "include_terms": true,
+    "notes": "replace-me"
+  },
+  "artifacts": {
+    "landscape_layer": "outputs/landscape/output.gpkg",
+    "scored_layer": "",
+    "calibration_report_json": "",
+    "calibration_report_md": ""
+  }
+}

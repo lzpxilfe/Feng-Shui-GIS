@@ -31,7 +31,9 @@
       "water": 0.18,
       "aspect": 0.14,
       "slope": 0.08,
-      "tpi": 0.04
+      "tpi": 0.04,
+      "sashinsa": 0.10,
+      "enclosure": 0.06
     },
     "slope_target": 10.0,
     "slope_sigma": 8.0,
@@ -71,7 +73,9 @@
       "form": 0.2,
       "long": 0.14,
       "aspect": 0.08,
-      "tpi": 0.16
+      "tpi": 0.16,
+      "sashinsa": 0.08,
+      "enclosure": 0.08
     },
     "slope_target": 4.0,
     "slope_sigma": 7.0,
@@ -110,7 +114,9 @@
       "aspect": 0.15,
       "slope": 0.1,
       "tpi": 0.16,
-      "water": 0.08
+      "water": 0.08,
+      "sashinsa": 0.08,
+      "enclosure": 0.06
     },
     "slope_target": 9.0,
     "slope_sigma": 10.0,
@@ -156,5 +162,49 @@
     "slope_sigma": 8.0,
     "tpi_target": -0.08,
     "tpi_sigma": 0.3
+  },
+  "tomb_kr": {
+    "_refs": "Um JS 2012 IntechOpen doi:10.5772/51071 (한국 묘지 공간회귀); ISPRS IJGI 10(11):752 2021 Nanjing (AHP-I 무덤 풍수); 서춘석·천인호 RISS (수치고도모델+사신사 검증)",
+    "label": {
+      "en": "Korean Tomb (Pungsu)",
+      "ko": "한국 음택 (풍수)",
+      "zh": "韩国墓葬(风水)",
+      "ja": "韓国墓葬(風水)"
+    },
+    "weights": {
+      "long": 0.26,
+      "sashinsa": 0.20,
+      "form": 0.18,
+      "enclosure": 0.14,
+      "water": 0.10,
+      "aspect": 0.08,
+      "tpi": 0.04
+    },
+    "slope_target": 10.0,
+    "slope_sigma": 8.0,
+    "tpi_target": 0.05,
+    "tpi_sigma": 0.25
+  },
+  "village_kr": {
+    "_refs": "Guan et al. 2024 Applied Spatial Analysis doi:10.1007/s12061-024-09595-6 (AHP-GIS 하카마을); Um 2012 IntechOpen (배산임수 마을 지형); 풍수AI 배산임수·사신사·장풍득수 종합 모델",
+    "label": {
+      "en": "Korean Village (Baesanimsu)",
+      "ko": "한국 마을 (배산임수)",
+      "zh": "韩国村落(背山临水)",
+      "ja": "韓国集落(背山臨水)"
+    },
+    "weights": {
+      "enclosure": 0.22,
+      "sashinsa": 0.18,
+      "water": 0.20,
+      "form": 0.16,
+      "aspect": 0.12,
+      "slope": 0.08,
+      "tpi": 0.04
+    },
+    "slope_target": 5.0,
+    "slope_sigma": 7.0,
+    "tpi_target": -0.08,
+    "tpi_sigma": 0.28
   }
 }

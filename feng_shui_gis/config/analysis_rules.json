@@ -214,8 +214,31 @@
     "default_culture": "korea",
     "negative_ratio_options": [1, 2, 3, 4],
     "default_negative_ratio": 3,
+    "local_bbox_padding_factor": 1.25,
+    "local_bbox_min_padding_cells": 24,
+    "trial_multiplier": 120,
     "seed_min": 1,
     "seed_max": 999999,
     "seed_default": 42
+  },
+  "sashinsa": {
+    "_comment": "사신사(四神砂) 포위도 지수 파라미터. 참고: Um 2012 IntechOpen doi:10.5772/51071 (한국 묘지 공간회귀); ISPRS IJGI 10(11):752 2021 Nanjing doi:10.3390/ijgi10110752 (砂→surface_peaks); Buildings 15(5):800 2025 doi:10.3390/buildings15050800 (viewshed 사신사); Park et al. 2014 J.Cultural&Historical Geography 26:1-18.",
+    "back_target_ratio": 0.12,
+    "back_sigma": 0.18,
+    "front_target_ratio": -0.10,
+    "front_sigma": 0.18,
+    "side_target_ratio": 0.06,
+    "side_sigma": 0.15
+  },
+  "enclosure": {
+    "_comment": "장풍(藏風) 포위도 지수. 참고: Guan et al. 2024 Applied Spatial Analysis doi:10.1007/s12061-024-09595-6 (하카마을 AHP-GIS 장풍득수); ISPRS IJGI 10(11):752 2021 Nanjing (surface roughness → 龍 판별). 이상적 포위율: 북반구 한국 혈 기준 약 62%.",
+    "target_ratio": 0.62,
+    "sigma": 0.22,
+    "num_bearings": 24
+  },
+  "large_tpi": {
+    "_comment": "대규모 TPI (이중 스케일). 참고: Lee & Kim 2021 PLOS ONE 16(10):e0259651 doi:10.1371/journal.pone.0259651 (한반도 이중-TPI 지형분류); Weiss AD 2001 ESRI User Conference (TPI 원본); Um 2012 IntechOpen (광역 지형위치). radius_multiplier=3.0.",
+    "radius_multiplier": 3.0,
+    "num_samples": 16
   }
 }
