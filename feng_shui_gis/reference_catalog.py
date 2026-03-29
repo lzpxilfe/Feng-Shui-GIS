@@ -46,22 +46,33 @@ def normalize_reference_id(value):
     return text.strip()
 
 
-def _entries_by_doi():
+def _entry_keys(item):
+    if not isinstance(item, dict):
+        return []
+    keys = []
+    ref_id = str(item.get("id", "")).strip()
+    if ref_id:
+        keys.append(ref_id)
+    doi = normalize_reference_id(item.get("doi"))
+    if doi and doi not in keys:
+        keys.append(doi)
+    return keys
+
+
+def _entries_by_key():
     lookup = {}
     for item in _catalog():
-        if not isinstance(item, dict):
-            continue
-        doi = normalize_reference_id(item.get("doi"))
-        if doi:
-            lookup[doi] = item
+        for key in _entry_keys(item):
+            lookup[key] = item
     return lookup
 
 
 def reference_entry(value):
-    doi = normalize_reference_id(value)
-    entry = _entries_by_doi().get(doi, {})
+    key = normalize_reference_id(value)
+    entry = _entries_by_key().get(key, {})
     return {
-        "doi": doi,
+        "id": str(entry.get("id", "")).strip(),
+        "doi": normalize_reference_id(entry.get("doi")),
         "short": entry.get("short", {}),
         "summary": entry.get("summary", {}),
         "show_in_help": bool(entry.get("show_in_help", False)),
@@ -114,13 +125,14 @@ def references_help_html(language=None):
         if not isinstance(item, dict) or not item.get("show_in_help", False):
             continue
         doi = normalize_reference_id(item.get("doi"))
-        short = _localized(item.get("short", {}), lang) or doi
+        ref_id = str(item.get("id", "")).strip()
+        short = _localized(item.get("short", {}), lang) or doi or ref_id
         summary = _localized(item.get("summary", {}), lang)
         parts = [f"<b>{escape(short)}</b>"]
         if summary:
             parts.append(escape(summary))
-        if doi:
-            parts.append(f"<code>{escape(doi)}</code>")
+        if doi or ref_id:
+            parts.append(f"<code>{escape(doi or ref_id)}</code>")
         rows.append(f"<p>- {' | '.join(parts)}</p>")
     rows.append(f"<p><small>{escape(note)}</small></p>")
     return "".join(rows)

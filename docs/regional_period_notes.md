@@ -13,6 +13,9 @@ This file documents interpretation boundaries.
   - https://doi.org/10.15299/jk.2016.8.60.203
   - https://doi.org/10.1515/9781438468716-011
   - https://doi.org/10.1515/9781438468716-009
+- Classical-text supplement:
+  - `서유구 『임원경제지 상택지』(2019)` and `김규순 (2020)` are useful for qualitative 양택/향법 interpretation.
+  - Treat them as interpretation sources first; do not convert them into numeric GIS priors without explicit calibration and benchmark testing.
 
 ### China
 - Strong conceptual geomancy literature exists, but plugin-ready modern GIS calibration references remain limited in this codebase.
