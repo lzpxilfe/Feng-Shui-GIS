@@ -109,6 +109,30 @@
       "show_in_help": true
     },
     {
+      "id": "kim_2020_imwon_sangtaekji",
+      "short": {
+        "en": "Kim (2020)",
+        "ko": "김규순 (2020)"
+      },
+      "summary": {
+        "en": "Study of late-Joseon elite feng shui views in Imwon gyeongjeji, centered on Sangtaekji. Useful as a qualitative Yangtaek and orientation source, not a direct numeric GIS calibration paper.",
+        "ko": "『임원경제지』 「상택지」를 중심으로 조선후기 사대부의 풍수관을 검토한 연구. 양택과 향법 해석의 질적 근거로는 유용하지만 수치형 GIS 보정식으로 바로 쓰기는 어렵다."
+      },
+      "show_in_help": true
+    },
+    {
+      "id": "seoyu_gu_2019_imwon_sangtaekji",
+      "short": {
+        "en": "Seo Yu-gu, Sangtaekji (2019 ed.)",
+        "ko": "서유구 『임원경제지 상택지』(2019)"
+      },
+      "summary": {
+        "en": "Premodern Joseon geomancy text in Imwon gyeongjeji. Important as a classical interpretation source for housing and orientation logic, but it should be operationalized through explicit validation before influencing numeric priors.",
+        "ko": "조선후기 생활백과 『임원경제지』의 풍수·양택 관련 텍스트. 주거 입지와 향법 해석의 고전 근거로는 중요하지만 수치 파라미터에 반영하려면 별도 검증이 필요하다."
+      },
+      "show_in_help": true
+    },
+    {
       "doi": "10.1515/9781438468716-004",
       "short": {
         "en": "Yoon (2017)",
@@ -165,6 +189,18 @@
       "summary": {
         "en": "Using feng shui as a clue for prehistoric landscape-setting patterns.",
         "ko": "선사 경관 입지 패턴 해석의 단서로 풍수를 사용한 연구."
+      },
+      "show_in_help": true
+    },
+    {
+      "doi": "10.1007/s12061-024-09595-6",
+      "short": {
+        "en": "Guan et al. (2024)",
+        "ko": "Guan et al. (2024)"
+      },
+      "summary": {
+        "en": "AHP-GIS application to Korean village settlement location and feng-shui style terms.",
+        "ko": "AHP-GIS로 한국 집성촌 정착지와 풍수 용어 해석을 연결한 연구."
       },
       "show_in_help": true
     }

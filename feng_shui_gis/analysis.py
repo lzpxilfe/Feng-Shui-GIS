@@ -38,6 +38,7 @@ from .profile_catalog import (
     term_radius_scales,
     term_specs,
 )
+from .reference_catalog import reference_display_text
 
 RIDGE_CLASS_LABELS = {
     "major": {"ko": "대간·정맥", "en": "Daegan+Jeongmaek"},
@@ -142,6 +143,11 @@ class FengShuiAnalyzer:
         period_key="early_modern",
     ):
         context = build_context(culture_key, period_key, hemisphere)
+        profile = self._contextualize_profile(
+            self._profile_spec(profile_key),
+            context,
+            profile_key,
+        )
         slope = processing.run(
             "qgis:slope",
             {
@@ -203,6 +209,7 @@ class FengShuiAnalyzer:
             hemisphere=hemisphere,
             profile_key=profile_key,
             context=context,
+            profile=profile,
         )
         return output_layer
 
@@ -242,6 +249,12 @@ class FengShuiAnalyzer:
             positive_points=positive_points,
             negative_points=negative_points,
         )
+        context = build_context(culture_key, period_key, hemisphere)
+        profile = self._contextualize_profile(
+            self._profile_spec(profile_key),
+            context,
+            profile_key,
+        )
         scored_layer = self.run(
             site_layer=input_layer,
             dem_layer=dem_layer,
@@ -251,36 +264,59 @@ class FengShuiAnalyzer:
             culture_key=culture_key,
             period_key=period_key,
         )
-
-        labels = []
-        scores = []
-        for feature in scored_layer.getFeatures():
-            label = feature["fs_label"] if "fs_label" in feature.fields().names() else None
-            score = self._to_float(feature["fs_score"]) if "fs_score" in feature.fields().names() else None
-            if label is None or score is None:
-                continue
-            labels.append(int(label))
-            scores.append(float(score))
-
-        metrics = self._binary_classification_metrics(labels, scores)
-        context = build_context(culture_key, period_key, hemisphere)
+        calibration_fit = self._fit_local_calibration_weights(
+            scored_layer,
+            profile,
+            random_seed=random_seed,
+        )
+        metrics = calibration_fit["metrics"]
+        self._annotate_calibration_layer(
+            scored_layer,
+            score_by_id=calibration_fit.get("scores_by_id"),
+            best_f1_threshold=metrics["best_f1_threshold"] if metrics["count"] > 0 else None,
+            best_youden_threshold=(
+                metrics["best_youden_threshold"] if metrics["count"] > 0 else None
+            ),
+        )
         report = {
             "culture_key": context["culture_key"],
             "period_key": context["period_key"],
             "profile_key": profile_key,
             "hemisphere": hemisphere,
+            "site_layer_name": site_layer.name() if site_layer is not None else "",
+            "site_metadata_summary": self._summarize_site_metadata(site_layer),
             "negative_ratio": negative_ratio,
             "random_seed": random_seed,
             "positive_count": len(positive_points),
             "negative_count": len(negative_points),
             "valid_count": metrics["count"],
+            "base_valid_count": calibration_fit["base_metrics"]["count"],
             "roc_auc": metrics["roc_auc"],
             "pr_auc": metrics["pr_auc"],
             "best_f1": metrics["best_f1"],
             "best_f1_threshold": metrics["best_f1_threshold"],
             "best_youden_j": metrics["best_youden_j"],
             "best_youden_threshold": metrics["best_youden_threshold"],
+            "base_roc_auc": calibration_fit["base_metrics"]["roc_auc"],
+            "base_pr_auc": calibration_fit["base_metrics"]["pr_auc"],
+            "base_best_f1": calibration_fit["base_metrics"]["best_f1"],
+            "base_best_f1_threshold": calibration_fit["base_metrics"]["best_f1_threshold"],
+            "base_best_youden_j": calibration_fit["base_metrics"]["best_youden_j"],
+            "base_best_youden_threshold": calibration_fit["base_metrics"]["best_youden_threshold"],
+            "calibration_scope": calibration_fit["scope"],
+            "calibration_applied": calibration_fit["applied"],
+            "tuned_weights": calibration_fit["weights"],
+            "base_weights": calibration_fit["base_weights"],
+            "tuned_weight_deltas": calibration_fit["weight_deltas"],
+            "tuned_weight_summary": calibration_fit["weight_summary"],
+            "tuned_profile_parameters": calibration_fit["profile_parameters"],
+            "base_profile_parameters": calibration_fit["base_profile_parameters"],
+            "tuned_parameter_deltas": calibration_fit["parameter_deltas"],
+            "tuned_parameter_summary": calibration_fit["parameter_summary"],
+            "indicator_discrimination": calibration_fit["indicator_discrimination"],
             "evidence_parameters": context.get("evidence", {}).get("parameters", {}),
+            "paper_evidence_records": profile.get("paper_evidence_records", []),
+            "paper_evidence_summary": self._paper_evidence_summary(profile),
         }
         return scored_layer, report
 
@@ -298,6 +334,7 @@ class FengShuiAnalyzer:
         profile = self._contextualize_profile(
             self._profile_spec(profile_key),
             context,
+            profile_key,
         )
         provider = dem_layer.dataProvider()
         weights = profile.get("weights", {})
@@ -386,6 +423,7 @@ class FengShuiAnalyzer:
             selected=selected,
             context=context,
             profile_key=profile_key,
+            profile=profile,
         )
 
     def _as_vector_layer(self, output_obj):
@@ -453,8 +491,652 @@ class FengShuiAnalyzer:
             layer.dataProvider().addAttributes(to_add)
             layer.updateFields()
 
+    def _annotate_calibration_layer(
+        self,
+        layer,
+        score_by_id=None,
+        best_f1_threshold=None,
+        best_youden_threshold=None,
+    ):
+        if layer is None:
+            return
+
+        to_add = []
+        if layer.fields().indexFromName("cal_score") < 0:
+            to_add.append(QgsField("cal_score", QVariant.Double, "double", 7, 3))
+        if layer.fields().indexFromName("cal_f1_th") < 0:
+            to_add.append(QgsField("cal_f1_th", QVariant.Double, "double", 7, 3))
+        if layer.fields().indexFromName("cal_yj_th") < 0:
+            to_add.append(QgsField("cal_yj_th", QVariant.Double, "double", 7, 3))
+        if layer.fields().indexFromName("cal_f1_ok") < 0:
+            to_add.append(QgsField("cal_f1_ok", QVariant.Int))
+        if layer.fields().indexFromName("cal_yj_ok") < 0:
+            to_add.append(QgsField("cal_yj_ok", QVariant.Int))
+        if to_add:
+            layer.dataProvider().addAttributes(to_add)
+            layer.updateFields()
+
+        with edit(layer):
+            for feature in layer.getFeatures():
+                field_names = feature.fields().names()
+                row_id = self._calibration_row_id(feature, field_names)
+                score = None
+                if isinstance(score_by_id, dict) and row_id in score_by_id:
+                    score = score_by_id.get(row_id)
+                if score is None and "fs_score" in field_names:
+                    score = self._to_float(feature["fs_score"])
+                feature["cal_score"] = score
+                feature["cal_f1_th"] = best_f1_threshold
+                feature["cal_yj_th"] = best_youden_threshold
+                feature["cal_f1_ok"] = (
+                    int(score >= best_f1_threshold)
+                    if score is not None and best_f1_threshold is not None
+                    else None
+                )
+                feature["cal_yj_ok"] = (
+                    int(score >= best_youden_threshold)
+                    if score is not None and best_youden_threshold is not None
+                    else None
+                )
+                layer.updateFeature(feature)
+
+    @staticmethod
+    def _normalized_weight_map(weights):
+        if not isinstance(weights, dict):
+            return {}
+        clean = {}
+        total = 0.0
+        for key, value in weights.items():
+            try:
+                weight = float(value)
+            except (TypeError, ValueError):
+                continue
+            if weight <= 0:
+                continue
+            clean[key] = weight
+            total += weight
+        if total <= 0:
+            return {}
+        return {key: value / total for key, value in clean.items()}
+
+    @staticmethod
+    def _calibration_row_id(feature, field_names=None):
+        names = field_names or feature.fields().names()
+        if "cal_id" in names:
+            try:
+                return int(feature["cal_id"])
+            except (TypeError, ValueError):
+                pass
+        return int(feature.id())
+
+    @staticmethod
+    def _calibration_profile_parameters(profile):
+        if not isinstance(profile, dict):
+            return {}
+        parameters = {}
+        for key in ("slope_target", "slope_sigma", "tpi_target", "tpi_sigma"):
+            try:
+                parameters[key] = float(profile[key])
+            except (KeyError, TypeError, ValueError):
+                continue
+        return parameters
+
+    def _calibration_raw_value(self, feature, key, field_names=None):
+        names = list(field_names or feature.fields().names())
+        if key == "slope":
+            field_name = next((name for name in names if name.startswith("sl_")), None)
+            if field_name:
+                return self._to_float(feature[field_name])
+            return None
+        if key == "tpi" and "fs_tpi" in names:
+            return self._to_float(feature["fs_tpi"])
+        return None
+
+    def _calibration_indicator_value(self, feature, key, profile, field_names=None):
+        names = set(field_names or feature.fields().names())
+        direct_fields = {
+            "slope": "fs_slope",
+            "aspect": "fs_aspect",
+            "form": "fs_form",
+            "long": "fs_long",
+            "water": "fs_water",
+            "conv": "fs_conv",
+            "sashinsa": "fs_sashinsa",
+            "enclosure": "fs_enclosure",
+        }
+        if key == "tpi":
+            if "fs_tpi" not in names:
+                return None
+            raw_tpi = self._to_float(feature["fs_tpi"])
+            if raw_tpi is None:
+                return None
+            return self._score_profile_tpi(raw_tpi, profile)
+
+        field_name = direct_fields.get(key)
+        if not field_name or field_name not in names:
+            return None
+        return self._to_float(feature[field_name])
+
+    def _calibration_row_indicator(self, row, key, profile):
+        raw_values = row.get("raw", {})
+        if key == "slope":
+            raw_slope = raw_values.get("slope")
+            if raw_slope is not None:
+                return self._score_profile_slope(raw_slope, profile)
+        if key == "tpi":
+            raw_tpi = raw_values.get("tpi")
+            if raw_tpi is not None:
+                return self._score_profile_tpi(raw_tpi, profile)
+        return row.get("indicators", {}).get(key)
+
+    def _calibration_rows(self, layer, profile):
+        rows = []
+        if layer is None or not isinstance(profile, dict):
+            return rows
+        weight_keys = list(profile.get("weights", {}).keys())
+        for feature in layer.getFeatures():
+            field_names = feature.fields().names()
+            if "fs_label" not in field_names:
+                continue
+            label = feature["fs_label"]
+            try:
+                label = int(label)
+            except (TypeError, ValueError):
+                continue
+            if label not in (0, 1):
+                continue
+            raw_values = {
+                "slope": self._calibration_raw_value(feature, "slope", field_names),
+                "tpi": self._calibration_raw_value(feature, "tpi", field_names),
+            }
+            indicators = {
+                key: self._calibration_indicator_value(feature, key, profile, field_names)
+                for key in weight_keys
+            }
+            if not any(value is not None for value in indicators.values()):
+                continue
+            rows.append(
+                {
+                    "row_id": self._calibration_row_id(feature, field_names),
+                    "label": label,
+                    "raw": raw_values,
+                    "indicators": indicators,
+                }
+            )
+        return rows
+
+    def _evaluate_calibration_rows(self, rows, profile):
+        labels = []
+        scores = []
+        score_by_id = {}
+        if not isinstance(profile, dict):
+            return self._binary_classification_metrics([], []), score_by_id
+        normalized = self._normalized_weight_map(profile.get("weights", {}))
+        if not rows or not normalized:
+            return self._binary_classification_metrics([], []), score_by_id
+
+        for row in rows:
+            weighted = []
+            for key, weight in normalized.items():
+                value = self._calibration_row_indicator(row, key, profile)
+                if value is None:
+                    continue
+                weighted.append((weight, float(value)))
+            if not weighted:
+                continue
+            numerator = sum(weight * value for weight, value in weighted)
+            denominator = sum(weight for weight, _value in weighted)
+            if denominator <= 0:
+                continue
+            score = numerator / denominator
+            labels.append(int(row["label"]))
+            scores.append(float(score))
+            score_by_id[row["row_id"]] = float(score)
+        return self._binary_classification_metrics(labels, scores), score_by_id
+
+    def _indicator_discrimination(self, rows, key, profile):
+        labels = []
+        scores = []
+        positives = []
+        negatives = []
+        for row in rows:
+            value = self._calibration_row_indicator(row, key, profile)
+            if value is None:
+                continue
+            value = float(value)
+            label = int(row["label"])
+            labels.append(label)
+            scores.append(value)
+            if label == 1:
+                positives.append(value)
+            else:
+                negatives.append(value)
+        metrics = self._binary_classification_metrics(labels, scores)
+        pos_mean = sum(positives) / len(positives) if positives else None
+        neg_mean = sum(negatives) / len(negatives) if negatives else None
+        roc_auc = float(metrics.get("roc_auc", 0.0))
+        quality = max(0.0, min(1.0, (roc_auc - 0.5) * 2.0))
+        return {
+            "count": metrics.get("count", 0),
+            "roc_auc": roc_auc,
+            "pr_auc": float(metrics.get("pr_auc", 0.0)),
+            "positive_mean": pos_mean,
+            "negative_mean": neg_mean,
+            "quality": quality,
+        }
+
+    @staticmethod
+    def _metrics_better(candidate, baseline, tolerance=1e-6):
+        candidate_values = (
+            float(candidate.get("roc_auc", 0.0)),
+            float(candidate.get("pr_auc", 0.0)),
+            float(candidate.get("best_f1", 0.0)),
+            float(candidate.get("best_youden_j", 0.0)),
+        )
+        baseline_values = (
+            float(baseline.get("roc_auc", 0.0)),
+            float(baseline.get("pr_auc", 0.0)),
+            float(baseline.get("best_f1", 0.0)),
+            float(baseline.get("best_youden_j", 0.0)),
+        )
+        for cand_value, base_value in zip(candidate_values, baseline_values):
+            if cand_value > (base_value + tolerance):
+                return True
+            if cand_value < (base_value - tolerance):
+                return False
+        return False
+
+    @staticmethod
+    def _distribution_stats(values):
+        if not values:
+            return None, None
+        mean = sum(values) / len(values)
+        variance = sum((value - mean) ** 2 for value in values) / len(values)
+        return mean, math.sqrt(max(0.0, variance))
+
+    @staticmethod
+    def _unique_float_candidates(values, min_value=None, max_value=None):
+        unique = []
+        seen = set()
+        for value in values:
+            try:
+                clean = float(value)
+            except (TypeError, ValueError):
+                continue
+            if min_value is not None:
+                clean = max(float(min_value), clean)
+            if max_value is not None:
+                clean = min(float(max_value), clean)
+            marker = round(clean, 6)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            unique.append(clean)
+        return unique
+
+    def _raw_calibration_stats(self, rows, key):
+        positives = []
+        negatives = []
+        for row in rows:
+            raw_value = row.get("raw", {}).get(key)
+            if raw_value is None:
+                continue
+            value = float(raw_value)
+            if int(row["label"]) == 1:
+                positives.append(value)
+            else:
+                negatives.append(value)
+        positive_mean, positive_stddev = self._distribution_stats(positives)
+        negative_mean, negative_stddev = self._distribution_stats(negatives)
+        return {
+            "positive_count": len(positives),
+            "negative_count": len(negatives),
+            "positive_mean": positive_mean,
+            "positive_stddev": positive_stddev,
+            "negative_mean": negative_mean,
+            "negative_stddev": negative_stddev,
+        }
+
+    def _parameter_candidates(
+        self,
+        rows,
+        key,
+        base_target,
+        base_sigma,
+        sigma_floor,
+    ):
+        stats = self._raw_calibration_stats(rows, key)
+        positive_mean = stats.get("positive_mean")
+        positive_stddev = stats.get("positive_stddev")
+        negative_mean = stats.get("negative_mean")
+        targets = [base_target]
+        sigmas = [base_sigma]
+
+        if positive_mean is not None:
+            targets.extend([positive_mean, (base_target + positive_mean) * 0.5])
+        if positive_mean is not None and negative_mean is not None:
+            targets.append(((2.0 * positive_mean) + negative_mean) / 3.0)
+        if positive_stddev is not None and positive_stddev > 0:
+            sigmas.extend([positive_stddev, max(positive_stddev * 1.25, sigma_floor)])
+
+        sigmas.extend(
+            [
+                max(base_sigma * 0.75, sigma_floor),
+                max(base_sigma * 1.25, sigma_floor),
+            ]
+        )
+        if positive_mean is not None and negative_mean is not None:
+            separation = abs(positive_mean - negative_mean)
+            if separation > 0:
+                sigmas.append(max(separation * 0.5, sigma_floor))
+
+        return {
+            "targets": self._unique_float_candidates(targets)[:4],
+            "sigmas": self._unique_float_candidates(sigmas, min_value=sigma_floor)[:4],
+            "stats": stats,
+        }
+
+    def _parameter_candidate_profiles(self, rows, profile):
+        base_profile = dict(profile)
+        base_profile["weights"] = dict(self._normalized_weight_map(profile.get("weights", {})))
+        slope_candidates = self._parameter_candidates(
+            rows,
+            "slope",
+            float(base_profile.get("slope_target", 0.0)),
+            max(0.5, float(base_profile.get("slope_sigma", 1.0))),
+            0.5,
+        )
+        tpi_candidates = self._parameter_candidates(
+            rows,
+            "tpi",
+            float(base_profile.get("tpi_target", 0.0)),
+            max(0.02, float(base_profile.get("tpi_sigma", 0.1))),
+            0.02,
+        )
+
+        candidates = []
+        seen = set()
+        for slope_target in slope_candidates["targets"]:
+            for slope_sigma in slope_candidates["sigmas"]:
+                for tpi_target in tpi_candidates["targets"]:
+                    for tpi_sigma in tpi_candidates["sigmas"]:
+                        marker = (
+                            round(slope_target, 6),
+                            round(slope_sigma, 6),
+                            round(tpi_target, 6),
+                            round(tpi_sigma, 6),
+                        )
+                        if marker in seen:
+                            continue
+                        seen.add(marker)
+                        candidate = dict(base_profile)
+                        candidate["weights"] = dict(base_profile["weights"])
+                        candidate["slope_target"] = slope_target
+                        candidate["slope_sigma"] = slope_sigma
+                        candidate["tpi_target"] = tpi_target
+                        candidate["tpi_sigma"] = tpi_sigma
+                        candidates.append(candidate)
+                        if len(candidates) >= 24:
+                            return candidates
+        return candidates or [base_profile]
+
+    def _fit_profile_weight_candidates(self, rows, profile, random_seed=42):
+        base_weights = self._normalized_weight_map(profile.get("weights", {}))
+        working_profile = dict(profile)
+        working_profile["weights"] = dict(base_weights)
+        candidate_metrics, candidate_scores_by_id = self._evaluate_calibration_rows(
+            rows,
+            working_profile,
+        )
+        if not rows or not base_weights:
+            return {
+                "profile": working_profile,
+                "weights": base_weights,
+                "weight_deltas": {},
+                "weight_summary": "no-material-weight-change",
+                "indicator_discrimination": {},
+                "metrics": candidate_metrics,
+                "scores_by_id": candidate_scores_by_id,
+                "weight_applied": False,
+            }
+
+        available_keys = [
+            key
+            for key in base_weights.keys()
+            if any(self._calibration_row_indicator(row, key, working_profile) is not None for row in rows)
+        ]
+        base_weights = self._normalized_weight_map(
+            {key: base_weights.get(key, 0.0) for key in available_keys}
+        )
+        working_profile["weights"] = dict(base_weights)
+        base_metrics, base_scores_by_id = self._evaluate_calibration_rows(rows, working_profile)
+
+        indicator_discrimination = {
+            key: self._indicator_discrimination(rows, key, working_profile)
+            for key in available_keys
+        }
+        heuristic_weights = {}
+        for key in available_keys:
+            quality = indicator_discrimination[key]["quality"]
+            heuristic_weights[key] = base_weights.get(key, 0.0) * (0.20 + quality)
+        heuristic_weights = self._normalized_weight_map(heuristic_weights) or dict(base_weights)
+
+        candidates = [dict(base_weights), dict(heuristic_weights)]
+        ranked_keys = sorted(
+            available_keys,
+            key=lambda item: indicator_discrimination[item]["quality"],
+            reverse=True,
+        )
+        for focus_key in ranked_keys[: min(3, len(ranked_keys))]:
+            focused = {}
+            for key in available_keys:
+                focus_scale = 1.8 if key == focus_key else 0.55
+                quality_scale = 0.35 + indicator_discrimination[key]["quality"]
+                focused[key] = base_weights.get(key, 0.0) * focus_scale * quality_scale
+            normalized_focused = self._normalized_weight_map(focused)
+            if normalized_focused:
+                candidates.append(normalized_focused)
+
+        rng = random.Random(int(random_seed))
+        trial_count = max(48, len(available_keys) * 20)
+        for _ in range(trial_count):
+            trial_weights = {}
+            for key in available_keys:
+                quality = indicator_discrimination[key]["quality"]
+                jitter = 0.40 + (rng.random() * 1.80)
+                trial_weights[key] = (
+                    base_weights.get(key, 0.0) * jitter * (0.25 + quality)
+                )
+            normalized_trial = self._normalized_weight_map(trial_weights)
+            if normalized_trial:
+                candidates.append(normalized_trial)
+
+        best_weights = dict(base_weights)
+        best_metrics = dict(base_metrics)
+        best_scores_by_id = dict(base_scores_by_id)
+        for candidate in candidates:
+            trial_profile = dict(working_profile)
+            trial_profile["weights"] = dict(candidate)
+            candidate_metrics, candidate_scores_by_id = self._evaluate_calibration_rows(
+                rows,
+                trial_profile,
+            )
+            if self._metrics_better(candidate_metrics, best_metrics):
+                best_weights = dict(candidate)
+                best_metrics = dict(candidate_metrics)
+                best_scores_by_id = dict(candidate_scores_by_id)
+
+        weight_applied = self._metrics_better(best_metrics, base_metrics)
+        final_weights = dict(best_weights if weight_applied else base_weights)
+        final_metrics = dict(best_metrics if weight_applied else base_metrics)
+        final_scores_by_id = dict(best_scores_by_id if weight_applied else base_scores_by_id)
+
+        weight_deltas = {
+            key: final_weights.get(key, 0.0) - base_weights.get(key, 0.0)
+            for key in available_keys
+        }
+        changed = sorted(
+            (
+                (abs(delta), key, delta)
+                for key, delta in weight_deltas.items()
+                if abs(delta) >= 0.01
+            ),
+            reverse=True,
+        )
+        if changed:
+            weight_summary = ", ".join(
+                f"{key}:{delta:+.3f}" for _abs_delta, key, delta in changed[:3]
+            )
+        else:
+            weight_summary = "no-material-weight-change"
+
+        return {
+            "profile": dict(working_profile, weights=final_weights),
+            "weights": final_weights,
+            "weight_deltas": weight_deltas,
+            "weight_summary": weight_summary,
+            "indicator_discrimination": indicator_discrimination,
+            "metrics": final_metrics,
+            "scores_by_id": final_scores_by_id,
+            "weight_applied": weight_applied,
+        }
+
+    def _fit_local_calibration_weights(self, layer, profile, random_seed=42):
+        base_profile = dict(profile if isinstance(profile, dict) else {})
+        base_profile["weights"] = dict(
+            self._normalized_weight_map(base_profile.get("weights", {}))
+        )
+        rows = self._calibration_rows(layer, base_profile)
+        base_metrics, base_scores_by_id = self._evaluate_calibration_rows(rows, base_profile)
+        base_profile_parameters = self._calibration_profile_parameters(base_profile)
+        if not rows or not base_profile["weights"]:
+            return {
+                "scope": "threshold_only",
+                "applied": False,
+                "base_weights": dict(base_profile.get("weights", {})),
+                "weights": dict(base_profile.get("weights", {})),
+                "weight_deltas": {},
+                "weight_summary": "no-weight-fit",
+                "base_profile_parameters": base_profile_parameters,
+                "profile_parameters": base_profile_parameters,
+                "parameter_deltas": {},
+                "parameter_summary": "no-parameter-fit",
+                "indicator_discrimination": {},
+                "base_metrics": base_metrics,
+                "metrics": base_metrics,
+                "scores_by_id": base_scores_by_id,
+            }
+
+        best_fit = {
+            "profile": dict(base_profile),
+            "weights": dict(base_profile["weights"]),
+            "weight_deltas": {
+                key: 0.0 for key in base_profile["weights"].keys()
+            },
+            "weight_summary": "no-material-weight-change",
+            "indicator_discrimination": {
+                key: self._indicator_discrimination(rows, key, base_profile)
+                for key in base_profile["weights"].keys()
+                if any(
+                    self._calibration_row_indicator(row, key, base_profile) is not None
+                    for row in rows
+                )
+            },
+            "metrics": dict(base_metrics),
+            "scores_by_id": dict(base_scores_by_id),
+            "weight_applied": False,
+        }
+        for index, candidate_profile in enumerate(
+            self._parameter_candidate_profiles(rows, base_profile)
+        ):
+            candidate_fit = self._fit_profile_weight_candidates(
+                rows,
+                candidate_profile,
+                random_seed=random_seed + index,
+            )
+            if self._metrics_better(candidate_fit["metrics"], best_fit["metrics"]):
+                best_fit = candidate_fit
+
+        applied = self._metrics_better(best_fit["metrics"], base_metrics)
+        if applied:
+            final_profile = dict(best_fit["profile"])
+            final_weights = dict(best_fit["weights"])
+            final_metrics = dict(best_fit["metrics"])
+            final_scores_by_id = dict(best_fit["scores_by_id"])
+            final_weight_deltas = dict(best_fit["weight_deltas"])
+            final_weight_summary = best_fit["weight_summary"]
+            indicator_discrimination = dict(best_fit["indicator_discrimination"])
+            weight_applied = bool(best_fit.get("weight_applied"))
+        else:
+            final_profile = dict(base_profile)
+            final_weights = dict(base_profile["weights"])
+            final_metrics = dict(base_metrics)
+            final_scores_by_id = dict(base_scores_by_id)
+            final_weight_deltas = {
+                key: 0.0 for key in final_weights.keys()
+            }
+            final_weight_summary = "no-material-weight-change"
+            indicator_discrimination = dict(best_fit["indicator_discrimination"])
+            weight_applied = False
+        final_profile["weights"] = dict(final_weights)
+
+        final_profile_parameters = self._calibration_profile_parameters(final_profile)
+        parameter_deltas = {
+            key: final_profile_parameters.get(key, 0.0) - base_profile_parameters.get(key, 0.0)
+            for key in base_profile_parameters.keys()
+        }
+        changed_parameters = sorted(
+            (
+                (abs(delta), key, delta)
+                for key, delta in parameter_deltas.items()
+                if abs(delta) >= 0.01
+            ),
+            reverse=True,
+        )
+        if changed_parameters:
+            parameter_summary = ", ".join(
+                f"{key}:{delta:+.3f}"
+                for _abs_delta, key, delta in changed_parameters[:4]
+            )
+        else:
+            parameter_summary = "no-material-parameter-change"
+
+        parameter_applied = any(abs(delta) > 1e-6 for delta in parameter_deltas.values())
+        if applied and parameter_applied and weight_applied:
+            scope = "local_profile_tuning+reweighting"
+        elif applied and parameter_applied:
+            scope = "local_profile_tuning"
+        elif applied and weight_applied:
+            scope = "local_weight_reweighting"
+        else:
+            scope = "threshold_only"
+
+        return {
+            "scope": scope,
+            "applied": applied,
+            "base_weights": dict(base_profile["weights"]),
+            "weights": final_weights,
+            "weight_deltas": final_weight_deltas,
+            "weight_summary": final_weight_summary,
+            "base_profile_parameters": base_profile_parameters,
+            "profile_parameters": final_profile_parameters,
+            "parameter_deltas": parameter_deltas,
+            "parameter_summary": parameter_summary,
+            "indicator_discrimination": indicator_discrimination,
+            "base_metrics": base_metrics,
+            "metrics": final_metrics,
+            "scores_by_id": final_scores_by_id,
+        }
+
     def _score_points(
-        self, site_layer, dem_layer, water_layer, hemisphere, profile_key, context
+        self,
+        site_layer,
+        dem_layer,
+        water_layer,
+        hemisphere,
+        profile_key,
+        context,
+        profile=None,
     ):
         slope_field = self._find_field(site_layer, "sl_")
         aspect_field = self._find_field(site_layer, "as_")
@@ -467,8 +1149,12 @@ class FengShuiAnalyzer:
 
         dem_provider = dem_layer.dataProvider()
         dem_step = self._dem_step(dem_layer)
-        profile = self._profile_spec(profile_key)
-        profile = self._contextualize_profile(profile, context)
+        if profile is None:
+            profile = self._contextualize_profile(
+                self._profile_spec(profile_key),
+                context,
+                profile_key,
+            )
 
         with edit(site_layer):
             for feature in site_layer.getFeatures():
@@ -589,22 +1275,142 @@ class FengShuiAnalyzer:
         return spatial_index, transformed_geoms
 
     @staticmethod
-    def _contextualize_profile(profile, context):
+    def _contextualize_profile(profile, context, profile_key="profile"):
+        paper_evidence = profile.get("paper_evidence", {})
+        if not isinstance(paper_evidence, dict):
+            paper_evidence = {}
+
+        def _to_float_entry(value, context_path):
+            if value is None:
+                raise ValueError(f"{context_path} is required.")
+            if isinstance(value, dict):
+                raw_value = value.get("value", value)
+                if raw_value is None:
+                    raise ValueError(f"{context_path}.value is required.")
+                sources = value.get("source_doi", [])
+                evidence_level = str(value.get("evidence_level", "U")).strip().upper()
+                note = str(value.get("note", "")).strip()
+            else:
+                raw_value = value
+                sources = []
+                evidence_level = "U"
+                note = ""
+
+            if not isinstance(sources, list):
+                sources = [sources]
+            normalized_sources = []
+            for source in sources:
+                source_text = str(source or "").strip()
+                if source_text:
+                    normalized_sources.append(source_text)
+
+            try:
+                return float(raw_value), {
+                    "source_doi": normalized_sources,
+                    "evidence_level": evidence_level if evidence_level else "U",
+                    "note": note,
+                }
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{context_path} must be numeric.") from exc
+
         adjusted = {
             "weights": dict(profile["weights"]),
+            "term_bias": {},
             "slope_target": profile["slope_target"],
             "slope_sigma": profile["slope_sigma"],
             "tpi_target": profile["tpi_target"],
             "tpi_sigma": profile["tpi_sigma"],
         }
+        paper_records = []
+
         for key, delta in context.get("weight_bias", {}).items():
-            adjusted["weights"][key] = max(0.0, adjusted["weights"].get(key, 0.0) + delta)
+            adjusted["weights"][key] = max(
+                0.0, adjusted["weights"].get(key, 0.0) + float(delta)
+            )
+
+        evidence_weight_bias = paper_evidence.get("weight_bias", {})
+        if not isinstance(evidence_weight_bias, dict):
+            evidence_weight_bias = {}
+        for key, entry in evidence_weight_bias.items():
+            try:
+                delta, meta = _to_float_entry(
+                    entry,
+                    f"profiles.{profile_key}.paper_evidence.weight_bias.{key}",
+                )
+            except ValueError:
+                continue
+            adjusted["weights"][key] = max(
+                0.0, adjusted["weights"].get(key, 0.0) + delta
+            )
+            paper_records.append(
+                {
+                    "group": "weight_bias",
+                    "name": key,
+                    "value": delta,
+                    "source_doi": meta.get("source_doi", []),
+                    "evidence_level": meta.get("evidence_level", "U"),
+                    "note": meta.get("note", ""),
+                }
+            )
+
+        evidence_term_bias = paper_evidence.get("term_bias", {})
+        if not isinstance(evidence_term_bias, dict):
+            evidence_term_bias = {}
+        for key, entry in evidence_term_bias.items():
+            try:
+                delta, meta = _to_float_entry(
+                    entry,
+                    f"profiles.{profile_key}.paper_evidence.term_bias.{key}",
+                )
+            except ValueError:
+                continue
+            adjusted["term_bias"][key] = delta
+            paper_records.append(
+                {
+                    "group": "term_bias",
+                    "name": key,
+                    "value": delta,
+                    "source_doi": meta.get("source_doi", []),
+                    "evidence_level": meta.get("evidence_level", "U"),
+                    "note": meta.get("note", ""),
+                }
+            )
+
+        target_override = paper_evidence.get("target_overrides", {})
+        if not isinstance(target_override, dict):
+            target_override = {}
+        for key in ("slope_target", "slope_sigma", "tpi_target", "tpi_sigma"):
+            if key not in target_override and key in paper_evidence:
+                target_override[key] = paper_evidence[key]
+            entry = target_override.get(key)
+            if entry is None:
+                continue
+            try:
+                value, meta = _to_float_entry(
+                    entry, f"profiles.{profile_key}.paper_evidence.{key}"
+                )
+            except ValueError:
+                continue
+            adjusted[key] = value
+            paper_records.append(
+                {
+                    "group": "target",
+                    "name": key,
+                    "value": value,
+                    "source_doi": meta.get("source_doi", []),
+                    "evidence_level": meta.get("evidence_level", "U"),
+                    "note": meta.get("note", ""),
+                }
+            )
 
         total = sum(adjusted["weights"].values())
         if total > 0:
             adjusted["weights"] = {
                 key: value / total for key, value in adjusted["weights"].items()
             }
+
+        if paper_records:
+            adjusted["paper_evidence_records"] = paper_records
         return adjusted
 
     @staticmethod
@@ -622,6 +1428,109 @@ class FengShuiAnalyzer:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _metadata_text(value):
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    def _metadata_field_name(self, layer, candidates):
+        if layer is None:
+            return None
+        exact_map = {}
+        field_names = []
+        for field in layer.fields():
+            name = field.name()
+            lower_name = name.lower()
+            exact_map[lower_name] = name
+            field_names.append((name, lower_name))
+        for candidate in candidates:
+            if candidate in exact_map:
+                return exact_map[candidate]
+        for candidate in candidates:
+            for name, lower_name in field_names:
+                if candidate in lower_name:
+                    return name
+        return None
+
+    def _metadata_grouping(self, layer, kind, candidates, limit=8):
+        field_name = self._metadata_field_name(layer, candidates)
+        if not field_name:
+            return None
+        counts = defaultdict(int)
+        for feature in layer.getFeatures():
+            value_text = self._metadata_text(feature[field_name])
+            counts[value_text if value_text else "(empty)"] += 1
+        if not counts:
+            return None
+        total = sum(counts.values())
+        rows = []
+        for value, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:limit]:
+            rows.append(
+                {
+                    "value": value,
+                    "count": count,
+                    "share": (count / total) if total > 0 else 0.0,
+                }
+            )
+        return {
+            "kind": kind,
+            "field": field_name,
+            "distinct_count": len(counts),
+            "rows": rows,
+        }
+
+    def _summarize_site_metadata(self, layer):
+        summary = {
+            "layer_name": layer.name() if layer is not None else "",
+            "groupings": [],
+        }
+        if layer is None:
+            return summary
+        grouping_specs = (
+            (
+                "site_group",
+                (
+                    "site_group",
+                    "site_type",
+                    "siteclass",
+                    "site_class",
+                    "category",
+                    "class",
+                    "type",
+                    "cluster",
+                    "group",
+                ),
+            ),
+            (
+                "country",
+                (
+                    "country",
+                    "nation",
+                    "state",
+                    "region",
+                    "culture",
+                    "tradition",
+                ),
+            ),
+            (
+                "period",
+                (
+                    "period",
+                    "era",
+                    "phase",
+                    "chronology",
+                    "date_period",
+                    "age",
+                ),
+            ),
+        )
+        for kind, candidates in grouping_specs:
+            grouping = self._metadata_grouping(layer, kind, candidates)
+            if grouping is not None:
+                summary["groupings"].append(grouping)
+        return summary
 
     def _build_transform(self, source_crs, target_crs):
         if source_crs is None or target_crs is None:
@@ -1537,7 +2446,15 @@ class FengShuiAnalyzer:
         return selected
 
     def _build_term_layer(
-        self, dem_layer, provider, hemisphere, dem_step, selected, context, profile_key
+        self,
+        dem_layer,
+        provider,
+        hemisphere,
+        dem_step,
+        selected,
+        context,
+        profile_key,
+        profile=None,
     ):
         layer_name = f"{dem_layer.name()}_fengshui_terms"
         term_layer = QgsVectorLayer(
@@ -1589,7 +2506,14 @@ class FengShuiAnalyzer:
         )
         culture_id = context["culture_key"]
         period_id = context["period_key"]
-        term_bias = context.get("term_bias", {})
+        term_bias = dict(context.get("term_bias", {}))
+        if not isinstance(profile, dict):
+            profile = {}
+        profile_term_bias = profile.get("term_bias", {})
+        if not isinstance(profile_term_bias, dict):
+            profile_term_bias = {}
+        for term_id, delta in profile_term_bias.items():
+            term_bias[term_id] = term_bias.get(term_id, 0.0) + delta
         term_target_shift = float(context["term_target_shift"])
         hyeol_rules = self._rules_section("hyeol_selection")
         min_score_floor = self._rule_float(
@@ -3982,6 +4906,8 @@ class FengShuiAnalyzer:
             "water": "수계",
             "conv": "수렴습윤",
             "tpi": "TPI",
+            "sashinsa": "사신사",
+            "enclosure": "장풍",
         }
         return labels.get(key, key)
 
@@ -4080,6 +5006,7 @@ class FengShuiAnalyzer:
             f"컨텍스트={context.get('culture_key')}/{context.get('period_key')}, "
             f"모델={profile_key}"
         )
+        paper_evidence_summary = self._paper_evidence_summary(profile)
         parts = [
             f"적합도 {score_text} ({grade}, {percent_text}/100 환산)",
             f"상위기여: {top_text}" if top_text else "상위기여: n/a",
@@ -4088,11 +5015,46 @@ class FengShuiAnalyzer:
             f"세부지표: {metric_text}",
             context_text,
             f"가중요약: {note}" if note else "",
+            f"논문근거: {paper_evidence_summary}" if paper_evidence_summary else "",
         ]
         reason = " | ".join(part for part in parts if part)
         if len(reason) > 1000:
             return f"{reason[:997]}..."
         return reason
+
+    @classmethod
+    def _paper_evidence_summary(cls, profile):
+        records = profile.get("paper_evidence_records") if isinstance(profile, dict) else None
+        if not isinstance(records, list) or not records:
+            return ""
+
+        summary_keys = []
+        sources = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            group = str(record.get("group", "")).strip()
+            name = str(record.get("name", "")).strip()
+            value = record.get("value")
+            level = str(record.get("evidence_level", "U")).strip().upper() or "U"
+            if group and name:
+                if isinstance(value, (int, float)):
+                    summary_keys.append(f"{group}.{name}={value:+.2f}({level})")
+                else:
+                    summary_keys.append(f"{group}.{name}({level})")
+            for source in record.get("source_doi", []):
+                if source and source not in sources:
+                    sources.append(source)
+
+        if not sources:
+            return ""
+
+        refs = reference_display_text(sources, language="ko", limit=3)
+        if not refs:
+            return ""
+
+        selected = ", ".join(summary_keys[:3]) if summary_keys else "profile-paper-evidence"
+        return f"{selected} | {refs}"
 
     @staticmethod
     def _explain_top_factors(indicators, profile):
