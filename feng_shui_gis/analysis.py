@@ -265,8 +265,8 @@ class FengShuiAnalyzer:
         metrics = self._binary_classification_metrics(labels, scores)
         context = build_context(culture_key, period_key, hemisphere)
         report = {
-            "culture_key": culture_key,
-            "period_key": period_key,
+            "culture_key": context["culture_key"],
+            "period_key": context["period_key"],
             "profile_key": profile_key,
             "hemisphere": hemisphere,
             "negative_ratio": negative_ratio,
@@ -438,6 +438,16 @@ class FengShuiAnalyzer:
             to_add.append(QgsField("fs_water", QVariant.Double, "double", 6, 3))
         if layer.fields().indexFromName("fs_score") < 0:
             to_add.append(QgsField("fs_score", QVariant.Double, "double", 7, 3))
+        if layer.fields().indexFromName("fs_sashinsa") < 0:
+            to_add.append(QgsField("fs_sashinsa", QVariant.Double, "double", 6, 3))
+        if layer.fields().indexFromName("fs_enclosure") < 0:
+            to_add.append(QgsField("fs_enclosure", QVariant.Double, "double", 6, 3))
+        if layer.fields().indexFromName("fs_tpi_lg") < 0:
+            to_add.append(QgsField("fs_tpi_lg", QVariant.Double, "double", 7, 4))
+        if layer.fields().indexFromName("fs_roughness") < 0:
+            to_add.append(QgsField("fs_roughness", QVariant.Double, "double", 6, 3))
+        if layer.fields().indexFromName("fs_cut_depth") < 0:
+            to_add.append(QgsField("fs_cut_depth", QVariant.Double, "double", 6, 3))
 
         if to_add:
             layer.dataProvider().addAttributes(to_add)
@@ -494,13 +504,15 @@ class FengShuiAnalyzer:
                 )
 
                 indicators = {
-                    "slope": self._score_profile_slope(slope_value, profile),
-                    "aspect": self._score_aspect(aspect_value, hemisphere, context=context),
-                    "form": dem_metrics["form_score"],
-                    "long": dem_metrics["long_score"],
-                    "water": water_score,
-                    "conv": dem_metrics["convergence"],
-                    "tpi": self._score_profile_tpi(dem_metrics["tpi_norm"], profile),
+                    "slope":     self._score_profile_slope(slope_value, profile),
+                    "aspect":    self._score_aspect(aspect_value, hemisphere, context=context),
+                    "form":      dem_metrics["form_score"],
+                    "long":      dem_metrics["long_score"],
+                    "water":     water_score,
+                    "conv":      dem_metrics["convergence"],
+                    "tpi":       self._score_profile_tpi(dem_metrics["tpi_norm"], profile),
+                    "sashinsa":  dem_metrics.get("sashinsa_score"),
+                    "enclosure": dem_metrics.get("enclosure_index"),
                 }
 
                 total_score = self._profile_weighted_score(indicators, profile)
@@ -535,6 +547,11 @@ class FengShuiAnalyzer:
                 feature["fs_conv"] = dem_metrics["convergence"]
                 feature["fs_water"] = indicators["water"]
                 feature["fs_score"] = total_score
+                feature["fs_sashinsa"]  = dem_metrics.get("sashinsa_score")
+                feature["fs_enclosure"] = dem_metrics.get("enclosure_index")
+                feature["fs_tpi_lg"]    = dem_metrics.get("large_tpi_norm")
+                feature["fs_roughness"] = dem_metrics.get("roughness")
+                feature["fs_cut_depth"] = dem_metrics.get("cut_depth")
                 site_layer.updateFeature(feature)
 
     @classmethod
@@ -566,7 +583,7 @@ class FengShuiAnalyzer:
             transformed_geoms[feature_id] = transformed
         if not indexed_features:
             return None, None
-        spatial_index = QgsSpatialIndex()
+        spatial_index = QgsSpatialIndex(QgsSpatialIndex.FlagStoreFeatureGeometries)
         for indexed_feature in indexed_features:
             spatial_index.addFeature(indexed_feature)
         return spatial_index, transformed_geoms
@@ -691,44 +708,98 @@ class FengShuiAnalyzer:
         provider = dem_layer.dataProvider()
         extent = dem_layer.extent()
         dem_step = self._dem_step(dem_layer)
+        calibration_rules = self._rules_section("calibration")
         min_distance = max(
             dem_step * 20.0,
             min(extent.width(), extent.height()) / 240.0,
         )
         min_distance_sq = min_distance * min_distance
         min_negative_separation_sq = (min_distance * 0.40) ** 2
+        local_padding_factor = self._rule_float(
+            calibration_rules,
+            "local_bbox_padding_factor",
+            1.25,
+            min_value=0.0,
+        )
+        local_padding_cells = self._rule_float(
+            calibration_rules,
+            "local_bbox_min_padding_cells",
+            24.0,
+            min_value=1.0,
+        )
+        trial_multiplier = self._rule_int(
+            calibration_rules,
+            "trial_multiplier",
+            120,
+            min_value=10,
+        )
         rng = random.Random(random_seed)
         points = []
-        trial_cap = max(target_count * 120, 3000)
-        trial = 0
+        trial_cap = max(target_count * trial_multiplier, 3000)
 
-        while len(points) < target_count and trial < trial_cap:
-            trial += 1
-            x = rng.uniform(extent.xMinimum(), extent.xMaximum())
-            y = rng.uniform(extent.yMinimum(), extent.yMaximum())
-            point = QgsPointXY(x, y)
-            if self._sample_dem(provider, point) is None:
-                continue
+        x_values = [point.x() for point in positive_points]
+        y_values = [point.y() for point in positive_points]
+        span_x = max(x_values) - min(x_values)
+        span_y = max(y_values) - min(y_values)
+        local_padding = max(
+            min_distance,
+            dem_step * local_padding_cells,
+            max(span_x, span_y) * local_padding_factor,
+        )
+        local_window = (
+            max(extent.xMinimum(), min(x_values) - local_padding),
+            min(extent.xMaximum(), max(x_values) + local_padding),
+            max(extent.yMinimum(), min(y_values) - local_padding),
+            min(extent.yMaximum(), max(y_values) + local_padding),
+        )
+        dem_window = (
+            extent.xMinimum(),
+            extent.xMaximum(),
+            extent.yMinimum(),
+            extent.yMaximum(),
+        )
+        search_windows = [local_window]
+        if local_window != dem_window:
+            search_windows.append(dem_window)
 
-            reject = False
-            for positive in positive_points:
-                dx = x - positive.x()
-                dy = y - positive.y()
-                if (dx * dx) + (dy * dy) < min_distance_sq:
-                    reject = True
-                    break
-            if reject:
-                continue
+        def sample_from_window(window, max_trials):
+            trial = 0
+            x_min, x_max, y_min, y_max = window
+            if x_max <= x_min or y_max <= y_min:
+                return
 
-            for negative in points[-200:]:
-                dx = x - negative.x()
-                dy = y - negative.y()
-                if (dx * dx) + (dy * dy) < min_negative_separation_sq:
-                    reject = True
-                    break
-            if reject:
-                continue
-            points.append(point)
+            while len(points) < target_count and trial < max_trials:
+                trial += 1
+                x = rng.uniform(x_min, x_max)
+                y = rng.uniform(y_min, y_max)
+                point = QgsPointXY(x, y)
+                if self._sample_dem(provider, point) is None:
+                    continue
+
+                reject = False
+                for positive in positive_points:
+                    dx = x - positive.x()
+                    dy = y - positive.y()
+                    if (dx * dx) + (dy * dy) < min_distance_sq:
+                        reject = True
+                        break
+                if reject:
+                    continue
+
+                for negative in points[-200:]:
+                    dx = x - negative.x()
+                    dy = y - negative.y()
+                    if (dx * dx) + (dy * dy) < min_negative_separation_sq:
+                        reject = True
+                        break
+                if reject:
+                    continue
+                points.append(point)
+
+        for window in search_windows:
+            sample_from_window(window, trial_cap)
+            if len(points) >= target_count:
+                break
         return points
 
     @staticmethod
@@ -792,7 +863,10 @@ class FengShuiAnalyzer:
         ):
             return None
 
-        candidate_ids = water_index.nearestNeighbor(site_point, 12)
+        try:
+            candidate_ids = water_index.nearestNeighbor(site_geom, 12)
+        except TypeError:
+            candidate_ids = water_index.nearestNeighbor(site_point, 12)
         if not candidate_ids:
             return None
 
@@ -871,6 +945,11 @@ class FengShuiAnalyzer:
             "dem_water_score": None,
             "tpi_norm": None,
             "convergence": None,
+            "sashinsa_score": None,
+            "enclosure_index": None,
+            "large_tpi_norm": None,
+            "roughness": None,
+            "cut_depth": None,
         }
         if site_point is None:
             return null_metrics
@@ -985,12 +1064,93 @@ class FengShuiAnalyzer:
                 0.0, min(1.0, wetness_shape * (0.6 + 0.4 * slope_factor))
             )
 
+        # ── 사신사(四神砂) 포위도 ──────────────────────────────────────
+        # 참고: Um 2012 IntechOpen (한국 묘지 공간회귀);
+        #       ISPRS IJGI 10(11):752 2021 Nanjing (砂→surface_peaks);
+        #       Buildings 15(5):800 2025 Jimei (viewshed 사신사)
+        sashinsa_score = None
+        if (
+            back_mean is not None
+            and front_mean is not None
+            and left_mean is not None
+            and right_mean is not None
+            and relief is not None
+            and relief > 0
+        ):
+            try:
+                ss_rules = self._rules_section("sashinsa")
+                back_tgt  = float(ss_rules.get("back_target_ratio", 0.12))
+                back_sig  = max(0.01, float(ss_rules.get("back_sigma", 0.18)))
+                front_tgt = float(ss_rules.get("front_target_ratio", -0.10))
+                front_sig = max(0.01, float(ss_rules.get("front_sigma", 0.18)))
+                side_tgt  = float(ss_rules.get("side_target_ratio", 0.06))
+                side_sig  = max(0.01, float(ss_rules.get("side_sigma", 0.15)))
+                ss_scores = [
+                    self._score_gaussian((back_mean  - center) / relief, back_tgt,  back_sig),
+                    self._score_gaussian((front_mean - center) / relief, front_tgt, front_sig),
+                    self._score_gaussian((left_mean  - center) / relief, side_tgt,  side_sig),
+                    self._score_gaussian((right_mean - center) / relief, side_tgt,  side_sig),
+                ]
+                valid_ss = [s for s in ss_scores if s is not None]
+                if valid_ss:
+                    prod = 1.0
+                    for s in valid_ss:
+                        prod *= max(1e-9, s)
+                    sashinsa_score = prod ** (1.0 / len(valid_ss))
+            except RuntimeError:
+                pass
+
+        # ── 장풍(藏風) 포위도 지수 ────────────────────────────────────
+        # 참고: Guan et al. 2024 Springer (하카마을 AHP-GIS 장풍득수);
+        #       ISPRS IJGI 10(11):752 2021 (surface roughness → 龍 지표)
+        enclosure_index = None
+        if macro_values:
+            try:
+                enc_rules = self._rules_section("enclosure")
+                enc_tgt   = float(enc_rules.get("target_ratio", 0.62))
+                enc_sig   = max(0.01, float(enc_rules.get("sigma", 0.22)))
+                higher    = sum(1 for v in macro_values if v > center)
+                enc_ratio = higher / len(macro_values)
+                enclosure_index = self._score_gaussian(enc_ratio, enc_tgt, enc_sig)
+            except RuntimeError:
+                pass
+
+        # ── 대규모 TPI (이중 스케일) ───────────────────────────────────
+        # 참고: Um 2012 IntechOpen (Palgong Mountain 국지·광역 지형 위치);
+        #       Lee & Kim 2021 PLOS ONE e0259651 (한반도 이중-TPI 지형 분류);
+        #       Weiss 2001 ESRI (TPI 원본 방법론)
+        large_tpi_norm = self._compute_large_tpi_value(
+            provider=provider,
+            site_point=site_point,
+            center=center,
+            macro_radius=macro_radius,
+            relief=relief,
+        )
+
+        # ── 표면 조도 (Surface Roughness) ─────────────────────────────
+        # 참고: ISPRS IJGI 10(11):752 2021 Nanjing (표면조도 → 龍 판별 인자)
+        roughness = None
+        if std_macro is not None and relief is not None and relief > 0:
+            roughness = min(1.0, std_macro / relief)
+
+        # ── 지형 절개깊이 (Surface Cutting Depth) ────────────────────
+        # 참고: ISPRS IJGI 10(11):752 2021 Nanjing (절개깊이 → 砂 판별 인자)
+        cut_depth = None
+        if macro_values and relief is not None and relief > 0:
+            max_macro_val = max(macro_values)
+            cut_depth = max(0.0, min(2.0, (max_macro_val - center) / relief))
+
         return {
             "form_score": form_score,
             "long_score": long_score,
             "dem_water_score": dem_water_score,
             "tpi_norm": tpi_norm,
             "convergence": convergence,
+            "sashinsa_score": sashinsa_score,
+            "enclosure_index": enclosure_index,
+            "large_tpi_norm": large_tpi_norm,
+            "roughness": roughness,
+            "cut_depth": cut_depth,
         }
 
     @staticmethod
@@ -1130,6 +1290,9 @@ class FengShuiAnalyzer:
         center_elev,
         threshold,
         water_distance=None,
+        sashinsa_score=None,
+        enclosure_index=None,
+        large_tpi_norm=None,
     ):
         gap_text = "판정 불가"
         if base_score is not None:
@@ -1139,6 +1302,7 @@ class FengShuiAnalyzer:
             else:
                 gap_text = f"기준치보다 {gap:.3f} 낮음"
 
+        tpi_class = self._tpi_class_label(tpi_norm, large_tpi_norm)
         return (
             f"혈 후보 #{rank}/{selected_total}. 한 줄 해석: {gap_text}입니다. "
             f"형국 {self._fmt_num(form_score, 3)}({self._score_band_label(form_score)}), "
@@ -1146,6 +1310,9 @@ class FengShuiAnalyzer:
             f"수렴습윤 {self._fmt_num(wet_score, 3)}({self._score_band_label(wet_score)}), "
             f"수렴도 {self._fmt_num(conv_score, 3)}({self._score_band_label(conv_score)}), "
             f"TPI {self._fmt_num(tpi_norm, 4)}({self._tpi_hint(tpi_norm)}), "
+            f"사신사 {self._fmt_num(sashinsa_score, 3)}({self._sashinsa_hint(sashinsa_score)}), "
+            f"장풍 {self._fmt_num(enclosure_index, 3)}({self._enclosure_hint(enclosure_index)}), "
+            f"대TPI {self._fmt_num(large_tpi_norm, 4)}({tpi_class}), "
             f"주변 기복 {self._fmt_num(relief, 1)}m, 중심 고도 {self._fmt_num(center_elev, 2)}m. "
             f"[세부수치] 점수={self._fmt_num(base_score, 3)}, 기준치>={threshold:.3f}."
         )
@@ -1321,13 +1488,15 @@ class FengShuiAnalyzer:
             )
 
             hyeol_indicators = {
-                "slope": self._score_profile_slope(slope_value, profile),
-                "aspect": self._score_aspect(aspect_value, hemisphere, context=context),
-                "form": metrics["form_score"],
-                "long": metrics["long_score"],
-                "water": water_score,
-                "conv": metrics["convergence"],
-                "tpi": self._score_profile_tpi(tpi_norm, profile),
+                "slope":     self._score_profile_slope(slope_value, profile),
+                "aspect":    self._score_aspect(aspect_value, hemisphere, context=context),
+                "form":      metrics["form_score"],
+                "long":      metrics["long_score"],
+                "water":     water_score,
+                "conv":      metrics["convergence"],
+                "tpi":       self._score_profile_tpi(tpi_norm, profile),
+                "sashinsa":  metrics.get("sashinsa_score"),
+                "enclosure": metrics.get("enclosure_index"),
             }
             hyeol_score = self._profile_weighted_score(hyeol_indicators, profile)
             if hyeol_score is None or hyeol_score < context["hyeol_threshold"]:
@@ -1546,6 +1715,9 @@ class FengShuiAnalyzer:
                 center_elev=center_elev,
                 threshold=context["hyeol_threshold"],
                 water_distance=water_distance,
+                sashinsa_score=metrics.get("sashinsa_score"),
+                enclosure_index=metrics.get("enclosure_index"),
+                large_tpi_norm=metrics.get("large_tpi_norm"),
             )
             add_term(
                 term_id="hyeol",
@@ -3885,13 +4057,24 @@ class FengShuiAnalyzer:
         target_text = self._fmt_num(context.get("water_distance_target"), 1)
         sigma_text = self._fmt_num(context.get("water_distance_sigma"), 1)
 
+        tpi_class = self._tpi_class_label(
+            dem_metrics.get("tpi_norm"),
+            dem_metrics.get("large_tpi_norm"),
+        )
         metric_text = (
             f"형국 {self._fmt_num(dem_metrics.get('form_score'), 3)}, "
             f"종심 {self._fmt_num(dem_metrics.get('long_score'), 3)}, "
             f"수렴습윤 {self._fmt_num(dem_metrics.get('dem_water_score'), 3)}, "
             f"수렴도 {self._fmt_num(dem_metrics.get('convergence'), 3)}, "
             f"TPI {self._fmt_num(dem_metrics.get('tpi_norm'), 4)}"
-            f"({self._tpi_hint(dem_metrics.get('tpi_norm'))})"
+            f"({self._tpi_hint(dem_metrics.get('tpi_norm'))}), "
+            f"사신사 {self._fmt_num(dem_metrics.get('sashinsa_score'), 3)}"
+            f"({self._sashinsa_hint(dem_metrics.get('sashinsa_score'))}), "
+            f"장풍 {self._fmt_num(dem_metrics.get('enclosure_index'), 3)}"
+            f"({self._enclosure_hint(dem_metrics.get('enclosure_index'))}), "
+            f"대TPI {self._fmt_num(dem_metrics.get('large_tpi_norm'), 4)}({tpi_class}), "
+            f"표면조도 {self._fmt_num(dem_metrics.get('roughness'), 3)}, "
+            f"절개깊이 {self._fmt_num(dem_metrics.get('cut_depth'), 3)}"
         )
         context_text = (
             f"컨텍스트={context.get('culture_key')}/{context.get('period_key')}, "
@@ -3924,3 +4107,136 @@ class FengShuiAnalyzer:
         weighted.sort(reverse=True)
         top = weighted[:2]
         return ",".join(f"{key}:{score:.2f}" for _, key, score in top)
+
+    def _compute_large_tpi_value(
+        self,
+        provider,
+        site_point,
+        center,
+        macro_radius,
+        relief=None,
+    ):
+        """대규모 TPI(Topographic Position Index) - 광역 지형 위치 지수.
+
+        참고문헌:
+        • Um, J.-S. (2012). "Feng-Shui Theory and Practice Investigated by
+          Spatial Regression Modeling." In Application of Geographic Information
+          Systems. IntechOpen. doi:10.5772/51071
+          → 팔공산 일대 한국 묘지 분포: 국지(소규모) + 광역(대규모) 이중 지형 위치 분석.
+        • Lee, S. & Kim, J. (2021). "Hierarchical Landform Delineation for the
+          Habitats of Biological Communities on the Korean Peninsula."
+          PLOS ONE 16(10):e0259651. doi:10.1371/journal.pone.0259651
+          → 이중-스케일 TPI: 소규모(능선/계곡) + 대규모(산지/평지) 조합 지형 분류.
+        • Weiss, A.D. (2001). Topographic Position and Landforms Analysis.
+          ESRI International User Conference, San Diego.
+          → TPI 원본 방법론 및 이중 스케일 지형 분류표.
+
+        소규모 TPI(fs_tpi): macro_radius 기준 (이미 계산됨)
+        대규모 TPI(fs_tpi_lg): macro_radius × radius_multiplier 기준
+        두 스케일 조합으로 풍수 혈의 계층적 지형 위치 파악 가능.
+        """
+        if site_point is None or center is None:
+            return None
+        try:
+            large_rules = self._rules_section("large_tpi")
+        except RuntimeError:
+            return None
+        multiplier = max(1.1, float(large_rules.get("radius_multiplier", 3.0)))
+        n_samples  = max(8, int(large_rules.get("num_samples", 16)))
+        large_radius = macro_radius * multiplier
+        step = 360.0 / n_samples
+        values = []
+        for idx in range(n_samples):
+            pt = self._offset_point(site_point, large_radius, idx * step)
+            v = self._sample_dem(provider, pt)
+            if v is not None:
+                values.append(v)
+        if not values:
+            return None
+        mean_large = sum(values) / len(values)
+        tpi_large  = center - mean_large
+        denom = relief if (relief is not None and relief > 0) else max(1.0, abs(tpi_large))
+        return tpi_large / denom
+
+    @staticmethod
+    def _tpi_class_label(tpi_small, tpi_large=None):
+        """이중-스케일 TPI 기반 지형 분류 레이블.
+
+        참고문헌:
+        • Lee & Kim (2021). PLOS ONE 16(10):e0259651.
+          → 한반도 TPI 이중 스케일 지형 분류 (Zimmermann 방법론 적용).
+        • Weiss (2001). ESRI User Conference. (원본 TPI 분류표)
+
+        소규모 TPI (능선·사면·계곡):
+          > +0.1  → 능선(Ridge)
+          -0.1~+0.1 → 중간 사면(Mid-slope)
+          < -0.1  → 계곡(Valley)
+
+        이중-스케일 조합 (한반도 풍수 지형 분류):
+          대형양(+) + 소형양(+) → 산릉(山陵)  ← 주산/현무 가장 적합
+          대형양(+) + 소형중(-) → 중산복(中山腹)
+          대형중(0) + 소형중(0) → 평탄지 ← 명당(明堂) 적합
+          대형음(-) + 소형음(-) → 평지 저습지
+        """
+        if tpi_small is None:
+            return "지형정보 없음"
+        if tpi_large is None:
+            if tpi_small > 0.10:
+                return "능선(능)"
+            if tpi_small < -0.10:
+                return "계곡(곡)"
+            return "중간 사면"
+        # Dual-scale
+        if tpi_large > 0.10:
+            if tpi_small > 0.10:
+                return "산릉(山陵)"
+            if tpi_small < -0.10:
+                return "산지 계곡"
+            return "중산복(中山腹)"
+        if tpi_large < -0.10:
+            if tpi_small > 0.10:
+                return "평야 구릉"
+            if tpi_small < -0.10:
+                return "평지 저습지"
+            return "평원 사면"
+        # large flat
+        if tpi_small > 0.10:
+            return "대지 능선"
+        if tpi_small < -0.10:
+            return "대지 계곡"
+        return "평탄지(平)"
+
+    @staticmethod
+    def _sashinsa_hint(sashinsa_score):
+        """사신사 포위도 점수 설명 레이블.
+
+        참고문헌:
+        • Um (2012), ISPRS IJGI 2021, Buildings 2025 - 사신사 포위도 기준.
+        """
+        if sashinsa_score is None:
+            return "사신사 정보 없음"
+        if sashinsa_score >= 0.75:
+            return "사신사 배치 우수"
+        if sashinsa_score >= 0.55:
+            return "사신사 배치 양호"
+        if sashinsa_score >= 0.35:
+            return "사신사 배치 보통"
+        return "사신사 배치 미흡"
+
+    @staticmethod
+    def _enclosure_hint(enclosure_index):
+        """장풍 포위도 지수 설명 레이블.
+
+        참고문헌:
+        • Guan et al. (2024) Springer (하카마을 장풍 조건);
+        • ISPRS IJGI 2021 Nanjing (표면조도 기반 포위도).
+        """
+        if enclosure_index is None:
+            return "장풍 정보 없음"
+        if enclosure_index >= 0.75:
+            return "장풍득수 조건 우수"
+        if enclosure_index >= 0.55:
+            return "장풍 양호"
+        if enclosure_index >= 0.35:
+            return "장풍 보통"
+        return "장풍 미흡(개방지형)"

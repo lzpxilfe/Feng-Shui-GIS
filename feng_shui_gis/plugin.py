@@ -18,7 +18,11 @@ from qgis.core import (
 )
 
 from .analysis import FengShuiAnalyzer
-from .cultural_context import context_evidence_records, neutral_context_key
+from .cultural_context import (
+    base_period_key,
+    context_evidence_records,
+    neutral_context_key,
+)
 from .dock_widget import FengShuiDockWidget
 from .locale import tr
 from .mountain_lookup import MountainNameService
@@ -187,8 +191,8 @@ class FengShuiGisPlugin:
             output_layer.setName(self._output_layer_name(site_layer.name(), "analysis", label_lang))
             mountain_updated = 0
             if mountain_enabled:
-                mountain_updated = self._enrich_layer_with_mountain_names(
-                    output_layer,
+                mountain_updated = self._enrich_layers_with_mountain_names(
+                    [output_layer],
                     radius_m=mountain_radius_m,
                     max_features=mountain_max_features,
                     preferred_language=mountain_lang,
@@ -308,13 +312,12 @@ class FengShuiGisPlugin:
             layers_top_to_bottom.append(ridge_layer)
             mountain_total = 0
             if mountain_enabled:
-                for target_layer in layers_top_to_bottom:
-                    mountain_total += self._enrich_layer_with_mountain_names(
-                        target_layer,
-                        radius_m=mountain_radius_m,
-                        max_features=mountain_max_features,
-                        preferred_language=mountain_lang,
-                    )
+                mountain_total = self._enrich_layers_with_mountain_names(
+                    layers_top_to_bottom,
+                    radius_m=mountain_radius_m,
+                    max_features=mountain_max_features,
+                    preferred_language=mountain_lang,
+                )
             self._insert_output_layers(layers_top_to_bottom, label_lang)
         except Exception as exc:  # pylint: disable=broad-except
             self.iface.messageBar().pushCritical(
@@ -380,7 +383,12 @@ class FengShuiGisPlugin:
         if not isinstance(calibration_culture, str) or not calibration_culture.strip():
             calibration_culture = "korea"
         calibration_culture = calibration_culture.strip().lower()
-        self._warn_low_evidence_context(calibration_culture, period_key, hemisphere)
+        calibration_period = self._resolved_calibration_period(period_key)
+        self._warn_low_evidence_context(
+            calibration_culture,
+            calibration_period,
+            hemisphere,
+        )
         if not self._require_projected_dem_crs(dem_layer):
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
@@ -420,7 +428,7 @@ class FengShuiGisPlugin:
                 hemisphere=hemisphere,
                 profile_key=profile_key,
                 culture_key=calibration_culture,
-                period_key=period_key,
+                period_key=calibration_period,
                 negative_ratio=negative_ratio,
                 random_seed=random_seed,
             )
@@ -429,8 +437,8 @@ class FengShuiGisPlugin:
             )
             mountain_updated = 0
             if mountain_enabled:
-                mountain_updated = self._enrich_layer_with_mountain_names(
-                    scored_layer,
+                mountain_updated = self._enrich_layers_with_mountain_names(
+                    [scored_layer],
                     radius_m=mountain_radius_m,
                     max_features=mountain_max_features,
                     preferred_language=mountain_lang,
@@ -618,6 +626,14 @@ class FengShuiGisPlugin:
         return template.format(count=max(0, int(count)), source=source)
 
     @staticmethod
+    def _resolved_calibration_period(period_key):
+        neutral_key = neutral_context_key()
+        normalized = str(period_key or "").strip().lower()
+        if not normalized or normalized == neutral_key:
+            return base_period_key()
+        return period_key
+
+    @staticmethod
     def _feature_anchor_point(feature):
         if feature is None or not feature.hasGeometry():
             return None
@@ -674,12 +690,73 @@ class FengShuiGisPlugin:
                 return (3, -fs_score, int(feature.id()))
         return (9, int(feature.id()), 0)
 
+    def _enrich_layers_with_mountain_names(
+        self,
+        layers,
+        radius_m=None,
+        max_features=None,
+        preferred_language=None,
+    ):
+        valid_layers = []
+        for layer in layers:
+            if not isinstance(layer, QgsVectorLayer):
+                continue
+            if layer.wkbType() == QgsWkbTypes.NoGeometry:
+                continue
+            if layer.featureCount() <= 0:
+                continue
+            valid_layers.append(layer)
+        if not valid_layers:
+            return 0
+
+        service = MountainNameService(project=QgsProject.instance())
+        layers_by_crs = {}
+        for layer in valid_layers:
+            crs = layer.crs()
+            crs_key = crs.authid() if crs is not None and crs.isValid() else str(id(layer))
+            group = layers_by_crs.setdefault(crs_key, {"crs": crs, "layers": []})
+            group["layers"].append(layer)
+
+        total_updated = 0
+        for group in layers_by_crs.values():
+            group_layers = group["layers"]
+            combined_extent = None
+            for layer in group_layers:
+                extent = layer.extent()
+                if extent is None or extent.isEmpty():
+                    continue
+                if combined_extent is None:
+                    combined_extent = layer.extent()
+                else:
+                    combined_extent.combineExtentWith(extent)
+
+            group_candidates = None
+            if combined_extent is not None and not combined_extent.isEmpty():
+                group_candidates = service.fetch_candidates_for_extent(
+                    combined_extent,
+                    group["crs"],
+                )
+            shared_candidates = group_candidates if group_candidates else None
+
+            for layer in group_layers:
+                total_updated += self._enrich_layer_with_mountain_names(
+                    layer,
+                    radius_m=radius_m,
+                    max_features=max_features,
+                    preferred_language=preferred_language,
+                    service=service,
+                    candidates=shared_candidates,
+                )
+        return total_updated
+
     def _enrich_layer_with_mountain_names(
         self,
         layer,
         radius_m=None,
         max_features=None,
         preferred_language=None,
+        service=None,
+        candidates=None,
     ):
         if not isinstance(layer, QgsVectorLayer):
             return 0
@@ -706,8 +783,10 @@ class FengShuiGisPlugin:
             min(int(options["max_features_max"]), int(max_features)),
         )
 
-        service = MountainNameService(project=QgsProject.instance())
-        candidates = service.fetch_candidates_for_extent(layer.extent(), layer.crs())
+        if service is None:
+            service = MountainNameService(project=QgsProject.instance())
+        if candidates is None:
+            candidates = service.fetch_candidates_for_extent(layer.extent(), layer.crs())
         if not candidates:
             return 0
 
