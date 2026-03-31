@@ -1,71 +1,84 @@
 # Asian Landscape Reader (Feng Shui GIS)
 
-> A QGIS plugin for **terrain-first** historical landscape reading with transparent context-aware assumptions.
+QGIS plugin for terrain-first, evidence-aware landscape interpretation in historical and archaeological contexts.
 
 ## 핵심 목표 / What this plugin is for
 
-- 지형(`DEM`)에서 산맥 골격, 수계, 수평·수직 관계를 먼저 읽는다.
-- 후보지 평가(`fs_score`)는 **별도의 고급 단계**로 수행한다.
-- 지역/시대별 설정은 근거를 남기고, 기본값은 검증 가능한 범위를 유지한다.
-- 동일 파이프라인에서 연구 재현성(리포트, 설정, 버전)을 보장한다.
+- **입지 분석의 3단계 파이프라인**을 UI에서 강제로 안내:
+  1) 데이터 준비, 2) 지형 추출, 3) 후보지 점수/보정
+- 지역·시대·반구 가정은 **설정 가능한 컨텍스트**로 분리하고, 결과에 영향이 남도록 명시
+- 고급 실험 설정은 노출은 낮추고, 필요 시 **전문 모드(Expert)** 로 전환
+- 실행 기록(리포트, 히스토리, 설정)을 남겨 재현성과 검증성을 높임
 
-이 플러그인의 목표는 “한 번에 끝내는 신뢰도 높은 점수 산출”이 아니라,
-**단계별로 분석 책임을 보존하는 의사결정 워크플로**를 제공하는 것입니다.
+## 현재 구조
 
-## 3단계 워크플로 (기본 모드)
+- `feng_shui_gis/dock_widget.py`
+  - 작업 인터페이스와 실행 흐름 가이드, 컨텍스트 패널
+- `feng_shui_gis/plugin.py`
+  - 각 탭 액션(지형 추출/용어 추출/점수 분석/보정) 실행 진입점
+- `feng_shui_gis/analysis.py`
+  - 점수 계산, 보정, 출력 레이어 생성, 리포트 작성
+- `feng_shui_gis/cultural_context.py`, `references.json`, `contexts.json`, `profiles.json`
+  - 문화권·시대·근거 프리셋/출처 데이터 계층
 
-1. **Input (입력 준비)**
-   - DEM, 수계(선택), 후보지(선택) 레이어 지정
-   - 반구/언어 설정
-2. **Terrain Extraction (지형 추출)**
-   - 지형 구조(능선/수계) 생성
-   - 용어 점을 필요한 경우에만 생성
-3. **Evaluation / Interpretation (해석 및 점수)**
-   - 필요 시 후보지 점수 계산
-   - 캘리브레이션 프로파일 비교, 리포트, 변경 요약 확인
+## 주요 기능
 
-## 왜 이 구조인가?
+### 1) 기본 모드 (Basic)
 
-- DEM-only로 시작해야 결과가 과적합되지 않는다.
-- 지역/시대 설정은 `Advanced Context`에서 선택적으로 켜서, 비교 실험이 가능해야 한다.
-- 실험적 프로파일은 기본값에서는 숨기고, 사용자가 명시적으로 활성화할 때만 사용한다.
+- 목표(무덤/주거/정착지/일반)와 레이어 지정
+- 산줄기/수계 흐름 위주의 분석을 기본 모드에서 먼저 실행
+- 지역/시대 고급 옵션은 기본적으로 축소/자동 비활성화
 
-## 플러그인 구성
+### 2) 용어·구조 추출 (Landscape / Terms)
 
-- `extract`
-  - 라스터 DEM에서 능선/유역 기반 구조 추출
-  - 수계 레이어 미존재 시 자동 대체 수계 사용
-- `terms`
-  - 산단 구조 용어 포인트/연결선(옵션)
-- `scoring`
-  - 후보지 점수, 이유(`reason`, `fs_reason`) 포함 출력
-- `context`
-  - 일반 모드(중립), 고급 모드(지역/시대) 전환
-  - `contexts.json` 기반 컨텍스트 근거 브라우징
-- `calibration`
-  - 로컬 보정(임계치/프로파일) + 추천 프로파일 생성
-  - 추천·기준 비교 + 변경 리포트
+- 반구/DEM/수계(또는 자동 수계)를 기반으로 지형 구조 추출
+- 필요 시 용어 점 및 연결선 생성
 
-## 문서 링크
+### 3) 분석 & 점수 계산 (Analysis)
 
-- `docs/context_profiles.md` (컨텍스트 정책)
-- `docs/reference_audit.md` (근거 추적)
-- `docs/research_matrix.md` (실험 설계)
-- `docs/regional_period_notes.md` (지역/시대 보정 노트)
-- `docs/researcher_quickstart.md` (연구 워크플로)
-- `docs/validation_protocol.md` (검증 체크)
+- 후보지(포인트) 기반 점수 계산
+- 점수 근거(reason) 레이어 필드 노출
+- 시각화/요약 뷰에서 진행률과 다음 동작 안내
 
-## 사용 제한(정직한 전제)
+### 4) 로컬 보정 (Calibration)
 
-- 산·수계 자동추출은 좋은 DEM 품질일수록 안정적이다.
-- 지역/시대 컨텍스트는 **초기 우선순위**일 뿐, 현장 조사와 독립 검증을 대체하지 못한다.
-- 실험적 프로파일은 탐색 목적 전용이다.
+- 후보지 점수 데이터셋 기준으로 지역/시대 맥락 기반 보정 시도
+- ROC/PR 지표, 적용 전후 비교, 변경 내역을 리포트(JSON+Markdown)로 기록
+- 보정된 프로파일은 로컬 저장소에 버전성 있게 저장 가능
 
-## 빠른 시작
+## UI 가이드: workflow mode
 
-1. 패널에서 DEM 레이어를 지정
-2. 수계 레이어 지정(없으면 자동 수계 사용)
-3. 후보지 포인트(있으면) 지정
-4. `지형 구조 추출` 실행
-5. 필요 시 용어 점·해석 탭으로 이동
-6. 지역/시대 보정이 필요하면 `고급 설정`에서 활성화
+- **Basic (기본)**: 초보자/빠른 실행에 맞춘 최소 화면.
+- **Expert (전문)**: 프리셋, 문화권, 시대, 컨텍스트 근거 패널을 수동으로 조절.
+
+> Advanced Context 버튼은 기존과 동일하게 유지되지만, 기본 모드에서는 자동으로 숨김 상태가 기본입니다.
+
+## 설치 / 실행
+
+1. QGIS의 Python Plugin 경로에 플러그인 폴더 추가
+2. 플러그인 활성화
+3. 패널에서 DEM 선택
+4. 수계 레이어를 넣거나 DEM 자동 수계 사용
+5. 후보지 포인트 지정(선택)
+6. `지형 구조 추출` 실행
+7. 필요 시 용어 추출 또는 분석 탭으로 이동
+
+## 사용자 언어
+
+- UI 라벨: **한국어 / English** 토글
+- 용어 라벨 언어(결과 텍스트)도 별도 토글
+
+## 문서
+
+- [docs/context_profiles.md](docs/context_profiles.md)
+- [docs/reference_audit.md](docs/reference_audit.md)
+- [docs/research_matrix.md](docs/research_matrix.md)
+- [docs/regional_period_notes.md](docs/regional_period_notes.md)
+- [docs/researcher_quickstart.md](docs/researcher_quickstart.md)
+- [docs/validation_protocol.md](docs/validation_protocol.md)
+
+## 제한/전제 (Honest notes)
+
+- 자동 추출은 DEM 품질에 크게 영향을 받습니다.
+- 지역/시대 프리셋은 `연구 가설`을 검증하는 도구이지 현장 진단을 대체하지 않습니다.
+- 실험적 프로파일은 탐색용이며, 최종 결론은 추가 검증이 필요합니다.
