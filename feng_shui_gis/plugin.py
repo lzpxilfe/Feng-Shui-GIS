@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import hashlib
 import json
 import os
 from html import escape
@@ -13,8 +14,8 @@ from qgis.core import (
     QgsFeatureRequest,
     QgsField,
     QgsProject,
-    QgsProcessingContext,
-    QgsProcessingFeedback,
+    QgsMessageLog,
+    Qgis,
     QgsRendererCategory,
     QgsSymbol,
     QgsWkbTypes,
@@ -22,22 +23,30 @@ from qgis.core import (
     edit,
 )
 
-from .analysis import FengShuiAnalyzer
 from .cultural_context import (
     base_period_key,
     context_evidence_records,
     neutral_context_key,
 )
 from .dock_widget import FengShuiDockWidget
+from .service_contracts import (
+    AnalysisRequest,
+    CalibrationRequest,
+    CompareRequest,
+    TermExtractionRequest,
+)
+from .services.analysis_service import FengShuiAnalysisService
 from .locale import tr
 from .mountain_lookup import MountainNameService
 from .mountain_options import mountain_options
+from .errors import FengShuiError, FengShuiErrorCode
 from .profile_catalog import analysis_rules
 from .reference_catalog import reference_display_text
 from .ui_catalog import ui_text
 
 
 class FengShuiGisPlugin:
+    _LOG_TAG = "Feng-Shui GIS"
     _COMPARE_DELTA_EPSILON = 0.01
     _COMPARE_TOP_CHANGE_LIMIT = 8
     _COMPARE_REASON_EXCERPT = 96
@@ -72,12 +81,15 @@ class FengShuiGisPlugin:
         },
     }
 
-    def __init__(self, iface):
+    def __init__(self, iface, analysis_service=None):
         self.iface = iface
         self.action = None
         self.toolbar = None
         self.dock = None
         self.plugin_dir = os.path.dirname(__file__)
+        self._analysis_service = (
+            analysis_service if analysis_service is not None else FengShuiAnalysisService()
+        )
         self._selection_hooks = {}
         self._reason_dialog = None
         self._reason_browser = None
@@ -105,8 +117,12 @@ class FengShuiGisPlugin:
                 continue
             try:
                 layer.selectionChanged.disconnect(slot)
-            except TypeError:
-                pass
+            except (RuntimeError, TypeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"selectionChanged disconnect skipped for layer {layer_id}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
         self._selection_hooks.clear()
 
         if self.action:
@@ -158,8 +174,42 @@ class FengShuiGisPlugin:
             self.dock.activateWindow()
 
     @staticmethod
-    def _runtime_error_message(context, exc):
+    def _debug_error_message(context, exc):
         return f"{context}: {type(exc).__name__}: {exc}"
+
+    def _resolve_user_message(self, message):
+        if not message:
+            return message
+        language = self._label_language()
+        translated = ui_text(message, language, default=message)
+        return translated or message
+
+    def _publish_error(self, context, exc, *, failure_code=None):
+        if isinstance(exc, FengShuiError):
+            code = exc.code
+            user_message = self._resolve_user_message(
+                exc.user_message or exc.message
+            )
+            details = exc.details or self._debug_error_message(context, exc)
+        else:
+            code = failure_code or FengShuiErrorCode.UNEXPECTED
+            user_message = self._resolve_user_message(str(exc))
+            details = self._debug_error_message(context, exc)
+
+        log_message = f"{code.value} | {details}"
+        QgsMessageLog.logMessage(log_message, "Feng-Shui GIS", level=Qgis.Critical)
+
+        ui_message = f"{context}: {user_message}" if user_message else context
+        self.iface.messageBar().pushCritical(tr("warn_failed"), ui_message)
+        if self.dock:
+            self.dock.set_status(ui_message)
+
+    def _run_with_error_handler(self, context, callback, failure_code=None):
+        try:
+            return callback()
+        except Exception as exc:  # pylint: disable=broad-except
+            self._publish_error(context, exc, failure_code=failure_code)
+            return None
 
     def _report_dir(self):
         project_home = QgsProject.instance().homePath().strip()
@@ -200,32 +250,25 @@ class FengShuiGisPlugin:
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
 
-        try:
-            context = QgsProcessingContext()
-            context.setProject(QgsProject.instance())
-            feedback = QgsProcessingFeedback()
-            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
-            prepared_water = water_layer
-            auto_hydro_layer = None
-            if prepared_water is None and auto_hydro:
-                auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
-                if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
-                    analyzer.style_hydro_network(auto_hydro_layer)
-                    auto_hydro_layer.setName(
-                        self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
-                    )
-                    QgsProject.instance().addMapLayer(auto_hydro_layer)
-                    prepared_water = auto_hydro_layer
-
-            output_layer = analyzer.run(
-                site_layer,
-                dem_layer,
-                water_layer=prepared_water,
+        def _execute():
+            request = AnalysisRequest(
+                site_layer=site_layer,
+                dem_layer=dem_layer,
+                water_layer=water_layer,
                 hemisphere=hemisphere,
                 profile_key=profile_key,
                 culture_key=culture_key,
                 period_key=period_key,
+                auto_hydro=auto_hydro,
             )
+            result = self._analysis_service.run_analysis(request)
+            output_layer = result.analysis_layer
+            auto_hydro_layer = result.auto_hydro_layer
+            if auto_hydro_layer is not None:
+                auto_hydro_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
+                )
+                QgsProject.instance().addMapLayer(auto_hydro_layer)
             output_layer.setName(self._output_layer_name(site_layer.name(), "analysis", label_lang))
             mountain_updated = 0
             if mountain_enabled:
@@ -237,20 +280,16 @@ class FengShuiGisPlugin:
                 )
             QgsProject.instance().addMapLayer(output_layer)
             self._configure_layer_click_info(output_layer, label_lang)
+            return output_layer, mountain_updated
 
-        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
-            message = self._runtime_error_message("Analysis failed", exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
+        result = self._run_with_error_handler(
+            "Analysis failed",
+            _execute,
+            failure_code=FengShuiErrorCode.ANALYSIS_FAILURE,
+        )
+        if result is None:
             return
-        except Exception as exc:  # pylint: disable=broad-except
-            message = self._runtime_error_message(tr("warn_failed"), exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
-
+        output_layer, mountain_updated = result
         self.iface.messageBar().pushSuccess(
             tr("plugin_title"),
             f"{tr('ok_finished')}: {output_layer.name()}",
@@ -294,55 +333,39 @@ class FengShuiGisPlugin:
             return
         self._warn_if_crs_mismatch(dem_layer, water_layer)
 
-        try:
-            context = QgsProcessingContext()
-            context.setProject(QgsProject.instance())
-            feedback = QgsProcessingFeedback()
-            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
+        def _execute():
+            request = TermExtractionRequest(
+                dem_layer=dem_layer,
+                water_layer=water_layer,
+                hemisphere=hemisphere,
+                profile_key=profile_key,
+                culture_key=culture_key,
+                period_key=period_key,
+                auto_hydro=auto_hydro,
+                include_terms=include_terms,
+            )
+            result = self._analysis_service.run_term_extraction(request)
 
-            ridge_layer = analyzer.build_ridge_network(dem_layer)
-            ridge_layer.setName(self._output_layer_name(dem_layer.name(), "ridge", label_lang))
-            analyzer.style_ridge_network(ridge_layer)
+            ridge_layer = result.ridge_layer
+            hydro_layer = result.hydro_layer
+            terms_layer = result.terms_layer
+            line_layer = result.term_links_layer
 
-            hydro_reference_layer = water_layer
-            hydro_layer = None
-            if water_layer is not None and self._is_line_layer(water_layer):
-                hydro_layer = self._copy_vector_layer(
-                    water_layer,
-                    self._output_layer_name(dem_layer.name(), "hydro", label_lang),
+            ridge_layer.setName(
+                self._output_layer_name(dem_layer.name(), "ridge", label_lang)
+            )
+            if hydro_layer is not None:
+                hydro_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "hydro", label_lang)
                 )
-                if hydro_layer and hydro_layer.featureCount() > 0:
-                    analyzer.style_hydro_network(hydro_layer)
-                else:
-                    hydro_layer = None
-            elif auto_hydro:
-                hydro_layer = analyzer.build_hydro_network(dem_layer)
-                if hydro_layer and hydro_layer.featureCount() > 0:
-                    hydro_layer.setName(
-                        self._output_layer_name(dem_layer.name(), "hydro", label_lang)
-                    )
-                    analyzer.style_hydro_network(hydro_layer)
-                    if hydro_reference_layer is None:
-                        hydro_reference_layer = hydro_layer
-                else:
-                    hydro_layer = None
-
-            terms_layer = None
-            line_layer = None
-            if include_terms:
-                terms_layer = analyzer.extract_terms(
-                    dem_layer,
-                    water_layer=hydro_reference_layer,
-                    hemisphere=hemisphere,
-                    profile_key=profile_key,
-                    culture_key=culture_key,
-                    period_key=period_key,
+            if terms_layer is not None:
+                terms_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "terms", label_lang)
                 )
-                terms_layer.setName(self._output_layer_name(dem_layer.name(), "terms", label_lang))
-                line_layer = analyzer.build_term_links(terms_layer)
-                line_layer.setName(self._output_layer_name(dem_layer.name(), "term_links", label_lang))
-                analyzer.style_term_points(terms_layer)
-                analyzer.style_term_links(line_layer)
+            if line_layer is not None:
+                line_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "term_links", label_lang)
+                )
 
             layers_top_to_bottom = []
             if include_terms and terms_layer:
@@ -361,18 +384,16 @@ class FengShuiGisPlugin:
                     preferred_language=mountain_lang,
                 )
             self._insert_output_layers(layers_top_to_bottom, label_lang)
-        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
-            message = self._runtime_error_message("Landscape extraction failed", exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
+            return ridge_layer, hydro_layer, terms_layer, line_layer, mountain_total
+
+        result = self._run_with_error_handler(
+            "Landscape extraction failed",
+            _execute,
+            failure_code=FengShuiErrorCode.TERM_EXTRACTION_FAILURE,
+        )
+        if result is None:
             return
-        except Exception as exc:  # pylint: disable=broad-except
-            message = self._runtime_error_message(tr("warn_failed"), exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
+        ridge_layer, hydro_layer, terms_layer, line_layer, mountain_total = result
 
         created = [f"{ridge_layer.name()} ({ridge_layer.featureCount()})"]
         if hydro_layer:
@@ -448,6 +469,39 @@ class FengShuiGisPlugin:
         }
 
     @staticmethod
+    def _normalize_signature_value(value):
+        if value is None:
+            return ""
+        if isinstance(value, float):
+            return f"{value:.12g}"
+        if isinstance(value, (list, tuple, dict)):
+            return json.dumps(value, sort_keys=True, ensure_ascii=False)
+        return str(value)
+
+    @classmethod
+    def _signature_from_inputs(cls, geometry, attributes, sequence=None):
+        payload = {
+            "sequence": int(sequence) if sequence is not None else None,
+            "geometry": "",
+            "attributes": {},
+        }
+        if geometry is not None:
+            try:
+                wkb_bytes = geometry.asWkb()
+            except Exception:
+                wkb_bytes = None
+            if wkb_bytes:
+                payload["geometry"] = wkb_bytes.hex()
+        if attributes:
+            for key in sorted(attributes):
+                payload["attributes"][str(key)] = cls._normalize_signature_value(
+                    attributes[key]
+                )
+        return hashlib.sha1(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+
+    @staticmethod
     def _feature_uid(feature):
         if feature is None:
             return ""
@@ -462,6 +516,24 @@ class FengShuiGisPlugin:
                 text = str(value or "").strip()
                 if text:
                     return text
+
+        attributes = {}
+        excluded = {"fid", "id", "objectid", "globalid", "uuid"}
+        for name in field_names:
+            lowered_name = str(name).lower()
+            if lowered_name.startswith("fs_"):
+                continue
+            if lowered_name in excluded:
+                continue
+            try:
+                attributes[name] = feature[name]
+            except (TypeError, ValueError, KeyError):
+                continue
+
+        geometry = feature.geometry() if feature.hasGeometry() else None
+        signature = FengShuiGisPlugin._signature_from_inputs(geometry, attributes)
+        if signature:
+            return f"geom:{signature}"
         return f"fid:{int(feature.id())}"
 
     @staticmethod
@@ -489,7 +561,9 @@ class FengShuiGisPlugin:
                 if text:
                     return text
         uid = FengShuiGisPlugin._feature_uid(feature)
-        return uid or f"fid:{int(feature.id())}"
+        if uid:
+            return uid
+        return f"fid:{int(feature.id())}"
 
     @staticmethod
     def _feature_reason_text(feature):
@@ -625,18 +699,31 @@ class FengShuiGisPlugin:
                 continue
             try:
                 layer.removeSelection()
-            except Exception:  # pylint: disable=broad-except
-                pass
+            except (RuntimeError, TypeError, AttributeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to clear selection on layer {getattr(layer, 'name', lambda: layer)()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
             try:
                 layer.selectByIds(feature_ids)
                 selected_count = max(selected_count, len(layer.selectedFeatureIds()))
-            except Exception:  # pylint: disable=broad-except
+            except (RuntimeError, TypeError, AttributeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to select changed features on layer {getattr(layer, 'name', lambda: layer)()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
                 continue
         if compare_layer is not None:
             try:
                 self.iface.setActiveLayer(compare_layer)
-            except Exception:  # pylint: disable=broad-except
-                pass
+            except (RuntimeError, AttributeError, TypeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to activate compare layer {compare_layer.name()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
         return selected_count
 
     def _zoom_to_selected_features(self, layer):
@@ -644,14 +731,24 @@ class FengShuiGisPlugin:
             return False
         try:
             selected_ids = layer.selectedFeatureIds()
-        except Exception:  # pylint: disable=broad-except
+        except (RuntimeError, AttributeError, TypeError) as exc:
+            QgsMessageLog.logMessage(
+                f"Failed to read selected feature ids from layer {layer.name()}: {type(exc).__name__}: {exc}",
+                self._LOG_TAG,
+                level=Qgis.Warning,
+            )
             return False
         if not selected_ids:
             return False
         try:
             self.iface.mapCanvas().zoomToSelected(layer)
             return True
-        except Exception:  # pylint: disable=broad-except
+        except (RuntimeError, AttributeError, TypeError) as exc:
+            QgsMessageLog.logMessage(
+                f"Zoom-to-selected failed for layer {layer.name()}: {type(exc).__name__}: {exc}",
+                self._LOG_TAG,
+                level=Qgis.Warning,
+            )
             return False
 
     def _export_top_changed_features_layer(
@@ -861,12 +958,20 @@ class FengShuiGisPlugin:
             symbol.setOpacity(0.88)
             try:
                 symbol.setWidth(0.9)
-            except AttributeError:
-                pass
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to set compare style width on layer {layer.name()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
             try:
                 symbol.setSize(4.6)
-            except AttributeError:
-                pass
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to set compare style size on layer {layer.name()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
             categories.append(
                 QgsRendererCategory(
                     value,
@@ -1094,40 +1199,28 @@ class FengShuiGisPlugin:
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
 
-        try:
-            context = QgsProcessingContext()
-            context.setProject(QgsProject.instance())
-            feedback = QgsProcessingFeedback()
-            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
-            prepared_water = water_layer
-            if prepared_water is None and auto_hydro:
-                auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
-                if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
-                    analyzer.style_hydro_network(auto_hydro_layer)
-                    auto_hydro_layer.setName(
-                        self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
-                    )
-                    QgsProject.instance().addMapLayer(auto_hydro_layer)
-                    prepared_water = auto_hydro_layer
+        def _execute():
+            request = CompareRequest(
+                site_layer=site_layer,
+                dem_layer=dem_layer,
+                water_layer=water_layer,
+                hemisphere=hemisphere,
+                base_profile_key=base_profile_key,
+                compare_profile_key=compare_profile_key,
+                culture_key=culture_key,
+                period_key=period_key,
+                auto_hydro=auto_hydro,
+            )
+            result = self._analysis_service.run_profile_compare(request)
+            base_layer = result.base_layer
+            compare_layer = result.compare_layer
+            auto_hydro_layer = result.auto_hydro_layer
+            if auto_hydro_layer is not None:
+                auto_hydro_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
+                )
+                QgsProject.instance().addMapLayer(auto_hydro_layer)
 
-            base_layer = analyzer.run(
-                site_layer,
-                dem_layer,
-                water_layer=prepared_water,
-                hemisphere=hemisphere,
-                profile_key=base_profile_key,
-                culture_key=culture_key,
-                period_key=period_key,
-            )
-            compare_layer = analyzer.run(
-                site_layer,
-                dem_layer,
-                water_layer=prepared_water,
-                hemisphere=hemisphere,
-                profile_key=compare_profile_key,
-                culture_key=culture_key,
-                period_key=period_key,
-            )
             base_layer.setName(
                 f"{self._output_layer_name(site_layer.name(), 'analysis', label_lang)}_{base_profile_key}"
             )
@@ -1191,17 +1284,14 @@ class FengShuiGisPlugin:
                 base_layer_name=base_layer.name(),
                 compare_layer_name=compare_layer.name(),
             )
-        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
-            message = self._runtime_error_message("Profile comparison failed", exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
-        except Exception as exc:  # pylint: disable=broad-except
-            message = self._runtime_error_message(tr("warn_failed"), exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
+            return True
+
+        success = self._run_with_error_handler(
+            "Profile comparison failed",
+            _execute,
+            failure_code=FengShuiErrorCode.COMPARISON_FAILURE,
+        )
+        if not success:
             return
 
         success_message = ui_text(
@@ -1257,37 +1347,32 @@ class FengShuiGisPlugin:
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
 
-        try:
-            context = QgsProcessingContext()
-            context.setProject(QgsProject.instance())
-            feedback = QgsProcessingFeedback()
-            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
-            prepared_water = water_layer
-            if prepared_water is None and auto_hydro:
-                auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
-                if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
-                    analyzer.style_hydro_network(auto_hydro_layer)
-                    auto_hydro_layer.setName(
-                        self._output_layer_name(
-                            dem_layer.name(),
-                            "hydro_auto_calibration",
-                            label_lang,
-                        )
-                    )
-                    QgsProject.instance().addMapLayer(auto_hydro_layer)
-                    prepared_water = auto_hydro_layer
-
-            scored_layer, report = analyzer.calibrate(
+        def _execute():
+            request = CalibrationRequest(
                 site_layer=site_layer,
                 dem_layer=dem_layer,
-                water_layer=prepared_water,
+                water_layer=water_layer,
                 hemisphere=hemisphere,
                 profile_key=profile_key,
                 culture_key=calibration_culture,
                 period_key=calibration_period,
                 negative_ratio=negative_ratio,
                 random_seed=random_seed,
+                auto_hydro=auto_hydro,
             )
+            result = self._analysis_service.run_calibration(request)
+            scored_layer = result.calibrated_layer
+            report = result.report
+            auto_hydro_layer = result.auto_hydro_layer
+            if auto_hydro_layer is not None:
+                auto_hydro_layer.setName(
+                    self._output_layer_name(
+                        dem_layer.name(),
+                        "hydro_auto_calibration",
+                        label_lang,
+                    )
+                )
+                QgsProject.instance().addMapLayer(auto_hydro_layer)
             scored_layer.setName(
                 self._output_layer_name(site_layer.name(), "calibration", label_lang)
             )
@@ -1304,19 +1389,16 @@ class FengShuiGisPlugin:
 
             json_path, md_path = self._write_calibration_report(report)
             self._show_report_popup(report, json_path, md_path)
+            return scored_layer, mountain_updated, report
 
-        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
-            message = self._runtime_error_message("Calibration failed", exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
+        result = self._run_with_error_handler(
+            "Calibration failed",
+            _execute,
+            failure_code=FengShuiErrorCode.CALIBRATION_FAILURE,
+        )
+        if result is None:
             return
-        except Exception as exc:  # pylint: disable=broad-except
-            message = self._runtime_error_message(tr("warn_failed"), exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
+        scored_layer, mountain_updated, report = result
 
         self.iface.messageBar().pushSuccess(
             tr("plugin_title"),
@@ -1351,22 +1433,6 @@ class FengShuiGisPlugin:
         clean_base = str(base_name).strip() if base_name is not None else ""
         clean_base = clean_base or "layer"
         return f"{clean_base}_{suffix}"
-
-    @staticmethod
-    def _is_line_layer(layer):
-        if layer is None:
-            return False
-        return QgsWkbTypes.geometryType(layer.wkbType()) == QgsWkbTypes.LineGeometry
-
-    @staticmethod
-    def _copy_vector_layer(source_layer, layer_name):
-        if source_layer is None:
-            return None
-        copied = source_layer.materialize(QgsFeatureRequest())
-        if not isinstance(copied, QgsVectorLayer):
-            return None
-        copied.setName(layer_name)
-        return copied
 
     def _require_projected_dem_crs(self, layer):
         if layer is None:
@@ -1582,6 +1648,7 @@ class FengShuiGisPlugin:
             group["layers"].append(layer)
 
         total_updated = 0
+        lookup_warning_emitted = False
         for group in layers_by_crs.values():
             group_layers = group["layers"]
             combined_extent = None
@@ -1600,6 +1667,16 @@ class FengShuiGisPlugin:
                     combined_extent,
                     group["crs"],
                 )
+                if (
+                    not group_candidates
+                    and getattr(service, "last_query_error", None)
+                    and not lookup_warning_emitted
+                ):
+                    self.iface.messageBar().pushWarning(
+                        tr("plugin_title"),
+                        str(service.last_query_error),
+                    )
+                    lookup_warning_emitted = True
             shared_candidates = group_candidates if group_candidates else None
 
             for layer in group_layers:
