@@ -743,6 +743,8 @@
         "zh": "琉球/冲绳",
         "ja": "琉球/沖縄"
       },
+      "visibility_tier": "experimental",
+      "evidence_scope": "limited_case_set",
       "aspect_targets": {
         "north": {
           "value": 165.0,
@@ -917,6 +919,8 @@
         "zh": "东南亚",
         "ja": "東南アジア"
       },
+      "visibility_tier": "experimental",
+      "evidence_scope": "transferred_limited_calibration",
       "aspect_targets": {
         "north": {
           "value": 170.0,

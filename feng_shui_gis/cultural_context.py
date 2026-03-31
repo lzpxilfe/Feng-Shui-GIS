@@ -11,6 +11,8 @@ from .ui_catalog import ui_text
 _CONFIG_FILE = "contexts.json"
 _LEVEL_ORDER = {"A": 0, "B": 1, "C": 2, "U": 3}
 _NEUTRAL_CONTEXT_KEY = "__neutral__"
+_CONTEXT_TIERS = {"stable", "experimental", "deprecated"}
+_DEFAULT_CONTEXT_TIER = "stable"
 
 _REQUIRED_CULTURE_FIELDS = (
     "aspect_sharpness",
@@ -97,6 +99,13 @@ def _merge_meta(first_meta, second_meta):
     return {"source_doi": unique_sources, "evidence_level": level, "note": note}
 
 
+def _normalize_context_tier(value):
+    tier = str(value or "").strip().lower()
+    if tier not in _CONTEXT_TIERS:
+        return _DEFAULT_CONTEXT_TIER
+    return tier
+
+
 def _normalize_scalar_map_with_meta(node, context):
     if node is None:
         return {}, {}
@@ -172,6 +181,49 @@ def base_period_key():
 
 def available_cultures():
     return tuple(_cultures().keys())
+
+
+def available_cultures_filtered_by_tier(visibility_tier=None):
+    cultures = _cultures()
+    if visibility_tier is None:
+        return tuple(cultures.keys())
+    requested_tier = _normalize_context_tier(visibility_tier)
+    result = []
+    for culture_key, culture in cultures.items():
+        if not isinstance(culture, dict):
+            continue
+        tier = _normalize_context_tier(culture.get("visibility_tier", _DEFAULT_CONTEXT_TIER))
+        if tier == requested_tier:
+            result.append(culture_key)
+    return tuple(result)
+
+
+def culture_visibility_tier(culture_key):
+    culture = _cultures().get(culture_key, {})
+    if not isinstance(culture, dict):
+        return _DEFAULT_CONTEXT_TIER
+    return _normalize_context_tier(culture.get("visibility_tier", _DEFAULT_CONTEXT_TIER))
+
+
+def culture_evidence_scope(culture_key):
+    culture = _cultures().get(culture_key, {})
+    if not isinstance(culture, dict):
+        return ""
+    return str(culture.get("evidence_scope", "")).strip()
+
+
+def _context_tier_labels(language):
+    if language == "ko":
+        return {
+            "stable": "안정형",
+            "experimental": "실험적",
+            "deprecated": "사용중단",
+        }
+    return {
+        "stable": "stable",
+        "experimental": "exploratory",
+        "deprecated": "deprecated",
+    }
 
 
 def available_periods():
@@ -579,6 +631,13 @@ def context_evidence_html(culture_key, period_key, hemisphere, language=None):
         lang,
         default="hemisphere",
     )
+    meta_tier = ui_text("context_evidence_meta_tier", lang, default="context tier")
+    tier_labels = _context_tier_labels(lang or "en")
+    tier_label = tier_labels.get(culture_visibility_tier(culture_key), "stable")
+    meta_scope = ui_text("context_evidence_meta_scope", lang, default="evidence scope")
+    scope_text = culture_evidence_scope(culture_key)
+    if not scope_text:
+        scope_text = "-"
     col_group = ui_text("context_evidence_col_group", lang, default="group")
     col_name = ui_text("context_evidence_col_name", lang, default="name")
     col_value = ui_text("context_evidence_col_value", lang, default="value")
@@ -602,7 +661,9 @@ def context_evidence_html(culture_key, period_key, hemisphere, language=None):
         f"<h3>{escape(title)}</h3>"
         f"<p><b>{escape(meta_culture)}</b>: {escape(str(culture_key))}, "
         f"<b>{escape(meta_period)}</b>: {escape(str(period_key))}, "
-        f"<b>{escape(meta_hemisphere)}</b>: {escape(str(hemisphere))}</p>"
+        f"<b>{escape(meta_hemisphere)}</b>: {escape(str(hemisphere))}, "
+        f"<b>{escape(meta_tier)}</b>: {escape(str(tier_label))}, "
+        f"<b>{escape(meta_scope)}</b>: {escape(scope_text)}</p>"
         "<table border='1' cellspacing='0' cellpadding='4'>"
         "<tr>"
         f"<th>{escape(col_group)}</th>"
