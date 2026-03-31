@@ -1,267 +1,71 @@
 # Asian Landscape Reader (Feng Shui GIS)
 
-> A QGIS plugin for DEM-first landscape reading, historical spatial interpretation, and evidence-aware Feng Shui analysis across East Asian and premodern contexts.
-
-<p align="center">
-  <img src="feng_shui_gis/yingyang.png" width="220" alt="Asian Landscape Reader emblem" />
-</p>
-
-## Why this plugin exists
-
-This project starts from a simple premise:
-
-Landscape interpretation should begin with terrain and water structure, then add historically informed reading only where the evidence supports it.
-
-That means the plugin is designed to help researchers:
-
-- extract ridge and hydro structure from DEMs
-- interpret terrain through optional Feng Shui term geometry
-- score candidate sites with transparent reasons
-- compare context-specific profiles instead of hiding assumptions
-- keep research settings inspectable, calibratable, and reportable
-
-It is especially aimed at people working on:
-
-- East Asian landscape history
-- settlement and mortuary geography
-- geomantic interpretation as a research workflow
-- reproducible spatial humanities and archaeological screening
-
-## At a glance
-
-| Area | What the plugin does |
-|---|---|
-| Terrain reading | Extracts ridge hierarchy from DEMs and builds hydro structure from provided water layers or DEM-derived flow paths |
-| Feng Shui interpretation | Generates optional term points and structural links for terrain-based reading |
-| Site evaluation | Scores candidate point layers with `fs_score`, explanation fields, and profile-aware reasoning |
-| Context awareness | Supports neutral/general mode or advanced culture/period-aware interpretation |
-| Calibration | Tunes local thresholds, indicator weights, and profile parameters from positive/negative site samples |
-| Comparison | Compares base vs calibrated profiles and highlights where scores changed most |
-| Documentation | Writes JSON and Markdown reports for calibration and profile comparison |
-| Transparency | Surfaces context evidence, references, parameter notes, and profile provenance in the UI |
-
-## Visual workflow
-
-```mermaid
-flowchart LR
-    A["DEM"] --> B["Ridge / Hydro Extraction"]
-    B --> C["Landscape Structure Layers"]
-    C --> D["Optional Feng Shui Terms"]
-    C --> E["Candidate Site Scoring"]
-    D --> E
-    E --> F["Local Calibration"]
-    F --> G["Recommended Calibrated Profile"]
-    G --> H["Quick Compare"]
-    H --> I["Reports + Change Layer"]
-```
-
-## Core capabilities
-
-### 1. DEM-first landscape extraction
-
-- Ridge hierarchy extraction (`daegan`, `jeongmaek`, `gimaek`, `jimaek`)
-- Hydro network support from:
-  - supplied vector water layers
-  - DEM-derived fallback hydro when no curated layer exists
-- Terrain-first workflow for historical landscape reading before interpretation layers are added
-
-### 2. Optional Feng Shui term geometry
-
-- Generates term points such as terrain-structure anchors
-- Builds structural links between interpreted term locations
-- Keeps term extraction optional so users can stay in pure landscape mode when needed
-
-### 3. Candidate-site scoring
-
-- Scores point layers with `fs_score`
-- Writes reason fields such as `fs_reason` and language-aware explanations
-- Supports profile-based reading for different use cases rather than one fixed rule set
-
-### 4. Context-aware analysis
-
-- General-principles mode for broadly shared terrain logic
-- Advanced context mode for culture/period-sensitive interpretation
-- Context evidence browser with source attribution and evidence-level notes
-- Config-driven profiles and contexts instead of hardcoding assumptions directly in the UI
-
-### 5. Local calibration
-
-The calibration workflow is now more than threshold reporting.
-
-It can:
-
-- evaluate local positive and negative site samples
-- tune local score thresholds
-- reweight indicators when local data supports it
-- adjust profile parameters such as slope/TPI targets and spreads
-- export calibrated local profiles for reuse
-
-Calibration outputs include:
-
-- `cal_score`
-- `cal_f1_th`
-- `cal_yj_th`
-- `cal_f1_ok`
-- `cal_yj_ok`
-
-### 6. Profile recommendation and quick comparison
-
-After calibration, the plugin can:
-
-- save calibrated local profiles
-- reload them into the profile catalog
-- recommend the most relevant calibrated profile for the current context
-- switch to the recommended profile directly from the UI
-- run a quick compare between base and calibrated profiles
-
-Quick compare also adds:
-
-- top changed feature summaries
-- automatic feature selection
-- automatic zoom to changed locations
-- a dedicated change layer
-- color-coded gain/drop/neutral symbology
-- base vs calibrated reason comparison fields
-
-### 7. Research reporting
-
-The plugin writes machine-readable and human-readable reports to `reports/`.
-
-Current report types include:
-
-- calibration reports (`.json` + `.md`)
-- profile comparison reports (`.json` + `.md`)
-
-These reports can include:
-
-- score performance summaries
-- threshold summaries
-- weight and parameter changes
-- calibrated profile export metadata
-- site-group / country / period mix when such fields exist
-- cumulative calibration history summaries
-
-## Main outputs
-
-| Layer | Description |
-|---|---|
-| `*_fengshui_ridges` | Ridge hierarchy extracted from the DEM |
-| `*_fengshui_hydro` | Provided hydro layer or DEM-derived hydro structure |
-| `*_fengshui_terms` | Optional Feng Shui term points |
-| `*_fengshui_links` | Optional structural links between interpreted terms |
-| `*_fengshui` | Scored site layer with `fs_score` and explanation fields |
-| compare change layer | Top changed features between base and calibrated profiles |
-
-## Language and interface support
-
-The plugin now supports explicit language switching.
-
-- `UI Language`: controls buttons, help text, warnings, and interface labels
-- `Label Language`: controls output-facing labels and report-facing text
-
-This means you can, for example:
-
-- use the interface in English
-- keep output labels in Korean
-- switch between `ko` and `en` without depending only on system locale
-
-The plugin also supports preferred language selection for mountain-name enrichment (`local`, `ko`, `en`).
-
-## Suggested workflow
-
-### Basic terrain reading
-
-1. Load a DEM in a projected CRS.
-2. Add a curated water layer if available.
-3. Run landscape extraction.
-4. Inspect ridges and hydro before enabling interpretive layers.
-
-### Historical / geomantic interpretation
-
-1. Enable term extraction when terrain structure needs interpretive annotation.
-2. Select a goal and profile appropriate to the research question.
-3. Use advanced context mode only when culture/period overrides are justified.
-4. Review context evidence before treating profile differences as meaningful.
-
-### Local validation and tuning
-
-1. Provide positive and negative site layers.
-2. Run local calibration.
-3. Inspect the report and saved calibrated profile.
-4. Reload profiles and apply the recommended calibrated profile.
-5. Run quick compare to inspect what changed spatially.
-
-## Configuration-driven design
-
-Most research assumptions live in configuration files rather than scattered code.
-
-Important files:
-
-- `feng_shui_gis/config/contexts.json`
-- `feng_shui_gis/config/profiles.json`
-- `feng_shui_gis/config/local_profiles.json`
-- `feng_shui_gis/config/terms.json`
-- `feng_shui_gis/config/analysis_rules.json`
-- `feng_shui_gis/config/references.json`
-- `feng_shui_gis/config/ui_texts.json`
-
-This makes the plugin easier to:
-
-- audit
-- translate
-- compare across case studies
-- recalibrate for local datasets
-
-## Evidence and reference support
-
-The interface surfaces evidence rather than hiding it.
-
-You can inspect:
-
-- context references
-- evidence levels
-- parameter notes
-- paper and catalog links
-
-The repository also includes support for non-DOI reference records, including classical and interpretive sources that are useful for contextual reading but should not automatically be treated as validated spatial parameters.
-
-Relevant reading in this repository:
-
-- [docs/context_profiles.md](docs/context_profiles.md)
-- [docs/regional_period_notes.md](docs/regional_period_notes.md)
-- [docs/validation_protocol.md](docs/validation_protocol.md)
-- [docs/reference_audit.md](docs/reference_audit.md)
-- [docs/research_matrix.md](docs/research_matrix.md)
-- [docs/researcher_quickstart.md](docs/researcher_quickstart.md)
-
-## Requirements
-
-- QGIS `3.28+`
-- A projected CRS in meters is strongly recommended
-- DEM quality strongly affects ridge, hydro, term, and scoring outputs
-
-## Important research limits
-
-This plugin is strongest where terrain structure is strongest.
-
-More specifically:
-
-- DEM / ridge / hydro extraction is the most reproducible part of the workflow
-- profile differences across country and period should be treated as research assumptions until locally validated
-- premodern texts such as `임원경제지` are valuable interpretation sources, but not all of their claims are ready to be used as numeric spatial parameters
-- calibration helps align the workflow to a local sample, but it does not replace field verification or archaeological judgment
-- automated outputs should not be presented as final conclusions on their own
-
-## Repository support for reproducibility
-
-This repository also contains reproducibility helpers:
-
-- `examples/reproducibility_manifest.template.json`
-- `tools/build_repro_manifest.py`
-- `tests/test_reproducibility_contract.py`
-
-For research-facing use, treat these as part of the project's audit trail rather than as optional extras.
-
-## In one sentence
-
-Asian Landscape Reader is a terrain-first, evidence-aware QGIS plugin for people who want to study historical landscape structure and Feng Shui interpretation without hiding the assumptions behind the analysis.
+> A QGIS plugin for **terrain-first** historical landscape reading with transparent context-aware assumptions.
+
+## 핵심 목표 / What this plugin is for
+
+- 지형(`DEM`)에서 산맥 골격, 수계, 수평·수직 관계를 먼저 읽는다.
+- 후보지 평가(`fs_score`)는 **별도의 고급 단계**로 수행한다.
+- 지역/시대별 설정은 근거를 남기고, 기본값은 검증 가능한 범위를 유지한다.
+- 동일 파이프라인에서 연구 재현성(리포트, 설정, 버전)을 보장한다.
+
+이 플러그인의 목표는 “한 번에 끝내는 신뢰도 높은 점수 산출”이 아니라,
+**단계별로 분석 책임을 보존하는 의사결정 워크플로**를 제공하는 것입니다.
+
+## 3단계 워크플로 (기본 모드)
+
+1. **Input (입력 준비)**
+   - DEM, 수계(선택), 후보지(선택) 레이어 지정
+   - 반구/언어 설정
+2. **Terrain Extraction (지형 추출)**
+   - 지형 구조(능선/수계) 생성
+   - 용어 점을 필요한 경우에만 생성
+3. **Evaluation / Interpretation (해석 및 점수)**
+   - 필요 시 후보지 점수 계산
+   - 캘리브레이션 프로파일 비교, 리포트, 변경 요약 확인
+
+## 왜 이 구조인가?
+
+- DEM-only로 시작해야 결과가 과적합되지 않는다.
+- 지역/시대 설정은 `Advanced Context`에서 선택적으로 켜서, 비교 실험이 가능해야 한다.
+- 실험적 프로파일은 기본값에서는 숨기고, 사용자가 명시적으로 활성화할 때만 사용한다.
+
+## 플러그인 구성
+
+- `extract`
+  - 라스터 DEM에서 능선/유역 기반 구조 추출
+  - 수계 레이어 미존재 시 자동 대체 수계 사용
+- `terms`
+  - 산단 구조 용어 포인트/연결선(옵션)
+- `scoring`
+  - 후보지 점수, 이유(`reason`, `fs_reason`) 포함 출력
+- `context`
+  - 일반 모드(중립), 고급 모드(지역/시대) 전환
+  - `contexts.json` 기반 컨텍스트 근거 브라우징
+- `calibration`
+  - 로컬 보정(임계치/프로파일) + 추천 프로파일 생성
+  - 추천·기준 비교 + 변경 리포트
+
+## 문서 링크
+
+- `docs/context_profiles.md` (컨텍스트 정책)
+- `docs/reference_audit.md` (근거 추적)
+- `docs/research_matrix.md` (실험 설계)
+- `docs/regional_period_notes.md` (지역/시대 보정 노트)
+- `docs/researcher_quickstart.md` (연구 워크플로)
+- `docs/validation_protocol.md` (검증 체크)
+
+## 사용 제한(정직한 전제)
+
+- 산·수계 자동추출은 좋은 DEM 품질일수록 안정적이다.
+- 지역/시대 컨텍스트는 **초기 우선순위**일 뿐, 현장 조사와 독립 검증을 대체하지 못한다.
+- 실험적 프로파일은 탐색 목적 전용이다.
+
+## 빠른 시작
+
+1. 패널에서 DEM 레이어를 지정
+2. 수계 레이어 지정(없으면 자동 수계 사용)
+3. 후보지 포인트(있으면) 지정
+4. `지형 구조 추출` 실행
+5. 필요 시 용어 점·해석 탭으로 이동
+6. 지역/시대 보정이 필요하면 `고급 설정`에서 활성화
