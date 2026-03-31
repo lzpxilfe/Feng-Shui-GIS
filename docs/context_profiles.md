@@ -56,3 +56,18 @@ Use the neutral/general context as the first comparison frame when the research
 question is about broad spatial-geographic perception rather than a narrowly
 defined national or period tradition. Add country/period splits only when they
 improve held-out performance or are directly justified by the source material.
+
+## Region Profile Stability Policy
+
+- `stable`: profile is applied by default in the UI.
+- `experimental`: shown when "Show exploratory region profiles" is enabled.
+
+Current assignment:
+
+- `ryukyu` and `southeast_asia` are `experimental`:
+  - direct citation coverage is concentrated in limited case studies,
+  - boundaries and historical comparability are under active discussion.
+- `east_asia`, `korea`, `china`, `japan`, and `global_apm` remain `stable`.
+
+This keeps default analyses centered on broadly comparable profiles, while still
+making narrower regional priors available for explicitly exploratory workflows.
