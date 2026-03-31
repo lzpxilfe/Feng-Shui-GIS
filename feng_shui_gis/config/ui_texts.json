@@ -36,6 +36,26 @@
       "ko": "직접 설정",
       "en": "Manual Setup"
     },
+    "workflow_mode_label": {
+      "ko": "분석 모드",
+      "en": "Workflow mode"
+    },
+    "workflow_mode_basic": {
+      "ko": "기본",
+      "en": "Basic"
+    },
+    "workflow_mode_expert": {
+      "ko": "전문",
+      "en": "Expert"
+    },
+    "workflow_mode_basic_short": {
+      "ko": "기본",
+      "en": "Basic"
+    },
+    "workflow_mode_expert_short": {
+      "ko": "전문",
+      "en": "Expert"
+    },
     "goal_hint_tomb": {
       "ko": "<b>의식/무덤</b> 모드입니다. 의례·묘지·제사 공간의 형세를 읽기 위해 <b>{profile}</b> 프리셋을 자동 적용합니다.",
       "en": "<b>Ritual-Burial mode</b>. The <b>{profile}</b> preset is applied automatically for landscapes associated with ritual or mortuary settings."
@@ -241,8 +261,8 @@
       "en": "English"
     },
     "workflow_summary_template": {
-      "ko": "목적: {goal} | 현재 탭: {mode} | 모델: {profile} | 용어 언어: {lang} | 컨텍스트: {context_mode} | 산 이름(web): {mountain_mode}/{mountain_lang} | 준비도 {percent}%",
-      "en": "Goal: {goal} | Tab: {mode} | Model: {profile} | Label language: {lang} | Context: {context_mode} | Mountain names(web): {mountain_mode}/{mountain_lang} | Readiness {percent}%"
+      "ko": "목적: {goal} | 현재 탭: {mode} | 모델: {profile} | 워크플로우: {workflow_mode} | 용어 언어: {lang} | 컨텍스트: {context_mode} | 산 이름(web): {mountain_mode}/{mountain_lang} | 준비도 {percent}%",
+      "en": "Goal: {goal} | Tab: {mode} | Model: {profile} | Workflow: {workflow_mode} | Label language: {lang} | Context: {context_mode} | Mountain names(web): {mountain_mode}/{mountain_lang} | Readiness {percent}%"
     },
     "workflow_next_template": {
       "ko": "다음 단계: {pending}",

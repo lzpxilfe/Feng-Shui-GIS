@@ -367,6 +367,9 @@ class FengShuiDockWidget(QWidget):
                 if hasattr(self, "advanced_context_checkbox")
                 else False
             ),
+            "workflow_mode": self.workflow_mode_combo.currentData()
+            if hasattr(self, "workflow_mode_combo")
+            else "basic",
             "show_experimental_contexts": (
                 bool(self.show_experimental_context_checkbox.isChecked())
                 if hasattr(self, "show_experimental_context_checkbox")
@@ -427,6 +430,7 @@ class FengShuiDockWidget(QWidget):
             getattr(self, "advanced_options_button", None),
             getattr(self, "profile_combo", None),
             getattr(self, "advanced_context_checkbox", None),
+            getattr(self, "workflow_mode_combo", None),
             getattr(self, "show_experimental_context_checkbox", None),
             getattr(self, "culture_combo", None),
             getattr(self, "period_combo", None),
@@ -469,6 +473,12 @@ class FengShuiDockWidget(QWidget):
                 self.advanced_context_checkbox.setChecked(
                     bool(state.get("advanced_context_enabled"))
                 )
+            if hasattr(self, "workflow_mode_combo"):
+                workflow_mode = state.get("workflow_mode", "basic")
+                self._set_combo_data(
+                    self.workflow_mode_combo,
+                    workflow_mode if workflow_mode in {"basic", "expert"} else "basic",
+                )
             if hasattr(self, "show_experimental_context_checkbox"):
                 self.show_experimental_context_checkbox.setChecked(
                     bool(state.get("show_experimental_contexts"))
@@ -509,6 +519,7 @@ class FengShuiDockWidget(QWidget):
         self._toggle_web_mountain_controls()
         self._update_usage_goal_guidance()
         self._update_context_evidence_hint()
+        self._apply_workflow_mode()
         self._update_profile_recommendation_hint()
         self._update_metric_help_hint()
         self._update_quick_number_widget()
@@ -735,19 +746,19 @@ class FengShuiDockWidget(QWidget):
 
         self.purpose_combo = QComboBox(self)
         self.purpose_combo.addItem(
-            ui_text("goal_tomb_label", default="음택(무덤 자리)"),
+            ui_text("goal_tomb_label", default="Ritual-Burial Landscape"),
             "tomb",
         )
         self.purpose_combo.addItem(
-            ui_text("goal_house_label", default="양택(집터/거주지)"),
+            ui_text("goal_house_label", default="Settlement Form (Domestic Landscape)"),
             "house",
         )
         self.purpose_combo.addItem(
-            ui_text("goal_settlement_label", default="고대 정착지 패턴"),
+            ui_text("goal_settlement_label", default="Ancient Settlement Pattern"),
             "settlement",
         )
         self.purpose_combo.addItem(
-            ui_text("goal_general_label", default="일반 지형 읽기"),
+            ui_text("goal_general_label", default="General Terrain Reading"),
             "general",
         )
         for profile_key in available_profiles():
@@ -758,10 +769,10 @@ class FengShuiDockWidget(QWidget):
                 profile_key,
             )
         self.purpose_combo.addItem(
-            ui_text("goal_custom_label", default="직접 설정"),
+            ui_text("goal_custom_label", default="Manual Setup"),
             "custom",
         )
-        form.addRow(ui_text("goal_label", default="탐색 목적"), self.purpose_combo)
+        form.addRow(ui_text("goal_label", default="Exploration Goal"), self.purpose_combo)
 
         self.sites_combo = QgsMapLayerComboBox(self)
         self.sites_combo.setFilters(QgsMapLayerProxyModel.PointLayer)
@@ -808,6 +819,18 @@ class FengShuiDockWidget(QWidget):
         )
         self.label_language_combo.setCurrentIndex(max(0, label_language_index))
         form.addRow(ui_text("label_language", default="Label Language"), self.label_language_combo)
+
+        self.workflow_mode_combo = QComboBox(self)
+        self.workflow_mode_combo.addItem(
+            ui_text("workflow_mode_basic", default="Basic"),
+            "basic",
+        )
+        self.workflow_mode_combo.addItem(
+            ui_text("workflow_mode_expert", default="Expert"),
+            "expert",
+        )
+        self.workflow_mode_combo.setCurrentIndex(0)
+        form.addRow(ui_text("workflow_mode_label", default="Workflow"), self.workflow_mode_combo)
 
         self.web_mountain_checkbox = QCheckBox(
             ui_text(
@@ -1050,6 +1073,7 @@ class FengShuiDockWidget(QWidget):
         self.show_experimental_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
         self.advanced_options_button.toggled.connect(self._toggle_advanced_options_panel)
         self.advanced_options_button.toggled.connect(self._refresh_progress_guide)
+        self.workflow_mode_combo.currentIndexChanged.connect(self._apply_workflow_mode)
         self.web_mountain_checkbox.toggled.connect(self._toggle_web_mountain_controls)
         self.web_mountain_checkbox.toggled.connect(self._refresh_progress_guide)
         self.web_mountain_radius_spin.valueChanged.connect(self._refresh_progress_guide)
@@ -1327,7 +1351,7 @@ class FengShuiDockWidget(QWidget):
         self.calibration_button = QPushButton(
             ui_text(
                 "calibration_button",
-                default="Korea SHP Calibration (ROC/AUC Report)",
+                default="Local Calibration (ROC/AUC Report)",
             ),
             card,
         )
@@ -1351,6 +1375,74 @@ class FengShuiDockWidget(QWidget):
     @staticmethod
     def _experimental_suffix(language="ko"):
         return ui_text("context_experimental_profile_suffix", language, default="(Exploratory)")
+
+    def _workflow_mode(self):
+        if not hasattr(self, "workflow_mode_combo"):
+            return "basic"
+        mode = self.workflow_mode_combo.currentData()
+        return mode if mode in {"basic", "expert"} else "basic"
+
+    def _expert_mode_enabled(self):
+        return self._workflow_mode() == "expert"
+
+    def _apply_workflow_mode(self, *_args):
+        expert_mode = self._expert_mode_enabled()
+
+        if hasattr(self, "advanced_options_button"):
+            self.advanced_options_button.setVisible(expert_mode)
+            if not expert_mode:
+                self.advanced_options_button.setChecked(False)
+        if hasattr(self, "advanced_options_panel"):
+            self.advanced_options_panel.setVisible(expert_mode and self.advanced_options_button.isChecked())
+
+        advanced_controls = (
+            getattr(self, "profile_combo", None),
+            getattr(self, "reload_profiles_button", None),
+            getattr(self, "advanced_context_checkbox", None),
+            getattr(self, "show_experimental_context_checkbox", None),
+            getattr(self, "culture_combo", None),
+            getattr(self, "period_combo", None),
+            getattr(self, "context_param_combo", None),
+            getattr(self, "profile_recommendation_hint", None),
+            getattr(self, "apply_recommended_profile_button", None),
+            getattr(self, "compare_profiles_button", None),
+            getattr(self, "context_evidence_button", None),
+            getattr(self, "context_evidence_hint", None),
+            getattr(self, "context_param_hint", None),
+        )
+        for widget in advanced_controls:
+            if widget is not None:
+                widget.setEnabled(expert_mode)
+
+        if not expert_mode:
+            if hasattr(self, "advanced_context_checkbox"):
+                self.advanced_context_checkbox.setChecked(False)
+            if hasattr(self, "profile_combo"):
+                goal_key = self._usage_goal_key()
+                fallback_profile = self._goal_profile_key(goal_key) or "general"
+                self._set_combo_data(self.profile_combo, fallback_profile)
+            if hasattr(self, "culture_combo"):
+                self._set_combo_data(self.culture_combo, neutral_context_key())
+            if hasattr(self, "period_combo"):
+                self._set_period_combo_data(neutral_context_key())
+            if hasattr(self, "show_experimental_context_checkbox"):
+                self.show_experimental_context_checkbox.setChecked(False)
+            if hasattr(self, "context_param_combo"):
+                self.context_param_combo.blockSignals(True)
+                self.context_param_combo.clear()
+                self.context_param_combo.blockSignals(False)
+        self._toggle_advanced_context_controls()
+
+    def _set_period_combo_data(self, period_key):
+        if not hasattr(self, "period_combo"):
+            return
+        index = self.period_combo.findData(period_key)
+        if index >= 0:
+            self.period_combo.setCurrentIndex(index)
+            return
+        if not self.period_combo.count():
+            return
+        self.period_combo.setCurrentIndex(0)
 
     def _rebuild_culture_combo(self, selected_key=None):
         if not hasattr(self, "culture_combo"):
@@ -1431,13 +1523,13 @@ class FengShuiDockWidget(QWidget):
         profile_key = self._goal_profile_key(goal_key)
         if goal_key == "custom":
             profile_label_text = self.profile_combo.currentText() or ui_text(
-                "goal_custom_label", default="직접 설정"
+                "goal_custom_label", default="Manual"
             )
             return ui_text(
                 "goal_hint_custom",
                 default=(
-                    "<b>직접 설정</b> 모드입니다. 고급 옵션에서 프리셋, 문화권, 시대를 "
-                    "직접 고르며 결과를 조정합니다."
+                    "<b>Manual mode</b>. You can choose preset, culture, "
+                    "period, and parameters directly for fine-tuning."
                 ),
             ).format(profile=escape(profile_label_text))
 
@@ -1507,7 +1599,9 @@ class FengShuiDockWidget(QWidget):
                 if hasattr(self, "mode_tabs") and self.mode_tabs.currentIndex() != 0:
                     self.mode_tabs.setCurrentIndex(0)
 
-            if goal_key == "custom" and hasattr(self, "advanced_options_button"):
+            if goal_key == "custom" and not self._expert_mode_enabled():
+                self._set_combo_data(self.workflow_mode_combo, "expert")
+            elif goal_key == "custom" and hasattr(self, "advanced_options_button"):
                 self.advanced_options_button.setChecked(True)
         finally:
             self._syncing_goal_controls = False
@@ -1983,6 +2077,11 @@ class FengShuiDockWidget(QWidget):
             if self.label_language() == "ko"
             else ui_text("workflow_lang_en", default="English")
         )
+        workflow_mode = (
+            ui_text("workflow_mode_basic_short", default="Basic")
+            if not self._expert_mode_enabled()
+            else ui_text("workflow_mode_expert_short", default="Expert")
+        )
         context_mode = (
             ui_text("context_mode_general_short", default="General")
             if not self._advanced_context_enabled()
@@ -2001,7 +2100,8 @@ class FengShuiDockWidget(QWidget):
                 "workflow_summary_template",
                 default=(
                     "Goal: {goal} | Mode: {mode} | Model: {profile} | "
-                    "Label language: {lang} | Context: {context_mode} | "
+                    "Workflow: {workflow_mode} | Label language: {lang} | "
+                    "Context: {context_mode} | "
                     "Mountain names(web): {mountain_mode}/{mountain_lang} | "
                     "Readiness {percent}%"
                 ),
@@ -2009,6 +2109,7 @@ class FengShuiDockWidget(QWidget):
                 goal=goal_name,
                 mode=mode_name,
                 profile=profile_name,
+                workflow_mode=workflow_mode,
                 lang=lang_name,
                 context_mode=context_mode,
                 mountain_mode=mountain_mode,
