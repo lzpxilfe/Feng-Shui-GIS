@@ -417,30 +417,52 @@ class FengShuiGisPlugin:
     def _pairwise_score_delta(base_layer, compare_layer):
         if base_layer is None or compare_layer is None:
             return None
-        base_scores = []
-        compare_scores = []
+        base_scores = {}
+        compare_scores = {}
         for feature in base_layer.getFeatures():
+            feature_uid = FengShuiGisPlugin._feature_uid(feature)
             try:
-                base_scores.append(float(feature["fs_score"]))
+                base_scores[feature_uid] = float(feature["fs_score"])
             except (KeyError, TypeError, ValueError):
                 continue
         for feature in compare_layer.getFeatures():
+            feature_uid = FengShuiGisPlugin._feature_uid(feature)
             try:
-                compare_scores.append(float(feature["fs_score"]))
+                compare_scores[feature_uid] = float(feature["fs_score"])
             except (KeyError, TypeError, ValueError):
                 continue
-        pair_count = min(len(base_scores), len(compare_scores))
-        if pair_count <= 0:
+        shared_uids = set(base_scores.keys()) & set(compare_scores.keys())
+        if not shared_uids:
             return None
         deltas = [
-            compare_scores[index] - base_scores[index] for index in range(pair_count)
+            compare_scores[feature_uid] - base_scores[feature_uid]
+            for feature_uid in shared_uids
         ]
+        if not deltas:
+            return None
         return {
-            "count": pair_count,
-            "mean_delta": sum(deltas) / pair_count,
+            "count": len(deltas),
+            "mean_delta": sum(deltas) / len(deltas),
             "max_gain": max(deltas),
             "max_drop": min(deltas),
         }
+
+    @staticmethod
+    def _feature_uid(feature):
+        if feature is None:
+            return ""
+        field_names = feature.fields().names()
+        lowered = {name.lower(): name for name in field_names}
+        for candidate in ("fs_uid", "feature_uid", "cal_uid", "cal_id"):
+            if candidate in lowered:
+                try:
+                    value = feature[lowered[candidate]]
+                except (KeyError, TypeError, ValueError):
+                    continue
+                text = str(value or "").strip()
+                if text:
+                    return text
+        return f"fid:{int(feature.id())}"
 
     @staticmethod
     def _feature_display_name(feature):
@@ -466,7 +488,8 @@ class FengShuiGisPlugin:
                 text = str(value or "").strip()
                 if text:
                     return text
-        return f"fid:{int(feature.id())}"
+        uid = FengShuiGisPlugin._feature_uid(feature)
+        return uid or f"fid:{int(feature.id())}"
 
     @staticmethod
     def _feature_reason_text(feature):
@@ -508,40 +531,47 @@ class FengShuiGisPlugin:
             return []
         if limit is None:
             limit = self._COMPARE_TOP_CHANGE_LIMIT
-        base_by_id = {}
-        compare_by_id = {}
+        base_by_uid = {}
+        compare_by_uid = {}
         for feature in base_layer.getFeatures():
+            feature_uid = self._feature_uid(feature)
+            if not feature_uid:
+                continue
             try:
                 score = float(feature["fs_score"])
             except (KeyError, TypeError, ValueError):
                 continue
-            feature_id = int(feature.id())
-            base_by_id[feature_id] = {
+            base_by_uid[feature_uid] = {
                 "label": self._feature_display_name(feature),
                 "score": score,
                 "reason": self._feature_reason_text(feature),
             }
         for feature in compare_layer.getFeatures():
+            feature_uid = self._feature_uid(feature)
+            if not feature_uid:
+                continue
             try:
                 score = float(feature["fs_score"])
             except (KeyError, TypeError, ValueError):
                 continue
-            feature_id = int(feature.id())
-            compare_by_id[feature_id] = {
+            compare_by_uid[feature_uid] = {
                 "label": self._feature_display_name(feature),
                 "score": score,
                 "reason": self._feature_reason_text(feature),
             }
-        shared_ids = sorted(set(base_by_id.keys()) & set(compare_by_id.keys()))
+        shared_uids = sorted(set(base_by_uid.keys()) & set(compare_by_uid.keys()))
         rows = []
-        for feature_id in shared_ids:
-            base_entry = base_by_id[feature_id]
-            compare_entry = compare_by_id[feature_id]
+        for feature_uid in shared_uids:
+            base_entry = base_by_uid[feature_uid]
+            compare_entry = compare_by_uid[feature_uid]
             delta = compare_entry["score"] - base_entry["score"]
             rows.append(
                 {
-                    "feature_id": feature_id,
-                    "label": compare_entry.get("label") or base_entry.get("label") or f"fid:{feature_id}",
+                    "feature_uid": str(feature_uid),
+                    "feature_id": str(feature_uid),
+                    "label": compare_entry.get("label")
+                    or base_entry.get("label")
+                    or f"fid:{feature_uid}",
                     "base_score": base_entry["score"],
                     "compare_score": compare_entry["score"],
                     "delta": delta,
@@ -556,18 +586,37 @@ class FengShuiGisPlugin:
         return rows[: max(1, int(limit))]
 
     @staticmethod
-    def _feature_ids_from_change_rows(change_rows):
-        feature_ids = []
+    def _feature_uids_from_change_rows(change_rows):
+        feature_uids = []
         for row in change_rows or []:
-            try:
-                feature_id = int(row.get("feature_id"))
-            except (TypeError, ValueError, AttributeError):
+            feature_uid = row.get("feature_uid")
+            if not feature_uid:
+                feature_uid = row.get("feature_id")
+            if not feature_uid:
                 continue
-            feature_ids.append(feature_id)
-        return feature_ids
+            feature_uids.append(str(feature_uid))
+        return feature_uids
+
+    @staticmethod
+    def _feature_uids_to_fids(layer, feature_uids):
+        if layer is None:
+            return []
+        target_uids = {str(item) for item in feature_uids}
+        resolved = {}
+        for feature in layer.getFeatures():
+            uid = str(FengShuiGisPlugin._feature_uid(feature))
+            if uid in target_uids:
+                resolved[uid] = int(feature.id())
+        selected = []
+        for uid in feature_uids:
+            fid = resolved.get(str(uid))
+            if fid is not None:
+                selected.append(fid)
+        return selected
 
     def _select_top_changed_features(self, base_layer, compare_layer, change_rows):
-        feature_ids = self._feature_ids_from_change_rows(change_rows)
+        feature_uids = self._feature_uids_from_change_rows(change_rows)
+        feature_ids = self._feature_uids_to_fids(compare_layer, feature_uids)
         if not feature_ids:
             return 0
         selected_count = 0
@@ -616,11 +665,12 @@ class FengShuiGisPlugin:
             return None
         feature_map = {}
         for row in top_changes:
-            try:
-                feature_id = int(row.get("feature_id"))
-            except (TypeError, ValueError, AttributeError):
+            feature_uid = row.get("feature_uid")
+            if not feature_uid:
+                feature_uid = row.get("feature_id")
+            if not feature_uid:
                 continue
-            feature_map[feature_id] = row
+            feature_map[str(feature_uid)] = row
         if not feature_map:
             return None
 
@@ -658,11 +708,9 @@ class FengShuiGisPlugin:
         new_features = []
         output_fields = export_layer.fields()
         original_field_names = compare_layer.fields().names()
-        for source_feature in compare_layer.getFeatures(
-            QgsFeatureRequest().setFilterFids(list(feature_map.keys()))
-        ):
-            feature_id = int(source_feature.id())
-            row = feature_map.get(feature_id)
+        for source_feature in compare_layer.getFeatures():
+            feature_uid = str(self._feature_uid(source_feature))
+            row = feature_map.get(feature_uid)
             if row is None:
                 continue
             new_feature = QgsFeature(output_fields)

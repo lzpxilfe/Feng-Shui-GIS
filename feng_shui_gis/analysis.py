@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from collections import defaultdict, deque
+import hashlib
 import math
+import json
 import random
 
 from qgis import processing
@@ -52,6 +54,7 @@ HYDRO_CLASS_LABELS_KO = {
     "minor": "미소 수로",
 }
 
+_FEATURE_UID_FIELD = "fs_uid"
 
 class FengShuiAnalyzer:
     """Compute archaeology-oriented Feng Shui scores from DEM and optional water."""
@@ -444,6 +447,8 @@ class FengShuiAnalyzer:
 
     def _ensure_fields(self, layer):
         to_add = []
+        if layer.fields().indexFromName(_FEATURE_UID_FIELD) < 0:
+            to_add.append(QgsField(_FEATURE_UID_FIELD, QVariant.String, "string", 64))
         if layer.fields().indexFromName("fs_culture") < 0:
             to_add.append(QgsField("fs_culture", QVariant.String, "string", 20))
         if layer.fields().indexFromName("fs_period") < 0:
@@ -541,6 +546,56 @@ class FengShuiAnalyzer:
                 layer.updateFeature(feature)
 
     @staticmethod
+    def _normalize_signature_value(value):
+        if value is None:
+            return ""
+        if isinstance(value, float):
+            return round(value, 12)
+        if isinstance(value, (list, tuple, dict)):
+            return json.dumps(value, sort_keys=True, ensure_ascii=False)
+        return str(value)
+
+    @classmethod
+    def _signature_from_inputs(cls, geometry, attributes, sequence=None, extra=None):
+        payload = {
+            "sequence": int(sequence) if sequence is not None else None,
+            "extra": extra or {},
+        }
+        if geometry is not None:
+            payload["geometry"] = (geometry.asWkb() or b"").hex()
+        else:
+            payload["geometry"] = ""
+        payload["attributes"] = {}
+        if attributes:
+            for key in sorted(attributes):
+                payload["attributes"][str(key)] = cls._normalize_signature_value(
+                    attributes[key]
+                )
+        return hashlib.sha1(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+
+    @classmethod
+    def _feature_uid(cls, feature, sequence=None):
+        field_names = feature.fields().names()
+        candidate_fields = [name for name in field_names if name == _FEATURE_UID_FIELD]
+        for name in candidate_fields:
+            raw_uid = feature[name]
+            if str(raw_uid).strip():
+                return str(raw_uid).strip()
+
+        filtered = {}
+        for name in field_names:
+            lowered = str(name).lower()
+            if lowered.startswith("fs_") or lowered in {"cal_id", "cal_uid"}:
+                continue
+            try:
+                filtered[name] = feature[name]
+            except (TypeError, ValueError, KeyError):
+                continue
+        return cls._signature_from_inputs(feature.geometry(), filtered, sequence=sequence)
+
+    @staticmethod
     def _normalized_weight_map(weights):
         if not isinstance(weights, dict):
             return {}
@@ -562,12 +617,20 @@ class FengShuiAnalyzer:
     @staticmethod
     def _calibration_row_id(feature, field_names=None):
         names = field_names or feature.fields().names()
+        if _FEATURE_UID_FIELD in names:
+            uid_value = feature[_FEATURE_UID_FIELD]
+            if str(uid_value).strip():
+                return str(uid_value).strip()
+        if "cal_uid" in names:
+            uid_value = feature["cal_uid"]
+            if str(uid_value).strip():
+                return str(uid_value).strip()
         if "cal_id" in names:
             try:
-                return int(feature["cal_id"])
+                return f"legacy-cal:{int(feature['cal_id'])}"
             except (TypeError, ValueError):
                 pass
-        return int(feature.id())
+        return f"fid:{int(feature.id())}"
 
     @staticmethod
     def _calibration_profile_parameters(profile):
@@ -1157,7 +1220,7 @@ class FengShuiAnalyzer:
             )
 
         with edit(site_layer):
-            for feature in site_layer.getFeatures():
+            for feature_index, feature in enumerate(site_layer.getFeatures(), start=1):
                 slope_value = self._to_float(feature[slope_field]) if slope_field else None
                 aspect_value = self._to_float(feature[aspect_field]) if aspect_field else None
                 feature_geom = feature.geometry() if feature.hasGeometry() else None
@@ -1238,6 +1301,7 @@ class FengShuiAnalyzer:
                 feature["fs_tpi_lg"]    = dem_metrics.get("large_tpi_norm")
                 feature["fs_roughness"] = dem_metrics.get("roughness")
                 feature["fs_cut_depth"] = dem_metrics.get("cut_depth")
+                feature[_FEATURE_UID_FIELD] = self._feature_uid(feature, sequence=feature_index)
                 site_layer.updateFeature(feature)
 
     @classmethod
@@ -1726,6 +1790,7 @@ class FengShuiAnalyzer:
         data = layer.dataProvider()
         fields = QgsFields()
         fields.append(QgsField("cal_id", QVariant.Int))
+        fields.append(QgsField("fs_uid", QVariant.String, "string", 64))
         fields.append(QgsField("fs_label", QVariant.Int))
         fields.append(QgsField("fs_group", QVariant.String, "string", 8))
         data.addAttributes(fields)
@@ -1737,6 +1802,12 @@ class FengShuiAnalyzer:
             feature = QgsFeature(layer.fields())
             feature.setGeometry(QgsGeometry.fromPointXY(point))
             feature["cal_id"] = running
+            feature["fs_uid"] = cls._signature_from_inputs(
+                feature.geometry(),
+                {"cal_group": "positive"},
+                sequence=running,
+                extra={"point_type": "positive"},
+            )
             feature["fs_label"] = 1
             feature["fs_group"] = "positive"
             features.append(feature)
@@ -1745,6 +1816,12 @@ class FengShuiAnalyzer:
             feature = QgsFeature(layer.fields())
             feature.setGeometry(QgsGeometry.fromPointXY(point))
             feature["cal_id"] = running
+            feature["fs_uid"] = cls._signature_from_inputs(
+                feature.geometry(),
+                {"cal_group": "negative"},
+                sequence=running,
+                extra={"point_type": "negative"},
+            )
             feature["fs_label"] = 0
             feature["fs_group"] = "negative"
             features.append(feature)
