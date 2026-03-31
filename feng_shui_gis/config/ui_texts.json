@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "texts": {
     "help_tab_quick_terms": {
       "ko": "숫자 해석",

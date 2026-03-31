@@ -23,7 +23,6 @@ from qgis.PyQt.QtWidgets import (
 from qgis.core import QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
 
-from .analysis import FengShuiAnalyzer
 from .cultural_context import (
     available_cultures,
     available_cultures_filtered_by_tier,
@@ -38,6 +37,7 @@ from .cultural_context import (
 from .locale import language_code, tr
 from .locale import set_language_code
 from .mountain_options import mountain_options
+from .service_contracts import DemDiagnosticsRequest
 from .profile_catalog import (
     analysis_rules,
     available_profiles,
@@ -55,6 +55,7 @@ from .ui_catalog import (
     ui_term_meanings,
     ui_text,
 )
+from .services.diagnostics_service import FengShuiDiagnosticService
 
 
 class FengShuiHelpDialog(QDialog):
@@ -283,6 +284,7 @@ class FengShuiDockWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._diagnostic_service = FengShuiDiagnosticService()
         saved_ui_language = str(
             QSettings().value("feng_shui_gis/ui_language", "") or ""
         ).strip()
@@ -1891,7 +1893,9 @@ class FengShuiDockWidget(QWidget):
             return
 
         try:
-            diagnostics = FengShuiAnalyzer.adaptive_spacing_diagnostics(dem_layer)
+            diagnostics = self._diagnostic_service.run_dem_diagnostics(
+                DemDiagnosticsRequest(dem_layer=dem_layer)
+            )
         except RuntimeError as exc:
             self.dem_diag_widget.setText(
                 ui_text(
