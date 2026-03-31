@@ -32,6 +32,58 @@
 
 ---
 
+## 🚀 빠른 시작
+
+### 1분 시작 (Fast Start)
+
+1. DEM 로딩 → 수계 레이어 있으면 지정, 없으면 자동 수계 사용
+2. `지형 구조 추출` 클릭 (기본 모드)
+3. 후보지 레이어가 있으면 `입지 분석` 클릭
+4. 결과 레이어에서 `reason`/`fs_reason` 확인
+
+### 5분 시작 (Standard Start)
+
+1. 목표를 `무덤 / 주거 / 정착지 / 일반` 중 선택
+2. 문화권(`korea`, `china`, `japan` 등)과 시대를 설정
+3. 필요 시 `용어 추출` 실행
+4. `캘리브레이션` 실행 (로컬 점수/양성-음성 샘플 기반)
+5. `비교 리포트`에서 보정 전후 지표(ROC/PR/F1/Youden J) 확인
+
+---
+
+## 🖼️ 한눈에 보는 3단계 작업 흐름
+
+```text
+[Input] DEM + (Water) + (Sites)
+   ↓
+[Step 1] Extract terrain features
+   - Ridges, Hydro, Terrain metrics
+   ↓
+[Step 2] Derive interpretation layer
+   - Terms, Links, Site candidates
+   ↓
+[Step 3] Analyze & calibrate
+   - fs_score, reason, report, compare
+```
+
+> 원하면 나중에 스크린샷/동영상 캡처를 넣으면 즉시 사용자형 가이드 카드로 업그레이드 가능합니다.
+
+예시 플로우:
+- 이미지_1: 초기 입력 설정(DEM, 수계, 후보지 지정)
+- 이미지_2: 지형 추출/용어 추출 결과 확인
+- 이미지_3: 보정/비교 결과에서 점수 변화 확인
+
+### 스크린샷 설정 순서(문서 템플릿)
+
+1) `examples/step_01_input_setup.png`  
+   - DEM 선택, 수계 지정(또는 자동 수계 토글), 후보지 레이어 지정
+2) `examples/step_02_terrain_terms.png`  
+   - 지형 추출 실행 → 용어 추출(필요 시) → 후보 레이어 생성 확인
+3) `examples/step_03_calibrate_compare.png`  
+   - 보정 실행 → 프로파일 비교 → `reason` / `fs_reason` 기반 해석 정합성 점검
+
+---
+
 ## ⚙️ 주요 기능
 
 ### 🗺️ 1) 기본 분석 워크플로
@@ -115,6 +167,27 @@
 - [docs/regional_period_notes.md](docs/regional_period_notes.md)
 - [docs/researcher_quickstart.md](docs/researcher_quickstart.md)
 - [docs/validation_protocol.md](docs/validation_protocol.md)
+- [changelog.md](changelog.md)
+
+---
+
+## 🧰 Requirements & Install Notes
+
+- QGIS 3.28+
+- Python 3.8+ (QGIS 내장 Python 환경 사용)
+- DEM raster(권장: 미터 좌표계)
+- 선택 입력:
+  - Water/river 레이어(가능하면 선형 수계)
+  - 후보지 포인트 레이어(입지 점수 시)
+- 의존성/설정:
+  - QGIS Processing Toolbox 사용
+  - plugin 폴더 내 `feng_shui_gis/config/*.json` 설정 파일
+  - 자동 보고서/매니페스트 저장용 쓰기 권한 있는 작업 디렉터리
+
+## 🔗 requirements & changelog
+
+- 📌 requirements: 현재 섹션의 [Requirements & Install Notes](#-requirements--install-notes)
+- 🧾 changelog: [changelog.md](changelog.md)
 
 ---
 
@@ -131,3 +204,9 @@
 
 - 자동 추출/보정은 보조 판단 도구이며, 최종 의사결정은 현장 조사와 추가 검증을 함께 사용하세요.
 - 실험용 프로파일은 탐색적 성격이 강합니다.
+
+---
+
+## 🔗 업데이트 내역 보기
+
+- 최신 변경사항은 [changelog.md](changelog.md)에서 확인하세요.
