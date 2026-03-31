@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """Profile, term, and rules catalogs loaded from validated JSON configs."""
 
-import json
 import os
 
-from .config_loader import load_json
+from .config_loader import load_config_json
+
+_SCHEMA_VERSION = 1
 
 _PROFILE_FILE = "profiles.json"
 _LOCAL_PROFILE_FILE = "local_profiles.json"
@@ -67,7 +68,8 @@ def _require_string(container, key, context):
 
 
 def _validate_profiles(data, context_name=_PROFILE_FILE, allow_empty=False):
-    profiles = _require_dict(data, context_name, allow_empty=allow_empty)
+    payload = _payload_without_schema_version(data, context_name, allow_empty=allow_empty)
+    profiles = _require_dict(payload, context_name, allow_empty=allow_empty)
     for profile_key, spec in profiles.items():
         context = f"{context_name}:{profile_key}"
         spec = _require_dict(spec, context)
@@ -85,20 +87,34 @@ def _validate_profiles(data, context_name=_PROFILE_FILE, allow_empty=False):
     return profiles
 
 
+def _payload_without_schema_version(data, context_name, allow_empty=False):
+    payload = _require_dict(data, context_name, allow_empty=allow_empty)
+    if "schema_version" not in payload:
+        return payload
+    return {
+        profile_key: profile_value
+        for profile_key, profile_value in payload.items()
+        if profile_key != "schema_version"
+    }
+
+
 def _load_local_profiles():
     path = os.path.join(os.path.dirname(__file__), "config", _LOCAL_PROFILE_FILE)
     if not os.path.exists(path):
         return {}
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Invalid JSON config: {path}") from exc
-    return _validate_profiles(data, _LOCAL_PROFILE_FILE, allow_empty=True)
+    return _validate_profiles(
+        load_config_json(
+            _LOCAL_PROFILE_FILE,
+            schema_version=_SCHEMA_VERSION,
+        ),
+        _LOCAL_PROFILE_FILE,
+        allow_empty=True,
+    )
 
 
 def _validate_term_catalog(data):
-    catalog = _require_dict(data, _TERM_FILE)
+    catalog = _payload_without_schema_version(data, _TERM_FILE)
+    catalog = _require_dict(catalog, _TERM_FILE)
     term_labels = _require_dict(catalog.get("term_labels"), f"{_TERM_FILE}.term_labels")
     for term_id, labels in term_labels.items():
         _require_dict(labels, f"{_TERM_FILE}.term_labels.{term_id}")
@@ -155,7 +171,8 @@ def _validate_term_catalog(data):
 
 
 def _validate_analysis_rules(data):
-    rules = _require_dict(data, _RULE_FILE)
+    rules = _payload_without_schema_version(data, _RULE_FILE)
+    rules = _require_dict(rules, _RULE_FILE)
     for key, expected_type in _REQUIRED_RULE_TYPES.items():
         if key not in rules:
             raise RuntimeError(f"Missing required section '{key}' in {_RULE_FILE}.")
@@ -166,7 +183,11 @@ def _validate_analysis_rules(data):
 
 
 def profile_specs():
-    profiles = dict(_validate_profiles(load_json(_PROFILE_FILE)))
+    profiles = dict(
+        _validate_profiles(
+            load_config_json(_PROFILE_FILE, schema_version=_SCHEMA_VERSION),
+        )
+    )
     profiles.update(_load_local_profiles())
     return profiles
 
@@ -191,7 +212,9 @@ def profile_label(profile_key, language):
 
 
 def term_catalog():
-    return _validate_term_catalog(load_json(_TERM_FILE))
+    return _validate_term_catalog(
+        load_config_json(_TERM_FILE, schema_version=_SCHEMA_VERSION)
+    )
 
 
 def term_labels():
@@ -229,4 +252,6 @@ def line_styles():
 
 
 def analysis_rules():
-    return _validate_analysis_rules(load_json(_RULE_FILE))
+    return _validate_analysis_rules(
+        load_config_json(_RULE_FILE, schema_version=_SCHEMA_VERSION)
+    )

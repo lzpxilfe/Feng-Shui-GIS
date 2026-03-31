@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "term_labels": {
     "hyeol": { "en": "Hyeol", "ko": "혈" },
     "myeongdang": { "en": "Myeongdang", "ko": "명당" },
