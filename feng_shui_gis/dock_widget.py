@@ -26,7 +26,9 @@ from qgis.gui import QgsMapLayerComboBox
 from .analysis import FengShuiAnalyzer
 from .cultural_context import (
     available_cultures,
+    available_cultures_filtered_by_tier,
     available_periods,
+    culture_visibility_tier,
     culture_label,
     context_evidence_html,
     context_evidence_records,
@@ -365,6 +367,11 @@ class FengShuiDockWidget(QWidget):
                 if hasattr(self, "advanced_context_checkbox")
                 else False
             ),
+            "show_experimental_contexts": (
+                bool(self.show_experimental_context_checkbox.isChecked())
+                if hasattr(self, "show_experimental_context_checkbox")
+                else False
+            ),
             "culture_key": self.culture_combo.currentData() if hasattr(self, "culture_combo") else None,
             "period_key": self.period_combo.currentData() if hasattr(self, "period_combo") else None,
             "mode_tab_index": self.mode_tabs.currentIndex() if hasattr(self, "mode_tabs") else 0,
@@ -420,6 +427,7 @@ class FengShuiDockWidget(QWidget):
             getattr(self, "advanced_options_button", None),
             getattr(self, "profile_combo", None),
             getattr(self, "advanced_context_checkbox", None),
+            getattr(self, "show_experimental_context_checkbox", None),
             getattr(self, "culture_combo", None),
             getattr(self, "period_combo", None),
             getattr(self, "mode_tabs", None),
@@ -461,7 +469,11 @@ class FengShuiDockWidget(QWidget):
                 self.advanced_context_checkbox.setChecked(
                     bool(state.get("advanced_context_enabled"))
                 )
-            self._set_combo_data(getattr(self, "culture_combo", None), state.get("culture_key"))
+            if hasattr(self, "show_experimental_context_checkbox"):
+                self.show_experimental_context_checkbox.setChecked(
+                    bool(state.get("show_experimental_contexts"))
+                )
+            self._rebuild_culture_combo(state.get("culture_key"))
             self._set_combo_data(getattr(self, "period_combo", None), state.get("period_key"))
             if hasattr(self, "mode_tabs"):
                 tab_index = int(state.get("mode_tab_index", 0))
@@ -920,10 +932,30 @@ class FengShuiDockWidget(QWidget):
             self.advanced_context_checkbox,
         )
 
+        self.show_experimental_context_checkbox = QCheckBox(
+            ui_text(
+                "context_experimental_toggle_label",
+                default=(
+                    "탐색 지역 프로필 표시 (근거 제한)"
+                    if language_code() == "ko"
+                    else "Show exploratory region profiles (limited evidence)"
+                ),
+            ),
+            self,
+        )
+        self.show_experimental_context_checkbox.setChecked(False)
+        advanced_form.addRow(
+            ui_text(
+                "context_scope_label",
+                default=(
+                    "프로필 범위" if language_code() == "ko" else "Context Profile Scope"
+                ),
+            ),
+            self.show_experimental_context_checkbox,
+        )
+
         self.culture_combo = QComboBox(self)
-        culture_keys = list(available_cultures()) or ["east_asia"]
-        for culture_key in culture_keys:
-            self.culture_combo.addItem(culture_label(culture_key, lang), culture_key)
+        self._rebuild_culture_combo()
         advanced_form.addRow(tr("culture_label"), self.culture_combo)
 
         self.period_combo = QComboBox(self)
@@ -1004,8 +1036,18 @@ class FengShuiDockWidget(QWidget):
         self.profile_combo.currentIndexChanged.connect(self._update_profile_recommendation_hint)
         self.culture_combo.currentIndexChanged.connect(self._update_profile_recommendation_hint)
         self.period_combo.currentIndexChanged.connect(self._update_profile_recommendation_hint)
+        self.show_experimental_context_checkbox.toggled.connect(
+            self._rebuild_culture_combo
+        )
+        self.show_experimental_context_checkbox.toggled.connect(
+            self._update_context_evidence_hint
+        )
+        self.show_experimental_context_checkbox.toggled.connect(
+            self._update_profile_recommendation_hint
+        )
         self.advanced_context_checkbox.toggled.connect(self._update_profile_recommendation_hint)
         self.advanced_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
+        self.show_experimental_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
         self.advanced_options_button.toggled.connect(self._toggle_advanced_options_panel)
         self.advanced_options_button.toggled.connect(self._refresh_progress_guide)
         self.web_mountain_checkbox.toggled.connect(self._toggle_web_mountain_controls)
@@ -1053,6 +1095,7 @@ class FengShuiDockWidget(QWidget):
         self.culture_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.period_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.hemisphere_combo.currentIndexChanged.connect(self._refresh_progress_guide)
+        self.show_experimental_context_checkbox.toggled.connect(self._refresh_progress_guide)
         self.label_language_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.advanced_context_checkbox.toggled.connect(self._refresh_progress_guide)
         self.label_language_combo.currentIndexChanged.connect(self._update_quick_number_widget)
@@ -1300,6 +1343,44 @@ class FengShuiDockWidget(QWidget):
             return False
         return bool(self.advanced_context_checkbox.isChecked())
 
+    def _show_experimental_contexts(self):
+        if not hasattr(self, "show_experimental_context_checkbox"):
+            return False
+        return bool(self.show_experimental_context_checkbox.isChecked())
+
+    @staticmethod
+    def _experimental_suffix(language="ko"):
+        return ui_text("context_experimental_profile_suffix", language, default="(Exploratory)")
+
+    def _rebuild_culture_combo(self, selected_key=None):
+        if not hasattr(self, "culture_combo"):
+            return
+        if selected_key is None:
+            selected_key = self.culture_combo.currentData()
+        lang = self.ui_language()
+        stable = list(available_cultures_filtered_by_tier("stable"))
+        experimental = list(available_cultures_filtered_by_tier("experimental"))
+
+        self.culture_combo.blockSignals(True)
+        self.culture_combo.clear()
+        for culture_key in stable or ["east_asia"]:
+            self.culture_combo.addItem(culture_label(culture_key, lang), culture_key)
+
+        if self._show_experimental_contexts():
+            for culture_key in experimental:
+                if culture_key in stable:
+                    continue
+                suffix = self._experimental_suffix(lang)
+                self.culture_combo.addItem(
+                    f"{culture_label(culture_key, lang)}{suffix}",
+                    culture_key,
+                )
+
+        self._set_combo_data(self.culture_combo, selected_key)
+        if self.culture_combo.currentIndex() < 0 and self.culture_combo.count() > 0:
+            self.culture_combo.setCurrentIndex(0)
+        self.culture_combo.blockSignals(False)
+
     def _toggle_advanced_options_panel(self, checked=None):
         expanded = bool(checked) if checked is not None else bool(
             self.advanced_options_button.isChecked()
@@ -1460,6 +1541,7 @@ class FengShuiDockWidget(QWidget):
             getattr(self, "culture_combo", None),
             getattr(self, "period_combo", None),
             getattr(self, "context_param_combo", None),
+            getattr(self, "show_experimental_context_checkbox", None),
         ]
         for widget in widgets:
             if widget is not None:
@@ -1564,6 +1646,12 @@ class FengShuiDockWidget(QWidget):
             return
 
         culture_key, period_key = self._effective_context_keys()
+        context_tier = culture_visibility_tier(culture_key)
+        culture_name = self.culture_combo.currentText()
+        if context_tier == "experimental":
+            suffix = self._experimental_suffix(language_code())
+            if suffix and suffix not in culture_name:
+                culture_name = f"{culture_name}{suffix}"
         records = context_evidence_records(
             culture_key=culture_key,
             period_key=period_key,
@@ -1596,7 +1684,7 @@ class FengShuiDockWidget(QWidget):
             "context_hint_template",
             default="Profile evidence: {culture} / {period} (details: '{button}').",
         ).format(
-            culture=self.culture_combo.currentText(),
+            culture=culture_name,
             period=self.period_combo.currentText(),
             button=ui_text("context_evidence_button", default="View Context Evidence"),
         )
@@ -1796,6 +1884,14 @@ class FengShuiDockWidget(QWidget):
             quality = "Moderate"
         else:
             quality = "Stronger"
+
+        if (
+            self._advanced_context_enabled()
+            and culture_visibility_tier(self._effective_context_keys()[0]) == "experimental"
+        ):
+            if quality not in ("Exploratory", "Moderate"):
+                quality = "Exploratory"
+            quality = f"{quality} (experimental region profile)"
 
         recommendation = (
             "Includes many heuristic priors (C/U); run calibration and local validation."

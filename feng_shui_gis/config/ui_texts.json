@@ -64,6 +64,34 @@
       "ko": "컨텍스트 근거 보기",
       "en": "View Context Evidence"
     },
+    "context_general_mode_hint": {
+      "ko": "현재 일반 원칙 모드입니다. 지역·시대 가중치가 적용되지 않습니다.",
+      "en": "General-principles mode is active. Region/period overrides are disabled."
+    },
+    "context_general_mode_note": {
+      "ko": "중립 전역 원칙만 적용됩니다.",
+      "en": "Using neutral global principles only (no country/period overrides)."
+    },
+    "context_scope_label": {
+      "ko": "프로필 범위",
+      "en": "Context Profile Scope"
+    },
+    "context_experimental_toggle_label": {
+      "ko": "탐색 지역 프로필 표시 (근거 제한)",
+      "en": "Show exploratory region profiles (limited evidence)"
+    },
+    "context_experimental_profile_suffix": {
+      "ko": "(실험적)",
+      "en": "(Exploratory)"
+    },
+    "advanced_context_toggle_label": {
+      "en": "Enable advanced context (country/period)",
+      "ko": "고급 컨텍스트 적용(지역/시대)"
+    },
+    "context_mode_label": {
+      "en": "Context Mode",
+      "ko": "컨텍스트 모드"
+    },
     "guide_title": {
       "ko": "진행 가이드",
       "en": "Progress Guide"
@@ -143,6 +171,10 @@
     "context_hint_reference_prefix": {
       "ko": "대표 참고문헌: ",
       "en": " Representative references: "
+    },
+    "context_quality_warning": {
+      "ko": "컨텍스트 근거에 휴리스틱 prior (C/U) 항목이 {low}/{total}개 있습니다. 이 실행은 탐색적 분석으로 간주하고 지역별 캘리브레이션으로 검증하세요.",
+      "en": "Context evidence includes heuristic priors (C/U): {low}/{total}. Treat this run as exploratory and validate with local calibration."
     },
     "context_no_params": {
       "ko": "선택 가능한 파라미터 근거가 없습니다.",
@@ -1035,45 +1067,71 @@
       "en": "No profile-level paper evidence was applied."
     },
     "context_evidence_html_title": {
+      "ko": "컨텍스트 근거",
       "en": "Context Evidence"
     },
     "context_evidence_html_empty": {
+      "ko": "근거 정보가 없습니다.",
       "en": "No evidence information is available."
     },
     "context_evidence_group_parameter": {
+      "ko": "파라미터",
       "en": "parameter"
     },
     "context_evidence_group_weight_bias": {
+      "ko": "가중치 보정",
       "en": "weight bias"
     },
     "context_evidence_group_term_bias": {
+      "ko": "용어 보정",
       "en": "term bias"
     },
     "context_evidence_meta_culture": {
+      "ko": "문화권",
       "en": "culture"
     },
+    "context_evidence_meta_tier": {
+      "ko": "프로파일 분류",
+      "en": "context tier"
+    },
+    "context_evidence_meta_scope": {
+      "ko": "근거 범위",
+      "en": "evidence scope"
+    },
     "context_evidence_meta_period": {
+      "ko": "시대",
       "en": "period"
     },
     "context_evidence_meta_hemisphere": {
+      "ko": "반구",
       "en": "hemisphere"
     },
     "context_evidence_col_group": {
+      "ko": "그룹",
       "en": "group"
     },
     "context_evidence_col_name": {
+      "ko": "이름",
       "en": "name"
     },
     "context_evidence_col_value": {
+      "ko": "값",
       "en": "value"
     },
     "context_evidence_col_level": {
+      "ko": "근거수준",
       "en": "level"
     },
     "context_evidence_col_source_doi": {
+      "ko": "근거DOI",
       "en": "source_doi"
     },
+    "context_evidence_col_reference": {
+      "ko": "참고문헌",
+      "en": "reference"
+    },
     "context_evidence_col_note": {
+      "ko": "메모",
       "en": "note"
     },
     "context_evidence_level_note": {

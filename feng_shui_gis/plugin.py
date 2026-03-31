@@ -1830,8 +1830,8 @@ class FengShuiGisPlugin:
             "context_quality_warning",
             text_lang,
             default=(
-                "Context evidence includes heuristic priors (C/U): {low}/{total}. "
-                "Treat this run as exploratory and validate with local calibration."
+                "Context evidence includes heuristic priors (C/U): "
+                "{low}/{total}. Consider exploratory usage + local calibration."
             ),
         ).format(low=low_count, total=total)
         self.iface.messageBar().pushWarning(tr("plugin_title"), warning)
