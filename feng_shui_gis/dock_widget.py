@@ -10,7 +10,6 @@ from qgis.PyQt.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
-    QProgressBar,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -25,9 +24,7 @@ from qgis.gui import QgsMapLayerComboBox
 
 from .cultural_context import (
     available_cultures,
-    available_cultures_filtered_by_tier,
     available_periods,
-    culture_visibility_tier,
     culture_label,
     context_evidence_html,
     context_evidence_records,
@@ -37,26 +34,46 @@ from .cultural_context import (
 from .locale import language_code, tr
 from .locale import set_language_code
 from .mountain_options import mountain_options
-from .dock_widget_viewmodel import DockWidgetProfileViewModel
-from .service_contracts import DemDiagnosticsRequest
 from .profile_catalog import (
-    analysis_rules,
     available_profiles,
     line_styles,
     profile_label,
     term_label,
     term_label_ko,
 )
-from .reference_catalog import reference_display_text, references_help_html
+from .dock_widget_state import restore_ui_state as restore_dock_ui_state
+from .dock_widget_state import snapshot_ui_state as snapshot_dock_ui_state
+from .dock_widget_advanced_fragment import build_advanced_options_fragment
+from .dock_widget_fragments import build_workflow_guide_card
+from .dock_widget_controls import advanced_context_control_state, mountain_control_state
+from .dock_widget_mode_state import (
+    advanced_options_panel_state,
+    usage_goal_guidance_state,
+    usage_goal_preset_state,
+)
+from .dock_widget_mode_fragments import build_analysis_tab, build_landscape_tab
+from .dock_widget_presenters import (
+    apply_workflow_presentation,
+    build_dem_diagnostics_html,
+    build_evidence_summary_html,
+    metric_help_text,
+    quick_number_html,
+    workflow_recent_status_text,
+)
+from .dock_widget_viewmodel import (
+    context_evidence_state,
+    recommendation_state,
+    workflow_presentation_state,
+)
+from .dock_widget_workflow import workflow_checks_state
+from .reference_catalog import references_help_html
 from .ui_catalog import (
     ui_help_html,
     ui_hydro_legend,
-    ui_metric_help_items,
     ui_ridge_legend,
     ui_term_meanings,
     ui_text,
 )
-from .services.diagnostics_service import FengShuiDiagnosticService
 
 
 class FengShuiHelpDialog(QDialog):
@@ -245,8 +262,6 @@ class FengShuiDockWidget(QWidget):
     run_requested = pyqtSignal(object, object, object, str, str, str, str, bool)
     compare_requested = pyqtSignal(object, object, object, str, str, str, str, str, bool)
     terms_requested = pyqtSignal(object, object, str, str, str, str, bool, bool)
-    cancel_requested = pyqtSignal()
-    support_bundle_requested = pyqtSignal()
     calibration_requested = pyqtSignal(
         object,
         object,
@@ -287,8 +302,6 @@ class FengShuiDockWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._diagnostic_service = FengShuiDiagnosticService()
-        self._profile_view_model = DockWidgetProfileViewModel()
         saved_ui_language = str(
             QSettings().value("feng_shui_gis/ui_language", "") or ""
         ).strip()
@@ -303,8 +316,6 @@ class FengShuiDockWidget(QWidget):
         self._context_records = []
         self._syncing_goal_controls = False
         self._rebuilding_ui = False
-        self._running_task_key = None
-        self._running_task_label = ""
         self.setStyleSheet(self._main_stylesheet())
         self._build_ui()
 
@@ -336,83 +347,7 @@ class FengShuiDockWidget(QWidget):
                 setattr(self, attr_name, None)
 
     def _snapshot_ui_state(self):
-        return {
-            "sites_layer": self.sites_combo.currentLayer() if hasattr(self, "sites_combo") else None,
-            "dem_layer": self.dem_combo.currentLayer() if hasattr(self, "dem_combo") else None,
-            "water_layer": self.water_combo.currentLayer() if hasattr(self, "water_combo") else None,
-            "ui_language": self.ui_language(),
-            "label_language": self.label_language(),
-            "purpose_key": self.purpose_combo.currentData() if hasattr(self, "purpose_combo") else None,
-            "hemisphere": self.hemisphere_combo.currentData() if hasattr(self, "hemisphere_combo") else None,
-            "web_mountain_enabled": (
-                bool(self.web_mountain_checkbox.isChecked())
-                if hasattr(self, "web_mountain_checkbox")
-                else False
-            ),
-            "web_mountain_radius": (
-                int(self.web_mountain_radius_spin.value())
-                if hasattr(self, "web_mountain_radius_spin")
-                else None
-            ),
-            "web_mountain_limit": (
-                int(self.web_mountain_limit_spin.value())
-                if hasattr(self, "web_mountain_limit_spin")
-                else None
-            ),
-            "web_mountain_lang": (
-                self.web_mountain_lang_combo.currentData()
-                if hasattr(self, "web_mountain_lang_combo")
-                else None
-            ),
-            "advanced_options_open": (
-                bool(self.advanced_options_button.isChecked())
-                if hasattr(self, "advanced_options_button")
-                else False
-            ),
-            "profile_key": self.profile_combo.currentData() if hasattr(self, "profile_combo") else None,
-            "advanced_context_enabled": (
-                bool(self.advanced_context_checkbox.isChecked())
-                if hasattr(self, "advanced_context_checkbox")
-                else False
-            ),
-            "workflow_mode": self.workflow_mode_combo.currentData()
-            if hasattr(self, "workflow_mode_combo")
-            else "quick",
-            "show_experimental_contexts": (
-                bool(self.show_experimental_context_checkbox.isChecked())
-                if hasattr(self, "show_experimental_context_checkbox")
-                else False
-            ),
-            "culture_key": self.culture_combo.currentData() if hasattr(self, "culture_combo") else None,
-            "period_key": self.period_combo.currentData() if hasattr(self, "period_combo") else None,
-            "mode_tab_index": self.mode_tabs.currentIndex() if hasattr(self, "mode_tabs") else 0,
-            "landscape_auto_hydro": (
-                bool(self.landscape_auto_hydro_checkbox.isChecked())
-                if hasattr(self, "landscape_auto_hydro_checkbox")
-                else True
-            ),
-            "include_terms": (
-                bool(self.include_terms_checkbox.isChecked())
-                if hasattr(self, "include_terms_checkbox")
-                else False
-            ),
-            "analysis_auto_hydro": (
-                bool(self.analysis_auto_hydro_checkbox.isChecked())
-                if hasattr(self, "analysis_auto_hydro_checkbox")
-                else True
-            ),
-            "negative_ratio": (
-                self.negative_ratio_combo.currentData()
-                if hasattr(self, "negative_ratio_combo")
-                else None
-            ),
-            "calibration_seed": (
-                int(self.calibration_seed_spin.value())
-                if hasattr(self, "calibration_seed_spin")
-                else None
-            ),
-            "status_text": self.status_label.text() if hasattr(self, "status_label") else "",
-        }
+        return snapshot_dock_ui_state(self)
 
     def _persist_language_preferences(self, *_args):
         settings = QSettings()
@@ -422,107 +357,7 @@ class FengShuiDockWidget(QWidget):
     def _restore_ui_state(self, state):
         if not isinstance(state, dict):
             return
-
-        widgets = [
-            getattr(self, "sites_combo", None),
-            getattr(self, "dem_combo", None),
-            getattr(self, "water_combo", None),
-            getattr(self, "ui_language_combo", None),
-            getattr(self, "label_language_combo", None),
-            getattr(self, "purpose_combo", None),
-            getattr(self, "hemisphere_combo", None),
-            getattr(self, "web_mountain_checkbox", None),
-            getattr(self, "web_mountain_radius_spin", None),
-            getattr(self, "web_mountain_limit_spin", None),
-            getattr(self, "web_mountain_lang_combo", None),
-            getattr(self, "advanced_options_button", None),
-            getattr(self, "profile_combo", None),
-            getattr(self, "advanced_context_checkbox", None),
-            getattr(self, "workflow_mode_combo", None),
-            getattr(self, "show_experimental_context_checkbox", None),
-            getattr(self, "culture_combo", None),
-            getattr(self, "period_combo", None),
-            getattr(self, "mode_tabs", None),
-            getattr(self, "landscape_auto_hydro_checkbox", None),
-            getattr(self, "include_terms_checkbox", None),
-            getattr(self, "analysis_auto_hydro_checkbox", None),
-            getattr(self, "negative_ratio_combo", None),
-            getattr(self, "calibration_seed_spin", None),
-        ]
-        for widget in widgets:
-            if widget is not None:
-                widget.blockSignals(True)
-
-        try:
-            if hasattr(self, "sites_combo"):
-                self.sites_combo.setLayer(state.get("sites_layer"))
-            if hasattr(self, "dem_combo"):
-                self.dem_combo.setLayer(state.get("dem_layer"))
-            if hasattr(self, "water_combo"):
-                self.water_combo.setLayer(state.get("water_layer"))
-            self._set_combo_data(getattr(self, "ui_language_combo", None), state.get("ui_language"))
-            self._set_combo_data(getattr(self, "label_language_combo", None), state.get("label_language"))
-            self._set_combo_data(getattr(self, "purpose_combo", None), state.get("purpose_key"))
-            self._set_combo_data(getattr(self, "hemisphere_combo", None), state.get("hemisphere"))
-            if hasattr(self, "web_mountain_checkbox"):
-                self.web_mountain_checkbox.setChecked(bool(state.get("web_mountain_enabled")))
-            if hasattr(self, "web_mountain_radius_spin") and state.get("web_mountain_radius") is not None:
-                self.web_mountain_radius_spin.setValue(int(state.get("web_mountain_radius")))
-            if hasattr(self, "web_mountain_limit_spin") and state.get("web_mountain_limit") is not None:
-                self.web_mountain_limit_spin.setValue(int(state.get("web_mountain_limit")))
-            self._set_combo_data(
-                getattr(self, "web_mountain_lang_combo", None),
-                state.get("web_mountain_lang"),
-            )
-            if hasattr(self, "advanced_options_button"):
-                self.advanced_options_button.setChecked(bool(state.get("advanced_options_open")))
-            self._set_combo_data(getattr(self, "profile_combo", None), state.get("profile_key"))
-            if hasattr(self, "advanced_context_checkbox"):
-                self.advanced_context_checkbox.setChecked(
-                    bool(state.get("advanced_context_enabled"))
-                )
-            if hasattr(self, "workflow_mode_combo"):
-                workflow_mode = self._normalize_workflow_mode(
-                    state.get("workflow_mode", "quick")
-                )
-                self._set_combo_data(
-                    self.workflow_mode_combo,
-                    workflow_mode
-                    if workflow_mode in {"quick", "research", "developer"}
-                    else "quick",
-                )
-            if hasattr(self, "show_experimental_context_checkbox"):
-                self.show_experimental_context_checkbox.setChecked(
-                    bool(state.get("show_experimental_contexts"))
-                )
-            self._rebuild_culture_combo(state.get("culture_key"))
-            self._set_combo_data(getattr(self, "period_combo", None), state.get("period_key"))
-            if hasattr(self, "mode_tabs"):
-                tab_index = int(state.get("mode_tab_index", 0))
-                if 0 <= tab_index < self.mode_tabs.count():
-                    self.mode_tabs.setCurrentIndex(tab_index)
-            if hasattr(self, "landscape_auto_hydro_checkbox"):
-                self.landscape_auto_hydro_checkbox.setChecked(
-                    bool(state.get("landscape_auto_hydro"))
-                )
-            if hasattr(self, "include_terms_checkbox"):
-                self.include_terms_checkbox.setChecked(bool(state.get("include_terms")))
-            if hasattr(self, "analysis_auto_hydro_checkbox"):
-                self.analysis_auto_hydro_checkbox.setChecked(
-                    bool(state.get("analysis_auto_hydro"))
-                )
-            self._set_combo_data(
-                getattr(self, "negative_ratio_combo", None),
-                state.get("negative_ratio"),
-            )
-            if hasattr(self, "calibration_seed_spin") and state.get("calibration_seed") is not None:
-                self.calibration_seed_spin.setValue(int(state.get("calibration_seed")))
-            if hasattr(self, "status_label"):
-                self.status_label.setText(str(state.get("status_text", "") or ""))
-        finally:
-            for widget in widgets:
-                if widget is not None:
-                    widget.blockSignals(False)
+        restore_dock_ui_state(self, state, rebuild_culture_combo=self._rebuild_culture_combo)
 
         self._toggle_advanced_options_panel(
             bool(state.get("advanced_options_open", False))
@@ -531,7 +366,6 @@ class FengShuiDockWidget(QWidget):
         self._toggle_web_mountain_controls()
         self._update_usage_goal_guidance()
         self._update_context_evidence_hint()
-        self._apply_workflow_mode()
         self._update_profile_recommendation_hint()
         self._update_metric_help_hint()
         self._update_quick_number_widget()
@@ -584,7 +418,10 @@ class FengShuiDockWidget(QWidget):
     def _apply_recommended_profile(self, *_args):
         if self._rebuilding_ui or not hasattr(self, "profile_combo"):
             return
-        recommended_key = self._recommended_local_profile_key()
+        state = self._recommendation_state()
+        if not bool(state.get("can_apply_recommended")):
+            return
+        recommended_key = state.get("recommended_profile_key")
         if not recommended_key:
             return
         index = self.profile_combo.findData(recommended_key)
@@ -599,8 +436,11 @@ class FengShuiDockWidget(QWidget):
         )
 
     def _comparison_profile_keys(self):
-        state = self._profile_recommendation_state()
-        return state.comparison_base_key, state.comparison_profile_key
+        state = self._recommendation_state()
+        return (
+            state.get("comparison_base_key"),
+            state.get("comparison_profile_key"),
+        )
 
     def _emit_compare_requested(self):
         base_profile_key, compare_profile_key = self._comparison_profile_keys()
@@ -620,57 +460,48 @@ class FengShuiDockWidget(QWidget):
         )
 
     def _recommended_local_profile_key(self):
-        return self._profile_recommendation_state().recommended_profile_key
+        state = self._recommendation_state()
+        return state.get("recommended_profile_key")
 
-    def _profile_recommendation_state(self):
-        return self._profile_view_model.recommendation_state(
-            current_profile_key=self.profile_combo.currentData()
-            if hasattr(self, "profile_combo")
-            else None,
-            advanced_context_enabled=bool(self._advanced_context_enabled()),
-            culture_key=self.culture_combo.currentData()
-            if hasattr(self, "culture_combo")
-            else None,
-            period_key=self.period_combo.currentData()
-            if hasattr(self, "period_combo")
-            else None,
-            available_profile_keys=available_profiles(),
+    def _recommendation_state(self):
+        if not hasattr(self, "profile_combo"):
+            return recommendation_state(None, None, None, ())
+        culture_key, period_key = self._effective_context_keys()
+        return recommendation_state(
+            self.profile_combo.currentData(),
+            culture_key,
+            period_key,
+            available_profiles(),
         )
 
     def _update_profile_recommendation_hint(self, *_args):
         if not hasattr(self, "profile_recommendation_hint"):
             return
-        state_payload = self._profile_view_model.recommendation_state_payload(
-            current_profile_key=self.profile_combo.currentData()
-            if hasattr(self, "profile_combo")
-            else None,
-            advanced_context_enabled=self._advanced_context_enabled(),
-            culture_key=self.culture_combo.currentData()
-            if hasattr(self, "culture_combo")
-            else None,
-            period_key=self.period_combo.currentData()
-            if hasattr(self, "period_combo")
-            else None,
-            available_profile_keys=available_profiles(),
-            ui_language=language_code(),
-        )
-        state = state_payload["state"]
+        state = self._recommendation_state()
         if hasattr(self, "apply_recommended_profile_button"):
             self.apply_recommended_profile_button.setEnabled(
-                bool(state_payload.get("can_apply_recommended"))
+                bool(state.get("can_apply_recommended"))
             )
         if hasattr(self, "compare_profiles_button"):
             self.compare_profiles_button.setEnabled(
-                bool(state_payload.get("can_compare_recommended"))
+                bool(state.get("can_compare_recommended"))
             )
-        if not state.current_profile_key:
-            self.profile_recommendation_hint.setText("")
-            return
 
-        guidance_text = str(state_payload.get("guidance_text") or "")
-        if not state.guidance_key or not guidance_text:
-            self.profile_recommendation_hint.setText("")
-            return
+        guidance_key = state.get("guidance_key") or "recommended_profile_none"
+        guidance_default = state.get("guidance_default") or (
+            "No saved local calibrated profile exists for this context yet."
+        )
+        guidance_args = dict(state.get("guidance_args") or {})
+        recommended_key = state.get("recommended_profile_key")
+        if recommended_key and "profile" not in guidance_args:
+            guidance_args["profile"] = profile_label(recommended_key, language_code())
+        try:
+            guidance_text = ui_text(
+                guidance_key,
+                default=guidance_default,
+            ).format(**guidance_args)
+        except (KeyError, TypeError):
+            guidance_text = guidance_default
         self.profile_recommendation_hint.setText(guidance_text)
 
     def _build_ui(self):
@@ -726,19 +557,19 @@ class FengShuiDockWidget(QWidget):
 
         self.purpose_combo = QComboBox(self)
         self.purpose_combo.addItem(
-            ui_text("goal_tomb_label", default="Ritual-Burial Landscape"),
+            ui_text("goal_tomb_label", default="음택(무덤 자리)"),
             "tomb",
         )
         self.purpose_combo.addItem(
-            ui_text("goal_house_label", default="Settlement Form (Domestic Landscape)"),
+            ui_text("goal_house_label", default="양택(집터/거주지)"),
             "house",
         )
         self.purpose_combo.addItem(
-            ui_text("goal_settlement_label", default="Ancient Settlement Pattern"),
+            ui_text("goal_settlement_label", default="고대 정착지 패턴"),
             "settlement",
         )
         self.purpose_combo.addItem(
-            ui_text("goal_general_label", default="General Terrain Reading"),
+            ui_text("goal_general_label", default="일반 지형 읽기"),
             "general",
         )
         for profile_key in available_profiles():
@@ -749,10 +580,10 @@ class FengShuiDockWidget(QWidget):
                 profile_key,
             )
         self.purpose_combo.addItem(
-            ui_text("goal_custom_label", default="Manual Setup"),
+            ui_text("goal_custom_label", default="직접 설정"),
             "custom",
         )
-        form.addRow(ui_text("goal_label", default="Exploration Goal"), self.purpose_combo)
+        form.addRow(ui_text("goal_label", default="탐색 목적"), self.purpose_combo)
 
         self.sites_combo = QgsMapLayerComboBox(self)
         self.sites_combo.setFilters(QgsMapLayerProxyModel.PointLayer)
@@ -791,36 +622,20 @@ class FengShuiDockWidget(QWidget):
         self.label_language_combo = QComboBox(self)
         self.label_language_combo.addItem(ui_text("language_ko", default="Korean"), "ko")
         self.label_language_combo.addItem(ui_text("language_en", default="English"), "en")
-        saved_label_language = str(
-            QSettings().value("feng_shui_gis/label_language", "ko") or "ko"
-        ).strip().lower()
+        saved_label_language = QSettings().value("feng_shui_gis/label_language")
+        if saved_label_language is None:
+            saved_label_language = current_ui_language
+        else:
+            saved_label_language = (
+                str(saved_label_language).strip().lower()
+                if saved_label_language is not None
+                else current_ui_language
+            )
         label_language_index = self.label_language_combo.findData(
             saved_label_language if saved_label_language in ("ko", "en") else "ko"
         )
         self.label_language_combo.setCurrentIndex(max(0, label_language_index))
         form.addRow(ui_text("label_language", default="Label Language"), self.label_language_combo)
-
-        self.workflow_mode_combo = QComboBox(self)
-        self.workflow_mode_combo.addItem(
-            ui_text("workflow_mode_quick", default="Quick"),
-            "quick",
-        )
-        self.workflow_mode_combo.addItem(
-            ui_text("workflow_mode_research", default="Research"),
-            "research",
-        )
-        self.workflow_mode_combo.addItem(
-            ui_text("workflow_mode_developer", default="Developer"),
-            "developer",
-        )
-        self.workflow_mode_combo.setCurrentIndex(0)
-        form.addRow(ui_text("workflow_mode_label", default="Workflow"), self.workflow_mode_combo)
-
-        self.workflow_mode_hint_label = QLabel("", self)
-        self.workflow_mode_hint_label.setObjectName("goalHint")
-        self.workflow_mode_hint_label.setWordWrap(True)
-        self.workflow_mode_hint_label.setTextFormat(Qt.RichText)
-        controls_layout.addWidget(self.workflow_mode_hint_label)
 
         self.web_mountain_checkbox = QCheckBox(
             ui_text(
@@ -891,153 +706,32 @@ class FengShuiDockWidget(QWidget):
         self.goal_hint_label.setTextFormat(Qt.RichText)
         controls_layout.addWidget(self.goal_hint_label)
 
-        self.trust_badge_label = QLabel("", self)
-        self.trust_badge_label.setObjectName("contextHint")
-        self.trust_badge_label.setWordWrap(True)
-        self.trust_badge_label.setTextFormat(Qt.RichText)
-        controls_layout.addWidget(self.trust_badge_label)
-
-        self.advanced_options_button = QToolButton(self)
-        self.advanced_options_button.setObjectName("advancedToggle")
-        self.advanced_options_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.advanced_options_button.setCheckable(True)
-        self.advanced_options_button.setChecked(False)
-        self.advanced_options_button.setArrowType(Qt.RightArrow)
-        self.advanced_options_button.setText(
-            ui_text("advanced_options_button", default="Advanced Options")
+        advanced_refs = build_advanced_options_fragment(
+            self,
+            on_open_context_evidence_dialog=self._open_context_evidence_dialog,
         )
+        self.advanced_options_button = advanced_refs.advanced_options_button
         controls_layout.addWidget(self.advanced_options_button)
 
-        self.advanced_options_panel = QFrame(self)
-        self.advanced_options_panel.setObjectName("advancedPanel")
-        advanced_layout = QVBoxLayout(self.advanced_options_panel)
-        advanced_layout.setContentsMargins(10, 8, 10, 8)
-        advanced_layout.setSpacing(8)
-
-        advanced_form = QFormLayout()
-        advanced_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        advanced_form.setFormAlignment(Qt.AlignTop)
-        advanced_form.setHorizontalSpacing(16)
-        advanced_form.setVerticalSpacing(8)
-
-        lang = language_code()
-        self.profile_combo = QComboBox(self)
-        profile_keys = list(available_profiles()) or ["general"]
-        for profile_key in profile_keys:
-            self.profile_combo.addItem(profile_label(profile_key, lang), profile_key)
-        profile_row_widget = QWidget(self)
-        profile_row_layout = QHBoxLayout(profile_row_widget)
-        profile_row_layout.setContentsMargins(0, 0, 0, 0)
-        profile_row_layout.setSpacing(8)
-        profile_row_layout.addWidget(self.profile_combo, 1)
-        self.reload_profiles_button = QPushButton(
-            ui_text("reload_profiles_button", default="Reload Profiles"),
-            self,
+        self.advanced_options_panel = advanced_refs.advanced_options_panel
+        self.profile_combo = advanced_refs.profile_combo
+        self.reload_profiles_button = advanced_refs.reload_profiles_button
+        self.advanced_context_checkbox = advanced_refs.advanced_context_checkbox
+        self.show_experimental_context_checkbox = (
+            advanced_refs.show_experimental_context_checkbox
         )
-        self.reload_profiles_button.setObjectName("helpButton")
-        profile_row_layout.addWidget(self.reload_profiles_button)
-        advanced_form.addRow(tr("model_label"), profile_row_widget)
-
-        self.advanced_context_checkbox = QCheckBox(
-            ui_text(
-                "advanced_context_toggle_label",
-                default="Enable advanced context (country/period)",
-            ),
-            self,
-        )
-        self.advanced_context_checkbox.setChecked(False)
-        advanced_form.addRow(
-            ui_text("context_mode_label", default="Context Mode"),
-            self.advanced_context_checkbox,
-        )
-
-        self.show_experimental_context_checkbox = QCheckBox(
-            ui_text(
-                "context_experimental_toggle_label",
-                default=(
-                    "탐색 지역 프로필 표시 (근거 제한)"
-                    if language_code() == "ko"
-                    else "Show exploratory region profiles (limited evidence)"
-                ),
-            ),
-            self,
-        )
-        self.show_experimental_context_checkbox.setChecked(False)
-        advanced_form.addRow(
-            ui_text(
-                "context_scope_label",
-                default=(
-                    "프로필 범위" if language_code() == "ko" else "Context Profile Scope"
-                ),
-            ),
-            self.show_experimental_context_checkbox,
-        )
-
-        self.culture_combo = QComboBox(self)
+        self.culture_combo = advanced_refs.culture_combo
         self._rebuild_culture_combo()
-        advanced_form.addRow(tr("culture_label"), self.culture_combo)
-
-        self.period_combo = QComboBox(self)
-        period_keys = list(available_periods()) or ["early_modern"]
-        for period_key in period_keys:
-            self.period_combo.addItem(period_label(period_key, lang), period_key)
-        if "early_modern" in period_keys:
-            self.period_combo.setCurrentIndex(period_keys.index("early_modern"))
-        advanced_form.addRow(tr("period_label"), self.period_combo)
-
-        self.context_param_combo = QComboBox(self)
-        advanced_form.addRow(
-            ui_text("context_param_label", default="Evidence Parameter"),
-            self.context_param_combo,
+        self.period_combo = advanced_refs.period_combo
+        self.context_param_combo = advanced_refs.context_param_combo
+        self.profile_recommendation_hint = advanced_refs.profile_recommendation_hint
+        self.apply_recommended_profile_button = (
+            advanced_refs.apply_recommended_profile_button
         )
-        advanced_layout.addLayout(advanced_form)
-
-        self.profile_recommendation_hint = QLabel("", self)
-        self.profile_recommendation_hint.setObjectName("contextHint")
-        self.profile_recommendation_hint.setWordWrap(True)
-        advanced_layout.addWidget(self.profile_recommendation_hint)
-
-        recommendation_row = QHBoxLayout()
-        self.apply_recommended_profile_button = QPushButton(
-            ui_text(
-                "apply_recommended_profile_button",
-                default="Use Recommended Profile",
-            ),
-            self,
-        )
-        self.apply_recommended_profile_button.setObjectName("helpButton")
-        self.apply_recommended_profile_button.setEnabled(False)
-        recommendation_row.addWidget(self.apply_recommended_profile_button)
-        self.compare_profiles_button = QPushButton(
-            ui_text("compare_profiles_button", default="Quick Compare"),
-            self,
-        )
-        self.compare_profiles_button.setObjectName("helpButton")
-        self.compare_profiles_button.setEnabled(False)
-        recommendation_row.addWidget(self.compare_profiles_button)
-        recommendation_row.addStretch(1)
-        advanced_layout.addLayout(recommendation_row)
-
-        evidence_row = QHBoxLayout()
-        self.context_evidence_button = QPushButton(
-            ui_text("context_evidence_button", default="View Context Evidence"),
-            self,
-        )
-        self.context_evidence_button.setObjectName("helpButton")
-        self.context_evidence_button.clicked.connect(self._open_context_evidence_dialog)
-        evidence_row.addWidget(self.context_evidence_button)
-        evidence_row.addStretch(1)
-        advanced_layout.addLayout(evidence_row)
-
-        self.context_evidence_hint = QLabel("", self)
-        self.context_evidence_hint.setObjectName("contextHint")
-        self.context_evidence_hint.setWordWrap(True)
-        advanced_layout.addWidget(self.context_evidence_hint)
-
-        self.context_param_hint = QLabel("", self)
-        self.context_param_hint.setObjectName("contextParamHint")
-        self.context_param_hint.setWordWrap(True)
-        advanced_layout.addWidget(self.context_param_hint)
+        self.compare_profiles_button = advanced_refs.compare_profiles_button
+        self.context_evidence_button = advanced_refs.context_evidence_button
+        self.context_evidence_hint = advanced_refs.context_evidence_hint
+        self.context_param_hint = advanced_refs.context_param_hint
 
         controls_layout.addWidget(self.advanced_options_panel)
         layout.addWidget(controls)
@@ -1055,21 +749,19 @@ class FengShuiDockWidget(QWidget):
         self.profile_combo.currentIndexChanged.connect(self._update_profile_recommendation_hint)
         self.culture_combo.currentIndexChanged.connect(self._update_profile_recommendation_hint)
         self.period_combo.currentIndexChanged.connect(self._update_profile_recommendation_hint)
+        self.advanced_context_checkbox.toggled.connect(self._update_profile_recommendation_hint)
+        self.advanced_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
         self.show_experimental_context_checkbox.toggled.connect(
             self._rebuild_culture_combo
         )
         self.show_experimental_context_checkbox.toggled.connect(
-            self._update_context_evidence_hint
-        )
-        self.show_experimental_context_checkbox.toggled.connect(
             self._update_profile_recommendation_hint
         )
-        self.advanced_context_checkbox.toggled.connect(self._update_profile_recommendation_hint)
-        self.advanced_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
-        self.show_experimental_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
+        self.show_experimental_context_checkbox.toggled.connect(
+            self._update_context_evidence_hint
+        )
         self.advanced_options_button.toggled.connect(self._toggle_advanced_options_panel)
         self.advanced_options_button.toggled.connect(self._refresh_progress_guide)
-        self.workflow_mode_combo.currentIndexChanged.connect(self._apply_workflow_mode)
         self.web_mountain_checkbox.toggled.connect(self._toggle_web_mountain_controls)
         self.web_mountain_checkbox.toggled.connect(self._refresh_progress_guide)
         self.web_mountain_radius_spin.valueChanged.connect(self._refresh_progress_guide)
@@ -1115,9 +807,9 @@ class FengShuiDockWidget(QWidget):
         self.culture_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.period_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.hemisphere_combo.currentIndexChanged.connect(self._refresh_progress_guide)
-        self.show_experimental_context_checkbox.toggled.connect(self._refresh_progress_guide)
         self.label_language_combo.currentIndexChanged.connect(self._refresh_progress_guide)
         self.advanced_context_checkbox.toggled.connect(self._refresh_progress_guide)
+        self.show_experimental_context_checkbox.toggled.connect(self._refresh_progress_guide)
         self.label_language_combo.currentIndexChanged.connect(self._update_quick_number_widget)
         self.label_language_combo.currentIndexChanged.connect(self._persist_language_preferences)
 
@@ -1138,299 +830,43 @@ class FengShuiDockWidget(QWidget):
         self._refresh_progress_guide()
 
     def _build_workflow_guide_card(self):
-        card = QFrame(self)
-        card.setObjectName("guideCard")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(12, 10, 12, 12)
-        card_layout.setSpacing(6)
-
-        title = QLabel(ui_text("guide_title", default="Progress Guide"), card)
-        title.setObjectName("guideTitle")
-        card_layout.addWidget(title)
-
-        self.progress_summary_label = QLabel("", card)
-        self.progress_summary_label.setObjectName("guideSummary")
-        self.progress_summary_label.setWordWrap(True)
-        card_layout.addWidget(self.progress_summary_label)
-
-        self.interpretation_section_label = QLabel(
-            ui_text(
-                "guide_section_interpretation",
-                default="<b>Interpretation</b>",
-            ),
-            card,
-        )
-        self.interpretation_section_label.setObjectName("guideSection")
-        self.interpretation_section_label.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.interpretation_section_label)
-
-        self.guide_intro_widget = QLabel("", card)
-        self.guide_intro_widget.setObjectName("guideWidget")
-        self.guide_intro_widget.setWordWrap(True)
-        self.guide_intro_widget.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.guide_intro_widget)
-
-        self.guide_steps_widget = QLabel("", card)
-        self.guide_steps_widget.setObjectName("guideWidget")
-        self.guide_steps_widget.setWordWrap(True)
-        self.guide_steps_widget.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.guide_steps_widget)
-
-        self.next_step_label = QLabel("", card)
-        self.next_step_label.setObjectName("guideNext")
-        self.next_step_label.setWordWrap(True)
-        card_layout.addWidget(self.next_step_label)
-
-        self.analytical_section_label = QLabel(
-            ui_text(
-                "guide_section_analytical",
-                default="<b>Analytical</b>",
-            ),
-            card,
-        )
-        self.analytical_section_label.setObjectName("guideSection")
-        self.analytical_section_label.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.analytical_section_label)
-
-        self.workflow_progress = QProgressBar(card)
-        self.workflow_progress.setObjectName("workflowProgress")
-        self.workflow_progress.setRange(0, 100)
-        self.workflow_progress.setValue(0)
-        self.workflow_progress.setFormat(
-            ui_text("workflow_progress_format", default="%p% ready")
-        )
-        card_layout.addWidget(self.workflow_progress)
-
-        self.quick_number_widget = QLabel("", card)
-        self.quick_number_widget.setObjectName("guideWidget")
-        self.quick_number_widget.setWordWrap(True)
-        self.quick_number_widget.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.quick_number_widget)
-
-        self.metric_help_widget = QWidget(card)
-        metric_row = QHBoxLayout(self.metric_help_widget)
-        metric_row.setContentsMargins(0, 0, 0, 0)
-        metric_label = QLabel(
-            ui_text("guide_metric_label", default="Metric Help"),
-            self.metric_help_widget,
-        )
-        self.metric_help_combo = QComboBox(self.metric_help_widget)
-        for label, description in ui_metric_help_items():
-            self.metric_help_combo.addItem(label, description)
-        self.metric_help_combo.currentIndexChanged.connect(self._update_metric_help_hint)
-        metric_row.addWidget(metric_label)
-        metric_row.addWidget(self.metric_help_combo, 1)
-        card_layout.addWidget(self.metric_help_widget)
-
-        self.metric_help_hint = QLabel("", card)
-        self.metric_help_hint.setObjectName("metricHint")
-        self.metric_help_hint.setWordWrap(True)
-        card_layout.addWidget(self.metric_help_hint)
-
-        self.evidence_widget = QLabel("", card)
-        self.evidence_widget.setObjectName("guideWidget")
-        self.evidence_widget.setWordWrap(True)
-        self.evidence_widget.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.evidence_widget)
-
-        self.audit_section_label = QLabel(
-            ui_text(
-                "guide_section_audit",
-                default="<b>Audit</b>",
-            ),
-            card,
-        )
-        self.audit_section_label.setObjectName("guideSection")
-        self.audit_section_label.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.audit_section_label)
-
-        self.checklist_label = QLabel("", card)
-        self.checklist_label.setObjectName("guideChecklist")
-        self.checklist_label.setWordWrap(True)
-        self.checklist_label.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.checklist_label)
-
-        self.dem_diag_widget = QLabel("", card)
-        self.dem_diag_widget.setObjectName("guideWidget")
-        self.dem_diag_widget.setWordWrap(True)
-        self.dem_diag_widget.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.dem_diag_widget)
-
-        self.workflow_status_label = QLabel("", card)
-        self.workflow_status_label.setObjectName("guideStatus")
-        self.workflow_status_label.setWordWrap(True)
-        card_layout.addWidget(self.workflow_status_label)
-
-        self.export_support_bundle_button = QPushButton(
-            ui_text(
-                "support_bundle_button",
-                default="Export Support Bundle",
-            ),
-            card,
-        )
-        self.export_support_bundle_button.setObjectName("helpButton")
-        self.export_support_bundle_button.clicked.connect(
-            self._emit_support_bundle_requested
-        )
-        card_layout.addWidget(self.export_support_bundle_button)
-
-        self.cancel_button = QPushButton(
-            ui_text("cancel_workflow_button", default="Cancel running workflow"),
-            card,
-        )
-        self.cancel_button.setObjectName("cancelAction")
-        self.cancel_button.setEnabled(False)
-        self.cancel_button.clicked.connect(self._emit_cancel_requested)
-        self.cancel_row = QHBoxLayout()
-        self.cancel_row.addStretch(1)
-        self.cancel_row.addWidget(self.cancel_button)
-        card_layout.addLayout(self.cancel_row)
+        card, refs = build_workflow_guide_card(self, self._update_metric_help_hint)
+        self._workflow_guide_refs = refs
+        self.progress_summary_label = refs.progress_summary_label
+        self.guide_intro_widget = refs.guide_intro_widget
+        self.guide_steps_widget = refs.guide_steps_widget
+        self.workflow_progress = refs.workflow_progress
+        self.next_step_label = refs.next_step_label
+        self.checklist_label = refs.checklist_label
+        self.metric_help_combo = refs.metric_help_combo
+        self.metric_help_hint = refs.metric_help_hint
+        self.quick_number_widget = refs.quick_number_widget
+        self.dem_diag_widget = refs.dem_diag_widget
+        self.evidence_widget = refs.evidence_widget
+        self.workflow_status_label = refs.workflow_status_label
         return card
 
     def _build_landscape_tab(self):
-        tab = QWidget(self)
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
-
-        card = QFrame(tab)
-        card.setObjectName("tabCard")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(12, 12, 12, 12)
-        card_layout.setSpacing(8)
-
-        desc = QLabel(tr("landscape_desc"), card)
-        desc.setWordWrap(True)
-        card_layout.addWidget(desc)
-
-        self.landscape_auto_hydro_checkbox = QCheckBox(tr("auto_hydro_label"), card)
-        self.landscape_auto_hydro_checkbox.setChecked(True)
-        card_layout.addWidget(self.landscape_auto_hydro_checkbox)
-
-        self.include_terms_checkbox = QCheckBox(tr("include_terms_label"), card)
-        self.include_terms_checkbox.setChecked(False)
-        card_layout.addWidget(self.include_terms_checkbox)
-
-        self.extract_terms_button = QPushButton(tr("extract_landscape_button"), card)
-        self.extract_terms_button.setObjectName("primaryAction")
-        self.extract_terms_button.clicked.connect(self._emit_terms_requested)
-        card_layout.addWidget(self.extract_terms_button)
-        layout.addWidget(card)
-        layout.addStretch(1)
+        tab, refs = build_landscape_tab(
+            self,
+            on_extract_terms_requested=self._emit_terms_requested,
+        )
+        self.landscape_auto_hydro_checkbox = refs.landscape_auto_hydro_checkbox
+        self.include_terms_checkbox = refs.include_terms_checkbox
+        self.extract_terms_button = refs.extract_terms_button
         return tab
 
     def _build_analysis_tab(self):
-        tab = QWidget(self)
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
-        calibration_rules = analysis_rules().get("calibration", {})
-
-        card = QFrame(tab)
-        card.setObjectName("tabCard")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(12, 12, 12, 12)
-        card_layout.setSpacing(8)
-
-        desc = QLabel(tr("analysis_desc"), card)
-        desc.setWordWrap(True)
-        card_layout.addWidget(desc)
-
-        self.analysis_auto_hydro_checkbox = QCheckBox(
-            tr("analysis_auto_hydro_label"), card
+        tab, refs = build_analysis_tab(
+            self,
+            on_run_requested=self._emit_run_requested,
+            on_calibration_requested=self._emit_calibration_requested,
         )
-        self.analysis_auto_hydro_checkbox.setChecked(True)
-        card_layout.addWidget(self.analysis_auto_hydro_checkbox)
-
-        self.analysis_research_controls_widget = QWidget(card)
-        research_controls_layout = QVBoxLayout(self.analysis_research_controls_widget)
-        research_controls_layout.setContentsMargins(0, 0, 0, 0)
-        research_controls_layout.setSpacing(8)
-
-        ratio_row = QHBoxLayout()
-        ratio_label = QLabel(
-            ui_text("negative_ratio_label", default="Negative Ratio"),
-            self.analysis_research_controls_widget,
-        )
-        self.negative_ratio_combo = QComboBox(self.analysis_research_controls_widget)
-        ratio_options = calibration_rules.get("negative_ratio_options", [1, 2, 3, 4])
-        clean_options = []
-        for value in ratio_options:
-            try:
-                clean = int(value)
-            except (TypeError, ValueError):
-                continue
-            if clean > 0 and clean not in clean_options:
-                clean_options.append(clean)
-        if not clean_options:
-            clean_options = [1, 2, 3, 4]
-        default_ratio = calibration_rules.get("default_negative_ratio", 3)
-        try:
-            default_ratio = int(default_ratio)
-        except (TypeError, ValueError):
-            default_ratio = 3
-        for value in clean_options:
-            label = f"{value}x"
-            if value == default_ratio:
-                suffix = ui_text("negative_ratio_recommended_suffix", default="(Recommended)")
-                label = f"{value}x {suffix}"
-            self.negative_ratio_combo.addItem(label, value)
-        if default_ratio in clean_options:
-            self.negative_ratio_combo.setCurrentIndex(clean_options.index(default_ratio))
-        else:
-            self.negative_ratio_combo.setCurrentIndex(0)
-        ratio_row.addWidget(ratio_label)
-        ratio_row.addWidget(self.negative_ratio_combo, 1)
-        research_controls_layout.addLayout(ratio_row)
-
-        seed_row = QHBoxLayout()
-        seed_label = QLabel(
-            ui_text("seed_label", default="Random Seed"),
-            self.analysis_research_controls_widget,
-        )
-        self.calibration_seed_spin = QSpinBox(self.analysis_research_controls_widget)
-        seed_min = calibration_rules.get("seed_min", 1)
-        seed_max = calibration_rules.get("seed_max", 999999)
-        seed_default = calibration_rules.get("seed_default", 42)
-        try:
-            seed_min = int(seed_min)
-        except (TypeError, ValueError):
-            seed_min = 1
-        try:
-            seed_max = int(seed_max)
-        except (TypeError, ValueError):
-            seed_max = 999999
-        if seed_max < seed_min:
-            seed_max = seed_min
-        try:
-            seed_default = int(seed_default)
-        except (TypeError, ValueError):
-            seed_default = 42
-        seed_default = max(seed_min, min(seed_max, seed_default))
-        self.calibration_seed_spin.setRange(seed_min, seed_max)
-        self.calibration_seed_spin.setValue(seed_default)
-        seed_row.addWidget(seed_label)
-        seed_row.addWidget(self.calibration_seed_spin, 1)
-        research_controls_layout.addLayout(seed_row)
-        card_layout.addWidget(self.analysis_research_controls_widget)
-
-        self.run_button = QPushButton(tr("run_button"), card)
-        self.run_button.setObjectName("primaryAction")
-        self.run_button.clicked.connect(self._emit_run_requested)
-        card_layout.addWidget(self.run_button)
-
-        self.calibration_button = QPushButton(
-            ui_text(
-                "calibration_button",
-                default="Local Calibration (ROC/AUC Report)",
-            ),
-            card,
-        )
-        self.calibration_button.setObjectName("helpButton")
-        self.calibration_button.clicked.connect(self._emit_calibration_requested)
-        card_layout.addWidget(self.calibration_button)
-        layout.addWidget(card)
-        layout.addStretch(1)
+        self.analysis_auto_hydro_checkbox = refs.analysis_auto_hydro_checkbox
+        self.negative_ratio_combo = refs.negative_ratio_combo
+        self.calibration_seed_spin = refs.calibration_seed_spin
+        self.run_button = refs.run_button
+        self.calibration_button = refs.calibration_button
         return tab
 
     def _advanced_context_enabled(self):
@@ -1443,181 +879,28 @@ class FengShuiDockWidget(QWidget):
             return False
         return bool(self.show_experimental_context_checkbox.isChecked())
 
-    @staticmethod
-    def _experimental_suffix(language="ko"):
-        return ui_text("context_experimental_profile_suffix", language, default="(Exploratory)")
-
-    def _workflow_mode(self):
-        if not hasattr(self, "workflow_mode_combo"):
-            return "quick"
-        mode = self._normalize_workflow_mode(self.workflow_mode_combo.currentData())
-        return mode if mode in {"quick", "research", "developer"} else "quick"
-
-    @staticmethod
-    def _normalize_workflow_mode(mode):
-        mode_text = str(mode or "").strip().lower()
-        if mode_text == "basic":
-            return "quick"
-        if mode_text == "expert":
-            return "research"
-        return mode_text or "quick"
-
-    def _research_mode_enabled(self):
-        return self._workflow_mode() in {"research", "developer"}
-
-    def _developer_mode_enabled(self):
-        return self._workflow_mode() == "developer"
-
-    def _workflow_mode_hint_html(self, workflow_mode=None):
-        mode_key = self._normalize_workflow_mode(workflow_mode or self._workflow_mode())
-        default_map = {
-            "quick": (
-                "<b>Quick</b> shows only the shortest path: choose the goal, DEM, and layers, then run."
-            ),
-            "research": (
-                "<b>Research</b> opens evidence, compare, and calibration controls for archaeology-oriented reading."
-            ),
-            "developer": (
-                "<b>Developer</b> keeps research controls visible and exposes more workflow state for inspection."
-            ),
-        }
-        return ui_text(
-            f"workflow_mode_hint_{mode_key}",
-            default=default_map.get(mode_key, default_map["quick"]),
-        )
-
-    def _apply_workflow_mode(self, *_args):
-        workflow_mode = self._workflow_mode()
-        research_mode = self._research_mode_enabled()
-        developer_mode = self._developer_mode_enabled()
-
-        if hasattr(self, "advanced_options_button"):
-            self.advanced_options_button.setVisible(research_mode)
-            self.advanced_options_button.setText(
-                ui_text(
-                    "advanced_options_button_developer"
-                    if developer_mode
-                    else "advanced_options_button_research",
-                    default=(
-                        "Developer Controls"
-                        if developer_mode
-                        else "Research Controls"
-                    ),
-                )
-            )
-            if developer_mode:
-                self.advanced_options_button.setChecked(True)
-            elif not research_mode:
-                self.advanced_options_button.setChecked(False)
-        if hasattr(self, "advanced_options_panel"):
-            self.advanced_options_panel.setVisible(
-                research_mode
-                and (
-                    developer_mode
-                    or self.advanced_options_button.isChecked()
-                )
-            )
-        if hasattr(self, "workflow_mode_hint_label"):
-            self.workflow_mode_hint_label.setText(
-                self._workflow_mode_hint_html(workflow_mode)
-            )
-
-        advanced_controls = (
-            getattr(self, "profile_combo", None),
-            getattr(self, "reload_profiles_button", None),
-            getattr(self, "advanced_context_checkbox", None),
-            getattr(self, "show_experimental_context_checkbox", None),
-            getattr(self, "culture_combo", None),
-            getattr(self, "period_combo", None),
-            getattr(self, "context_param_combo", None),
-            getattr(self, "profile_recommendation_hint", None),
-            getattr(self, "apply_recommended_profile_button", None),
-            getattr(self, "compare_profiles_button", None),
-            getattr(self, "context_evidence_button", None),
-            getattr(self, "context_evidence_hint", None),
-            getattr(self, "context_param_hint", None),
-        )
-        for widget in advanced_controls:
-            if widget is not None:
-                widget.setEnabled(research_mode)
-
-        quick_hidden_controls = (
-            getattr(self, "calibration_button", None),
-            getattr(self, "analysis_research_controls_widget", None),
-            getattr(self, "metric_help_widget", None),
-            getattr(self, "metric_help_hint", None),
-            getattr(self, "evidence_widget", None),
-        )
-        for widget in quick_hidden_controls:
-            if widget is not None:
-                widget.setVisible(research_mode)
-
-        research_hidden_controls = (
-            getattr(self, "audit_section_label", None),
-            getattr(self, "checklist_label", None),
-        )
-        for widget in research_hidden_controls:
-            if widget is not None:
-                widget.setVisible(workflow_mode != "quick")
-
-        developer_hidden_controls = (
-            getattr(self, "export_support_bundle_button", None),
-            getattr(self, "workflow_status_label", None),
-            getattr(self, "dem_diag_widget", None),
-        )
-        for widget in developer_hidden_controls:
-            if widget is not None:
-                widget.setVisible(developer_mode)
-
-        if not research_mode:
-            if hasattr(self, "advanced_context_checkbox"):
-                self.advanced_context_checkbox.setChecked(False)
-            if hasattr(self, "profile_combo"):
-                goal_key = self._usage_goal_key()
-                fallback_profile = self._goal_profile_key(goal_key) or "general"
-                self._set_combo_data(self.profile_combo, fallback_profile)
-            if hasattr(self, "culture_combo"):
-                self._set_combo_data(self.culture_combo, neutral_context_key())
-            if hasattr(self, "period_combo"):
-                self._set_period_combo_data(neutral_context_key())
-            if hasattr(self, "show_experimental_context_checkbox"):
-                self.show_experimental_context_checkbox.setChecked(False)
-            if hasattr(self, "context_param_combo"):
-                self.context_param_combo.blockSignals(True)
-                self.context_param_combo.clear()
-                self.context_param_combo.blockSignals(False)
-        self._toggle_advanced_context_controls()
-
-    def _set_period_combo_data(self, period_key):
-        if not hasattr(self, "period_combo"):
-            return
-        index = self.period_combo.findData(period_key)
-        if index >= 0:
-            self.period_combo.setCurrentIndex(index)
-            return
-        if not self.period_combo.count():
-            return
-        self.period_combo.setCurrentIndex(0)
-
     def _rebuild_culture_combo(self, selected_key=None):
         if not hasattr(self, "culture_combo"):
             return
+        try:
+            lang = self.ui_language()
+        except (AttributeError, TypeError):
+            lang = language_code()
         if selected_key is None:
             selected_key = self.culture_combo.currentData()
-        lang = self.ui_language()
-        stable = list(available_cultures_filtered_by_tier("stable"))
-        experimental = list(available_cultures_filtered_by_tier("experimental"))
 
+        stable_cultures = list(available_cultures("stable"))
+        experimental_cultures = list(available_cultures("experimental"))
         self.culture_combo.blockSignals(True)
         self.culture_combo.clear()
-        for culture_key in stable or ["east_asia"]:
+        for culture_key in stable_cultures or ["east_asia"]:
             self.culture_combo.addItem(culture_label(culture_key, lang), culture_key)
 
         if self._show_experimental_contexts():
-            for culture_key in experimental:
-                if culture_key in stable:
+            for culture_key in experimental_cultures:
+                if culture_key in stable_cultures:
                     continue
-                suffix = self._experimental_suffix(lang)
+                suffix = " (실험적)" if lang == "ko" else " (Exploratory)"
                 self.culture_combo.addItem(
                     f"{culture_label(culture_key, lang)}{suffix}",
                     culture_key,
@@ -1632,14 +915,15 @@ class FengShuiDockWidget(QWidget):
         expanded = bool(checked) if checked is not None else bool(
             self.advanced_options_button.isChecked()
         )
+        state = advanced_options_panel_state(expanded)
         if hasattr(self, "advanced_options_panel"):
-            self.advanced_options_panel.setVisible(expanded)
+            self.advanced_options_panel.setVisible(state["panel_visible"])
         if hasattr(self, "advanced_options_button"):
             self.advanced_options_button.setArrowType(
-                Qt.DownArrow if expanded else Qt.RightArrow
+                Qt.DownArrow if state["arrow"] == "down" else Qt.RightArrow
             )
-            if self.advanced_options_button.isChecked() != expanded:
-                self.advanced_options_button.setChecked(expanded)
+            if self.advanced_options_button.isChecked() != state["button_checked"]:
+                self.advanced_options_button.setChecked(state["button_checked"])
 
     def _effective_context_keys(self):
         if not self._advanced_context_enabled():
@@ -1674,40 +958,6 @@ class FengShuiDockWidget(QWidget):
     def _goal_include_terms(goal_key):
         return goal_key in ("tomb", "house", "settlement")
 
-    def _goal_hint_html(self, goal_key):
-        profile_key = self._goal_profile_key(goal_key)
-        if goal_key == "custom":
-            profile_label_text = self.profile_combo.currentText() or ui_text(
-                "goal_custom_label", default="Manual"
-            )
-            return ui_text(
-                "goal_hint_custom",
-                default=(
-                    "<b>Manual mode</b>. You can choose preset, culture, "
-                    "period, and parameters directly for fine-tuning."
-                ),
-            ).format(profile=escape(profile_label_text))
-
-        if profile_key:
-            profile_label_text = profile_label(profile_key, language_code())
-        else:
-            current_profile = self.profile_combo.currentData()
-            profile_label_text = (
-                profile_label(current_profile, language_code())
-                if current_profile
-                else ""
-            )
-        return ui_text(
-            f"goal_hint_{goal_key}",
-            default=(
-                "<b>{goal}</b> 목적에 맞는 기본 프리셋을 자동 적용합니다. "
-                "고급 옵션을 열지 않아도 '{profile}' 모델이 연결됩니다."
-            ),
-        ).format(
-            goal=escape(self._usage_goal_label(goal_key)),
-            profile=escape(profile_label_text or profile_key or ""),
-        )
-
     def _guide_intro_html(self, goal_key):
         default_text = (
             "<b>이 모드가 하는 일</b><br/>DEM과 수계를 바탕으로 산줄기, 혈 후보, 구조 용어를 "
@@ -1726,12 +976,47 @@ class FengShuiDockWidget(QWidget):
 
     def _update_usage_goal_guidance(self):
         goal_key = self._usage_goal_key()
+        profile_key = self._goal_profile_key(goal_key)
+        if goal_key == "custom":
+            profile_label_text = self.profile_combo.currentText() or ui_text(
+                "goal_custom_label", default="직접 설정"
+            )
+        elif profile_key:
+            profile_label_text = profile_label(profile_key, language_code())
+        else:
+            current_profile = self.profile_combo.currentData()
+            profile_label_text = (
+                profile_label(current_profile, language_code())
+                if current_profile
+                else ""
+            )
+        guidance = usage_goal_guidance_state(
+            goal_key,
+            goal_label=self._usage_goal_label(goal_key),
+            profile_label_text=profile_label_text or profile_key or "",
+            custom_hint_template=ui_text(
+                "goal_hint_custom",
+                default=(
+                    "<b>직접 설정</b> 모드입니다. 고급 옵션에서 프리셋, 문화권, 시대를 "
+                    "직접 고르며 결과를 조정합니다."
+                ),
+            ),
+            default_hint_template=ui_text(
+                f"goal_hint_{goal_key}",
+                default=(
+                    "<b>{goal}</b> 목적에 맞는 기본 프리셋을 자동 적용합니다. "
+                    "고급 옵션을 열지 않아도 '{profile}' 모델이 연결됩니다."
+                ),
+            ),
+            guide_intro_html=self._guide_intro_html(goal_key),
+            guide_steps_html=self._guide_steps_html(goal_key),
+        )
         if hasattr(self, "goal_hint_label"):
-            self.goal_hint_label.setText(self._goal_hint_html(goal_key))
+            self.goal_hint_label.setText(guidance["goal_hint_html"])
         if hasattr(self, "guide_intro_widget"):
-            self.guide_intro_widget.setText(self._guide_intro_html(goal_key))
+            self.guide_intro_widget.setText(guidance["guide_intro_html"])
         if hasattr(self, "guide_steps_widget"):
-            self.guide_steps_widget.setText(self._guide_steps_html(goal_key))
+            self.guide_steps_widget.setText(guidance["guide_steps_html"])
 
     def _apply_usage_goal_presets(self, *_args):
         if self._syncing_goal_controls:
@@ -1741,23 +1026,25 @@ class FengShuiDockWidget(QWidget):
         self._syncing_goal_controls = True
         try:
             profile_key = self._goal_profile_key(goal_key)
-            if profile_key:
-                profile_index = self.profile_combo.findData(profile_key)
+            state = usage_goal_preset_state(
+                goal_key,
+                profile_key=profile_key,
+                include_terms=self._goal_include_terms(goal_key),
+            )
+            if state["profile_key"]:
+                profile_index = self.profile_combo.findData(state["profile_key"])
                 if profile_index >= 0 and profile_index != self.profile_combo.currentIndex():
                     self.profile_combo.setCurrentIndex(profile_index)
 
                 if hasattr(self, "include_terms_checkbox"):
-                    include_terms = self._goal_include_terms(goal_key)
-                    if self.include_terms_checkbox.isChecked() != include_terms:
-                        self.include_terms_checkbox.setChecked(include_terms)
+                    if self.include_terms_checkbox.isChecked() != state["include_terms"]:
+                        self.include_terms_checkbox.setChecked(state["include_terms"])
 
-                if hasattr(self, "mode_tabs") and self.mode_tabs.currentIndex() != 0:
+                if hasattr(self, "mode_tabs") and state["force_analysis_tab"] and self.mode_tabs.currentIndex() != 0:
                     self.mode_tabs.setCurrentIndex(0)
 
-            if goal_key == "custom" and not self._research_mode_enabled():
-                self._set_combo_data(self.workflow_mode_combo, "research")
-            elif goal_key == "custom" and hasattr(self, "advanced_options_button"):
-                self.advanced_options_button.setChecked(True)
+            if state["expand_advanced"] and hasattr(self, "advanced_options_button"):
+                self._toggle_advanced_options_panel(True)
         finally:
             self._syncing_goal_controls = False
 
@@ -1785,26 +1072,27 @@ class FengShuiDockWidget(QWidget):
         self._update_usage_goal_guidance()
 
     def _toggle_advanced_context_controls(self, *_args):
-        enabled = self._advanced_context_enabled()
-        widgets = [
-            getattr(self, "culture_combo", None),
-            getattr(self, "period_combo", None),
-            getattr(self, "context_param_combo", None),
-            getattr(self, "show_experimental_context_checkbox", None),
-        ]
-        for widget in widgets:
-            if widget is not None:
-                widget.setEnabled(enabled)
+        state = advanced_context_control_state(self._advanced_context_enabled())
+        if hasattr(self, "culture_combo"):
+            self.culture_combo.setEnabled(state["culture_combo_enabled"])
+        if hasattr(self, "period_combo"):
+            self.period_combo.setEnabled(state["period_combo_enabled"])
+        if hasattr(self, "context_param_combo"):
+            self.context_param_combo.setEnabled(state["context_param_combo_enabled"])
+        if hasattr(self, "show_experimental_context_checkbox"):
+            self.show_experimental_context_checkbox.setEnabled(
+                state["show_experimental_contexts_enabled"]
+            )
         self._update_context_evidence_hint()
 
     def _toggle_web_mountain_controls(self, *_args):
-        enabled = self.mountain_name_enrichment_enabled()
+        state = mountain_control_state(self.mountain_name_enrichment_enabled())
         if hasattr(self, "web_mountain_lang_combo"):
-            self.web_mountain_lang_combo.setEnabled(enabled)
+            self.web_mountain_lang_combo.setEnabled(state["language_enabled"])
         if hasattr(self, "web_mountain_radius_spin"):
-            self.web_mountain_radius_spin.setEnabled(enabled)
+            self.web_mountain_radius_spin.setEnabled(state["radius_enabled"])
         if hasattr(self, "web_mountain_limit_spin"):
-            self.web_mountain_limit_spin.setEnabled(enabled)
+            self.web_mountain_limit_spin.setEnabled(state["limit_enabled"])
 
     def mountain_name_enrichment_enabled(self):
         if not hasattr(self, "web_mountain_checkbox"):
@@ -1871,433 +1159,113 @@ class FengShuiDockWidget(QWidget):
         self._context_evidence_dialog.activateWindow()
 
     def _update_context_evidence_hint(self, *_args):
-        if not self._advanced_context_enabled():
-            self._context_records = []
-            self.context_param_combo.blockSignals(True)
-            self.context_param_combo.clear()
-            self.context_param_combo.blockSignals(False)
-            self.context_evidence_hint.setText(
-                ui_text(
-                    "context_general_mode_hint",
-                    default=(
-                        "General principles mode is active. Country/period biases are disabled. "
-                        "Enable advanced context to apply regional and historical profiles."
-                    ),
-                )
-            )
-            self.context_param_hint.setText(
-                ui_text(
-                    "context_general_mode_note",
-                    default="Using neutral global principles only (no country/period overrides).",
-                )
-            )
-            self._update_evidence_summary_widget()
-            return
-
         culture_key, period_key = self._effective_context_keys()
-        context_tier = culture_visibility_tier(culture_key)
-        culture_name = self.culture_combo.currentText()
-        if context_tier == "experimental":
-            suffix = self._experimental_suffix(language_code())
-            if suffix and suffix not in culture_name:
-                culture_name = f"{culture_name}{suffix}"
-        records = context_evidence_records(
+        records = []
+        if self._advanced_context_enabled():
+            records = context_evidence_records(
+                culture_key=culture_key,
+                period_key=period_key,
+                hemisphere=self.hemisphere_combo.currentData(),
+            )
+        state = context_evidence_state(
+            advanced_context_enabled=self._advanced_context_enabled(),
             culture_key=culture_key,
-            period_key=period_key,
-            hemisphere=self.hemisphere_combo.currentData(),
+            culture_name=self.culture_combo.currentText(),
+            period_name=self.period_combo.currentText(),
+            ui_language=self.ui_language(),
+            records=records,
+            selected_index=self.context_param_combo.currentData(),
         )
-        self._context_records = records
-
-        selected_key = self.context_param_combo.currentData()
+        self._context_records = state["records"]
         self.context_param_combo.blockSignals(True)
         self.context_param_combo.clear()
-        for index, item in enumerate(records):
-            group = item.get("group", "-")
-            name = item.get("name", "-")
-            self.context_param_combo.addItem(f"{group}.{name}", index)
-        if records:
-            if isinstance(selected_key, int) and 0 <= selected_key < len(records):
-                self.context_param_combo.setCurrentIndex(selected_key)
-            else:
-                self.context_param_combo.setCurrentIndex(0)
+        for item in state["combo_items"]:
+            self.context_param_combo.addItem(item["label"], item["data"])
+        if state["selected_index"] >= 0:
+            self.context_param_combo.setCurrentIndex(state["selected_index"])
         self.context_param_combo.blockSignals(False)
-
-        source_list = []
-        for item in records:
-            for source in item.get("source_doi", []):
-                if source not in source_list:
-                    source_list.append(source)
-            if len(source_list) >= 2:
-                break
-        hint = ui_text(
-            "context_hint_template",
-            default="Profile evidence: {culture} / {period} (details: '{button}').",
-        ).format(
-            culture=culture_name,
-            period=self.period_combo.currentText(),
-            button=ui_text("context_evidence_button", default="View Context Evidence"),
-        )
-        references_text = reference_display_text(
-            source_list,
-            language=self.ui_language(),
-            limit=2,
-        )
-        if references_text:
-            hint += ui_text(
-                "context_hint_reference_prefix",
-                default=" Representative references: ",
-            )
-            hint += references_text
-        self.context_evidence_hint.setText(hint)
-        self._update_selected_param_evidence_hint()
+        self.context_evidence_hint.setText(state["hint_text"])
+        self.context_param_hint.setText(state["param_hint_text"])
         self._update_evidence_summary_widget()
 
     def _update_selected_param_evidence_hint(self, *_args):
-        if not self._advanced_context_enabled():
-            self.context_param_hint.setText(
-                ui_text(
-                    "context_general_mode_note",
-                    default="Using neutral global principles only (no country/period overrides).",
-                )
-            )
-            return
-
-        if not self._context_records:
-            self.context_param_hint.setText(
-                ui_text("context_no_params", default="No parameter evidence.")
-            )
-            return
-
-        index = self.context_param_combo.currentIndex()
-        if index < 0 or index >= len(self._context_records):
-            index = 0
-        item = self._context_records[index]
-        value = item.get("value")
-        if isinstance(value, float):
-            value_text = f"{value:.4f}".rstrip("0").rstrip(".")
-        else:
-            value_text = str(value)
-        level = item.get("evidence_level", "U")
-        references_text = reference_display_text(
-            item.get("source_doi", []),
-            language=self.ui_language(),
+        culture_key, _period_key = self._effective_context_keys()
+        state = context_evidence_state(
+            advanced_context_enabled=self._advanced_context_enabled(),
+            culture_key=culture_key,
+            culture_name=self.culture_combo.currentText(),
+            period_name=self.period_combo.currentText(),
+            ui_language=self.ui_language(),
+            records=self._context_records,
+            selected_index=self.context_param_combo.currentIndex(),
         )
-        if not references_text:
-            references_text = ui_text(
-                "context_no_reference",
-                default="No reference",
-            )
-        note = item.get("note") or ui_text("context_no_note", default="No note")
-        self.context_param_hint.setText(
-            ui_text(
-                "context_param_reference_template",
-                default=(
-                    "[{group}.{name}] value={value} | evidence={level} | "
-                    "reference={reference} | note={note}"
-                ),
-            ).format(
-                group=item.get("group", "-"),
-                name=item.get("name", "-"),
-                value=value_text,
-                level=level,
-                reference=references_text,
-                note=note,
-            )
-        )
+        self.context_param_hint.setText(state["param_hint_text"])
 
     def _update_metric_help_hint(self, *_args):
-        description = self.metric_help_combo.currentData()
-        if description in (None, ""):
-            description = ui_text(
-                "metric_help_empty",
-                default="No description available for the selected metric.",
-            )
-        self.metric_help_hint.setText(str(description))
+        self.metric_help_hint.setText(
+            metric_help_text(self.metric_help_combo.currentData())
+        )
 
     def _update_quick_number_widget(self, *_args):
         if not hasattr(self, "quick_number_widget"):
             return
-        self.quick_number_widget.setText(
-            ui_text(
-                "guide_quick_numbers_html",
-                default=(
-                    "<b>Quick Number Read</b><br/>"
-                    "score/confidence (0-1): 0.80+ strong, 0.65-0.79 good, 0.50-0.64 moderate, below 0.50 weak.<br/>"
-                    "TPI: near 0 flat, negative concave, positive convex."
-                ),
-            )
-        )
-
-    def _update_trust_boundary_hint(self):
-        if not hasattr(self, "trust_badge_label"):
-            return
-        from .trust_metadata import badges_html, build_trust_metadata
-
-        culture_key = ""
-        if hasattr(self, "culture_combo"):
-            culture_key = str(self.culture_combo.currentData() or "")
-        profile_key = ""
-        if hasattr(self, "profile_combo"):
-            profile_key = str(self.profile_combo.currentData() or "")
-        trust_metadata = build_trust_metadata(
-            self.label_language(),
-            advanced_context_enabled=self._advanced_context_enabled(),
-            culture_key=culture_key,
-            profile_key=profile_key,
-        )
-        badge_html = badges_html(trust_metadata)
-        score_note = str((trust_metadata or {}).get("score_notice") or "")
-        self.trust_badge_label.setText(
-            f"{badge_html}<br/>{score_note}" if badge_html else score_note
-        )
+        self.quick_number_widget.setText(quick_number_html())
 
     def _update_dem_diagnostics_hint(self, *_args):
         if not hasattr(self, "dem_diag_widget"):
             return
 
         dem_layer = self.dem_combo.currentLayer() if hasattr(self, "dem_combo") else None
-        if dem_layer is None:
-            self.dem_diag_widget.setText(
-                ui_text(
-                    "guide_dem_diag_empty",
-                    default=(
-                        "<b>DEM Diagnostics</b><br/>Select a DEM layer to inspect "
-                        "resolution, CRS unit reliability, and sampling density."
-                    ),
-                )
-            )
-            return
-
-        try:
-            diagnostics = self._diagnostic_service.run_dem_diagnostics(
-                DemDiagnosticsRequest(dem_layer=dem_layer)
-            )
-        except RuntimeError as exc:
-            self.dem_diag_widget.setText(
-                ui_text(
-                    "guide_dem_diag_empty",
-                    default=(
-                        "<b>DEM Diagnostics</b><br/>"
-                        f"Configuration error: {escape(str(exc))}"
-                    ),
-                )
-            )
-            return
-
-        dem_step = diagnostics["dem_step"]
-        width = diagnostics["width"]
-        height = diagnostics["height"]
-        spacing = diagnostics["spacing"]
-        approx_nodes = diagnostics["approx_nodes"]
-
-        crs_mode = "geographic" if dem_layer.crs().isGeographic() else "projected"
-        crs_note = (
-            "distance/smoothing in degree units can distort interpretation"
-            if crs_mode == "geographic"
-            else "distance/smoothing in projected units is more reliable"
-        )
-
-        self.dem_diag_widget.setText(
-            ui_text(
-                "guide_dem_diag_template",
-                default=(
-                    "<b>DEM Diagnostics</b><br/>"
-                    "layer={layer}<br/>"
-                    "pixel_step={step:.4f}, extent={width:.1f} x {height:.1f}, "
-                    "adaptive_spacing={spacing:.2f}, approx_sampling_nodes={nodes}<br/>"
-                    "CRS mode={crs_mode}: {crs_note}"
-                ),
-            ).format(
-                layer=escape(dem_layer.name()),
-                step=dem_step,
-                width=width,
-                height=height,
-                spacing=spacing,
-                nodes=approx_nodes,
-                crs_mode=crs_mode,
-                crs_note=escape(crs_note),
-            )
-        )
+        self.dem_diag_widget.setText(build_dem_diagnostics_html(dem_layer=dem_layer))
 
     def _update_evidence_summary_widget(self, *_args):
         if not hasattr(self, "evidence_widget"):
             return
-        if not self._advanced_context_enabled():
-            self.evidence_widget.setText(
-                ui_text(
-                    "guide_evidence_general_mode",
-                    default=(
-                        "<b>Evidence Summary</b><br/>"
-                        "General principles mode: region/period evidence is intentionally not applied."
-                    ),
-                )
-            )
-            return
-        records = self._context_records if isinstance(self._context_records, list) else []
-        if not records:
-            self.evidence_widget.setText(
-                ui_text(
-                    "guide_evidence_empty",
-                    default="<b>Evidence Summary</b><br/>No context evidence loaded.",
-                )
-            )
-            return
-
-        counts = {"A": 0, "B": 0, "C": 0, "U": 0}
-        for item in records:
-            level = str(item.get("evidence_level", "U")).upper()
-            if level not in counts:
-                level = "U"
-            counts[level] += 1
-        total = max(1, sum(counts.values()))
-        low_count = counts["C"] + counts["U"]
-        low_ratio = low_count / total
-        if low_ratio >= 0.45:
-            quality = "Exploratory"
-        elif low_ratio >= 0.20:
-            quality = "Moderate"
-        else:
-            quality = "Stronger"
-
-        if (
-            self._advanced_context_enabled()
-            and culture_visibility_tier(self._effective_context_keys()[0]) == "experimental"
-        ):
-            if quality not in ("Exploratory", "Moderate"):
-                quality = "Exploratory"
-            quality = f"{quality} (experimental region profile)"
-
-        recommendation = (
-            "Includes many heuristic priors (C/U); run calibration and local validation."
-            if low_count > 0
-            else "Mostly A/B evidence for this context."
-        )
+        culture_key, _period_key = self._effective_context_keys()
         self.evidence_widget.setText(
-            ui_text(
-                "guide_evidence_template",
-                default=(
-                    "<b>Evidence Summary</b><br/>"
-                    "A={a}, B={b}, C={c}, U={u} (total={total})<br/>"
-                    "quality={quality}<br/>"
-                    "{recommendation}"
-                ),
-            ).format(
-                a=counts["A"],
-                b=counts["B"],
-                c=counts["C"],
-                u=counts["U"],
-                total=total,
-                quality=quality,
-                recommendation=escape(recommendation),
+            build_evidence_summary_html(
+                records=self._context_records,
+                advanced_context_enabled=self._advanced_context_enabled(),
+                culture_key=culture_key,
             )
         )
 
-    def _workflow_presentation_state(self):
-        dem_ready = self.dem_combo.currentLayer() is not None
-        sites_ready = self.sites_combo.currentLayer() is not None
-        water_ready = self.water_combo.currentLayer() is not None
-        goal_key = self._usage_goal_key()
-        include_terms_checked = (
-            self.include_terms_checkbox.isChecked()
-            if goal_key in ("tomb", "house", "settlement")
-            else True
-        )
-
-        return self._profile_view_model.workflow_presentation_state(
+    def _workflow_checks(self):
+        return workflow_checks_state(
             mode_tab_index=self.mode_tabs.currentIndex(),
-            goal_key=goal_key,
-            dem_ready=dem_ready,
-            sites_ready=sites_ready,
-            water_ready=water_ready,
-            include_terms_enabled=include_terms_checked,
+            goal_key=self._usage_goal_key(),
+            dem_ready=self.dem_combo.currentLayer() is not None,
+            sites_ready=self.sites_combo.currentLayer() is not None,
+            water_ready=self.water_combo.currentLayer() is not None,
             analysis_auto_hydro=self.analysis_auto_hydro_checkbox.isChecked(),
             landscape_auto_hydro=self.landscape_auto_hydro_checkbox.isChecked(),
-            ui_language=self.ui_language(),
-            label_language=self.label_language(),
-            workflow_mode=self._workflow_mode(),
-            advanced_context_enabled=self._advanced_context_enabled(),
-            mountain_name_enrichment_enabled=self.mountain_name_enrichment_enabled(),
-            mountain_language_preference=self.mountain_name_language_preference(),
-            goal_name=self._usage_goal_label(goal_key),
-            profile_name=(
-                self.profile_combo.currentText()
-                or str(self.profile_combo.currentData())
-            ),
-            recent_status=self.status_label.text(),
-            is_running=bool(self._running_task_key),
-            running_task_label=self._running_task_label,
+            include_terms=self.include_terms_checkbox.isChecked(),
         )
 
     def _refresh_progress_guide(self, *_args):
         if not hasattr(self, "workflow_progress"):
             return
 
-        workflow_state = self._workflow_presentation_state()
-        self._update_trust_boundary_hint()
-        self.workflow_progress.setValue(workflow_state.percent)
+        mode_name, action_name, checks = self._workflow_checks()
         self._update_usage_goal_guidance()
-        self.progress_summary_label.setText(workflow_state.summary_text)
-        self.next_step_label.setText(workflow_state.next_step_text)
-
-        rows = []
-        for item in workflow_state.checks:
-            item_state = (
-                ui_text("workflow_state_done", default="Done")
-                if item.done
-                else ui_text("workflow_state_pending", default="Pending")
-            )
-            color = "#1f6255" if item.done else "#8a6d3b"
-            rows.append(
-                f"<span style='color:{color};'><b>{item_state}</b></span> · {escape(item.label)}"
-            )
-        self.checklist_label.setText("<br/>".join(rows))
-        self.workflow_status_label.setText(workflow_state.status_text)
+        state = workflow_presentation_state(
+            mode_name=mode_name,
+            action_name=action_name,
+            checks=checks,
+            goal_name=self._usage_goal_label(),
+            profile_name=self.profile_combo.currentText() or str(self.profile_combo.currentData()),
+            label_language=self.label_language(),
+            advanced_context_enabled=self._advanced_context_enabled(),
+            mountain_enabled=self.mountain_name_enrichment_enabled(),
+            mountain_language=self.mountain_name_language_preference(),
+            status_text=self.status_label.text(),
+        )
+        apply_workflow_presentation(self._workflow_guide_refs, state)
 
     def set_status(self, text):
         self.status_label.setText(text)
         if hasattr(self, "workflow_status_label"):
-            self.workflow_status_label.setText(
-                ui_text(
-                    "workflow_recent_status_template",
-                    default="Recent status: {text}",
-                ).format(text=text)
-            )
-        self._refresh_progress_guide()
-
-    def set_running_state(self, is_running, task_key=None, task_label=None):
-        if self._running_task_key and not is_running and task_key and self._running_task_key != task_key:
-            return
-        self._running_task_key = task_key if is_running else None
-        self._running_task_label = str(task_label or "").strip() if is_running else ""
-        action_buttons = (
-            "run_button",
-            "calibration_button",
-            "extract_terms_button",
-            "compare_profiles_button",
-        )
-        for button_name in action_buttons:
-            button = getattr(self, button_name, None)
-            if button is not None:
-                button.setEnabled(not is_running)
-
-        if hasattr(self, "cancel_button"):
-            self.cancel_button.setEnabled(bool(is_running))
-
-        if hasattr(self, "workflow_progress"):
-            if is_running:
-                self.workflow_progress.setFormat(
-                    ui_text("workflow_progress_running_format", default="%p% running")
-                )
-            else:
-                self.workflow_progress.setFormat(
-                    ui_text("workflow_progress_format", default="%p% ready")
-                )
-
-        if hasattr(self, "advanced_options_button"):
-            self.advanced_options_button.setEnabled(not is_running)
-        if hasattr(self, "mode_tabs"):
-            self.mode_tabs.setEnabled(not is_running)
-
+            self.workflow_status_label.setText(workflow_recent_status_text(text))
         self._refresh_progress_guide()
 
     def label_language(self):
@@ -2305,105 +1273,6 @@ class FengShuiDockWidget(QWidget):
             return "ko"
         code = self.label_language_combo.currentData()
         return code if code in ("ko", "en") else "ko"
-
-    def support_bundle_snapshot(self):
-        from .trust_metadata import build_trust_metadata
-
-        current_goal = self._usage_goal_key() if hasattr(self, "purpose_combo") else "general"
-        culture_key = (
-            str(self.culture_combo.currentData() or "")
-            if hasattr(self, "culture_combo")
-            else ""
-        )
-        profile_key = (
-            str(self.profile_combo.currentData() or "")
-            if hasattr(self, "profile_combo")
-            else ""
-        )
-        trust_metadata = build_trust_metadata(
-            self.label_language(),
-            advanced_context_enabled=self._advanced_context_enabled(),
-            culture_key=culture_key,
-            profile_key=profile_key,
-        )
-        return {
-            "ui_language": self.ui_language(),
-            "label_language": self.label_language(),
-            "workflow_mode": self._workflow_mode() if hasattr(self, "workflow_mode_combo") else "quick",
-            "goal_key": current_goal,
-            "goal_label": self._usage_goal_label(current_goal),
-            "profile_key": (
-                str(self.profile_combo.currentData() or "")
-                if hasattr(self, "profile_combo")
-                else ""
-            ),
-            "profile_label": self.profile_combo.currentText() if hasattr(self, "profile_combo") else "",
-            "culture_key": (
-                str(self.culture_combo.currentData() or "")
-                if hasattr(self, "culture_combo")
-                else ""
-            ),
-            "period_key": (
-                str(self.period_combo.currentData() or "")
-                if hasattr(self, "period_combo")
-                else ""
-            ),
-            "hemisphere": (
-                str(self.hemisphere_combo.currentData() or "")
-                if hasattr(self, "hemisphere_combo")
-                else "north"
-            ),
-            "advanced_context_enabled": self._advanced_context_enabled(),
-            "show_experimental_contexts": self._show_experimental_contexts(),
-            "analysis_auto_hydro": (
-                bool(self.analysis_auto_hydro_checkbox.isChecked())
-                if hasattr(self, "analysis_auto_hydro_checkbox")
-                else False
-            ),
-            "landscape_auto_hydro": (
-                bool(self.landscape_auto_hydro_checkbox.isChecked())
-                if hasattr(self, "landscape_auto_hydro_checkbox")
-                else False
-            ),
-            "include_terms": (
-                bool(self.include_terms_checkbox.isChecked())
-                if hasattr(self, "include_terms_checkbox")
-                else False
-            ),
-            "mountain_name_enrichment_enabled": self.mountain_name_enrichment_enabled(),
-            "mountain_name_radius_m": self.mountain_name_radius_m(),
-            "mountain_name_max_features": self.mountain_name_max_features(),
-            "mountain_name_language_preference": self.mountain_name_language_preference(),
-            "selected_layers": {
-                "sites": (
-                    self.sites_combo.currentLayer().name()
-                    if hasattr(self, "sites_combo") and self.sites_combo.currentLayer()
-                    else ""
-                ),
-                "dem": (
-                    self.dem_combo.currentLayer().name()
-                    if hasattr(self, "dem_combo") and self.dem_combo.currentLayer()
-                    else ""
-                ),
-                "water": (
-                    self.water_combo.currentLayer().name()
-                    if hasattr(self, "water_combo") and self.water_combo.currentLayer()
-                    else ""
-                ),
-            },
-            "trust_metadata": trust_metadata,
-            "latest_task_summary": {
-                "progress_summary": self.progress_summary_label.text()
-                if hasattr(self, "progress_summary_label")
-                else "",
-                "next_step": self.next_step_label.text()
-                if hasattr(self, "next_step_label")
-                else "",
-                "workflow_status": self.workflow_status_label.text()
-                if hasattr(self, "workflow_status_label")
-                else "",
-            },
-        }
 
     def _emit_run_requested(self):
         culture_key, period_key = self._effective_context_keys()
@@ -2417,12 +1286,6 @@ class FengShuiDockWidget(QWidget):
             period_key,
             self.analysis_auto_hydro_checkbox.isChecked(),
         )
-
-    def _emit_cancel_requested(self):
-        self.cancel_requested.emit()
-
-    def _emit_support_bundle_requested(self):
-        self.support_bundle_requested.emit()
 
     def _emit_terms_requested(self):
         culture_key, period_key = self._effective_context_keys()

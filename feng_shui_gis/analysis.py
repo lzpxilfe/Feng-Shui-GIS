@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
-from collections import defaultdict, deque
-import hashlib
+from collections import defaultdict
 import math
-import json
 import random
 
 from qgis import processing
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import (
     QgsCategorizedSymbolRenderer,
-    QgsCoordinateTransform,
     QgsFeature,
     QgsField,
     QgsFields,
@@ -23,33 +20,129 @@ from qgis.core import (
     QgsProject,
     QgsRasterLayer,
     QgsRendererCategory,
-    QgsSpatialIndex,
     QgsVectorLayer,
     edit,
 )
 
-from .calibration_math import (
+from .analysis_metrics import (
+    binary_classification_metrics,
     distribution_stats,
     metrics_better,
-    split_calibration_rows,
-    split_calibration_rows_once,
+    raw_calibration_stats,
+    score_aspect,
+    score_gaussian,
+    score_water_distance,
+    suppress_near_duplicates,
+    trapezoid_auc,
     unique_float_candidates,
 )
-from .calibration_parameter_search import (
+from .analysis_metadata import (
+    metadata_field_name,
+    metadata_grouping,
+    metadata_text,
+    summarize_site_metadata,
+)
+from .analysis_geometry import (
+    build_transform,
+    collect_points,
+    feature_point,
+    geometry_point,
+    prepare_water_reference,
+    transform_geometry,
+    transform_point,
+)
+from .analysis_dem_utils import (
+    azimuth_label,
+    direction_mean,
+    fmt_num,
+    mean_scores,
+    offset_point,
+    sample_dem,
+    sample_ring,
+    stddev,
+)
+from .analysis_dem_metrics import (
+    compute_cut_depth,
+    compute_dem_water_score,
+    compute_enclosure_index,
+    compute_form_score,
+    compute_long_score,
+    compute_roughness,
+    compute_sashinsa_score,
+    null_dem_metrics,
+    relief_statistics,
+    sampling_setup,
+)
+from .analysis_networks import (
+    compute_stream_order,
+    stream_class,
+    trace_downstream_path,
+)
+from .analysis_reasoning import (
+    compose_hyeol_reason,
+    compose_term_reason,
+    enclosure_hint,
+    sashinsa_hint,
+    score_band_label,
+    tpi_class_label,
+    tpi_hint,
+)
+from .analysis_hyeol import (
+    adaptive_spacing_diagnostics as compute_adaptive_spacing_diagnostics,
+    combine_hydro_scores,
+    evaluate_hyeol_candidate,
+    grid_points,
+    recommended_hyeol_count,
+)
+from .analysis_scoring import (
+    explain_top_factors,
+    indicator_contributions,
+    paper_evidence_summary,
+    profile_confidence,
+    profile_weighted_score,
+)
+from .analysis_sampling import negative_sampling_plan
+from .analysis_term_generation import (
+    core_hyeol_term_payload,
+    generic_term_payload,
+    ipsu_term_payload,
+    misa_term_payload,
+    myeongdang_term_payload,
+    relief_from_ring_values,
+)
+from .analysis_terrain_rules import (
+    clamp_min_order,
+    clamp_quantile,
+    compute_hydro_min_path_length,
+    compute_hydro_spacing,
+)
+from .analysis_terms import (
+    adjusted_term_score,
+    append_term_feature,
+    term_layer_fields,
+    term_runtime_state,
+)
+from .analysis_term_links import (
+    build_term_link_feature,
+    distinct_points,
+    group_term_features,
+    link_ready_payload,
+    path_mean_score,
+    polyline_length,
+    smooth_polyline,
+    term_link_fields,
+)
+from .analysis_water import dem_step, nearest_water_distance
+from .calibration_helpers import (
+    build_calibration_report_payload,
+    calibration_profile_parameters,
+    split_calibration_rows,
+    empty_calibration_fit,
+    finalize_calibration_fit,
+    normalized_weight_map,
     parameter_candidate_profiles,
     parameter_candidates,
-    raw_calibration_stats,
-)
-from .calibration_fit_payloads import (
-    calibration_fallback_payload,
-    calibration_fit_payload,
-    calibration_scope,
-    calibration_split_manifest,
-    parameter_change_summary,
-)
-from .calibration_weight_search import (
-    candidate_weight_sets,
-    weight_change_summary,
+    summarize_named_deltas,
 )
 from .cultural_context import build_context
 from .profile_catalog import (
@@ -77,7 +170,6 @@ HYDRO_CLASS_LABELS_KO = {
     "minor": "미소 수로",
 }
 
-_FEATURE_UID_FIELD = "fs_uid"
 
 class FengShuiAnalyzer:
     """Compute archaeology-oriented Feng Shui scores from DEM and optional water."""
@@ -86,11 +178,6 @@ class FengShuiAnalyzer:
         "north": {"front": 180.0, "back": 0.0, "left": 90.0, "right": 270.0},
         "south": {"front": 0.0, "back": 180.0, "left": 270.0, "right": 90.0},
     }
-    CALIBRATION_VALIDATION_RATIO = 0.20
-    CALIBRATION_EVALUATION_RATIO = 0.20
-    CALIBRATION_TRAIN_ROLE = "fit"
-    CALIBRATION_VALIDATION_ROLE = "selection"
-    CALIBRATION_EVALUATION_ROLE = "reported_metrics"
 
     def __init__(self, context=None, feedback=None):
         self.context = context or QgsProcessingContext()
@@ -300,71 +387,43 @@ class FengShuiAnalyzer:
             profile,
             random_seed=random_seed,
         )
-        reported_metrics = calibration_fit["reported_metrics"]
-        reported_baseline_metrics = calibration_fit["reported_baseline_metrics"]
-        annotation_metrics = calibration_fit["annotation_metrics"]
+        evaluation_metrics = dict(
+            calibration_fit.get("evaluation_metrics", calibration_fit.get("metrics", {}))
+        )
+        score_by_id = dict(
+            calibration_fit.get(
+                "evaluation_scores_by_id",
+                calibration_fit.get("scores_by_id", {}),
+            )
+        )
         self._annotate_calibration_layer(
             scored_layer,
-            score_by_id=calibration_fit.get("scores_by_id"),
+            score_by_id=score_by_id,
             best_f1_threshold=(
-                annotation_metrics["best_f1_threshold"]
-                if annotation_metrics["count"] > 0
+                evaluation_metrics["best_f1_threshold"]
+                if evaluation_metrics.get("count", 0) > 0
                 else None
             ),
             best_youden_threshold=(
-                annotation_metrics["best_youden_threshold"]
-                if annotation_metrics["count"] > 0
+                evaluation_metrics["best_youden_threshold"]
+                if evaluation_metrics.get("count", 0) > 0
                 else None
             ),
         )
-        report = {
-            "culture_key": context["culture_key"],
-            "period_key": context["period_key"],
-            "profile_key": profile_key,
-            "hemisphere": hemisphere,
-            "calibration_goal": "local_profile_tuning",
-            "reported_metric_phase": calibration_fit["reported_metric_phase"],
-            "reported_metric_notice": calibration_fit["reported_metric_notice"],
-            "site_layer_name": site_layer.name() if site_layer is not None else "",
-            "site_metadata_summary": self._summarize_site_metadata(site_layer),
-            "negative_ratio": negative_ratio,
-            "random_seed": random_seed,
-            "positive_count": len(positive_points),
-            "negative_count": len(negative_points),
-            "valid_count": reported_metrics["count"],
-            "base_valid_count": reported_baseline_metrics["count"],
-            "calibration_split": calibration_fit["calibration_split"],
-            "training_diagnostics": calibration_fit["training_diagnostics"],
-            "selection_diagnostics": calibration_fit["selection_diagnostics"],
-            "reported_baseline_metrics": reported_baseline_metrics,
-            "reported_metrics": reported_metrics,
-            "roc_auc": reported_metrics["roc_auc"],
-            "pr_auc": reported_metrics["pr_auc"],
-            "best_f1": reported_metrics["best_f1"],
-            "best_f1_threshold": reported_metrics["best_f1_threshold"],
-            "best_youden_j": reported_metrics["best_youden_j"],
-            "best_youden_threshold": reported_metrics["best_youden_threshold"],
-            "base_roc_auc": reported_baseline_metrics["roc_auc"],
-            "base_pr_auc": reported_baseline_metrics["pr_auc"],
-            "base_best_f1": reported_baseline_metrics["best_f1"],
-            "base_best_f1_threshold": reported_baseline_metrics["best_f1_threshold"],
-            "base_best_youden_j": reported_baseline_metrics["best_youden_j"],
-            "base_best_youden_threshold": reported_baseline_metrics["best_youden_threshold"],
-            "calibration_scope": calibration_fit["scope"],
-            "calibration_applied": calibration_fit["applied"],
-            "tuned_weights": calibration_fit["weights"],
-            "base_weights": calibration_fit["base_weights"],
-            "tuned_weight_deltas": calibration_fit["weight_deltas"],
-            "tuned_weight_summary": calibration_fit["weight_summary"],
-            "tuned_profile_parameters": calibration_fit["profile_parameters"],
-            "base_profile_parameters": calibration_fit["base_profile_parameters"],
-            "tuned_parameter_deltas": calibration_fit["parameter_deltas"],
-            "tuned_parameter_summary": calibration_fit["parameter_summary"],
-            "indicator_discrimination": calibration_fit["indicator_discrimination"],
-            "evidence_parameters": context.get("evidence", {}).get("parameters", {}),
-            "paper_evidence_records": profile.get("paper_evidence_records", []),
-            "paper_evidence_summary": self._paper_evidence_summary(profile),
-        }
+        report = build_calibration_report_payload(
+            context=context,
+            profile=profile,
+            profile_key=profile_key,
+            hemisphere=hemisphere,
+            site_layer_name=site_layer.name() if site_layer is not None else "",
+            site_metadata_summary=self._summarize_site_metadata(site_layer),
+            negative_ratio=negative_ratio,
+            random_seed=random_seed,
+            positive_count=len(positive_points),
+            negative_count=len(negative_points),
+            calibration_fit=calibration_fit,
+            paper_evidence_summary=self._paper_evidence_summary(profile),
+        )
         return scored_layer, report
 
     def extract_terms(
@@ -491,8 +550,6 @@ class FengShuiAnalyzer:
 
     def _ensure_fields(self, layer):
         to_add = []
-        if layer.fields().indexFromName(_FEATURE_UID_FIELD) < 0:
-            to_add.append(QgsField(_FEATURE_UID_FIELD, QVariant.String, "string", 64))
         if layer.fields().indexFromName("fs_culture") < 0:
             to_add.append(QgsField("fs_culture", QVariant.String, "string", 20))
         if layer.fields().indexFromName("fs_period") < 0:
@@ -590,103 +647,22 @@ class FengShuiAnalyzer:
                 layer.updateFeature(feature)
 
     @staticmethod
-    def _normalize_signature_value(value):
-        if value is None:
-            return ""
-        if isinstance(value, float):
-            return round(value, 12)
-        if isinstance(value, (list, tuple, dict)):
-            return json.dumps(value, sort_keys=True, ensure_ascii=False)
-        return str(value)
-
-    @classmethod
-    def _signature_from_inputs(cls, geometry, attributes, sequence=None, extra=None):
-        payload = {
-            "sequence": int(sequence) if sequence is not None else None,
-            "extra": extra or {},
-        }
-        if geometry is not None:
-            payload["geometry"] = (geometry.asWkb() or b"").hex()
-        else:
-            payload["geometry"] = ""
-        payload["attributes"] = {}
-        if attributes:
-            for key in sorted(attributes):
-                payload["attributes"][str(key)] = cls._normalize_signature_value(
-                    attributes[key]
-                )
-        return hashlib.sha1(
-            json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
-        ).hexdigest()
-
-    @classmethod
-    def _feature_uid(cls, feature, sequence=None):
-        field_names = feature.fields().names()
-        candidate_fields = [name for name in field_names if name == _FEATURE_UID_FIELD]
-        for name in candidate_fields:
-            raw_uid = feature[name]
-            if str(raw_uid).strip():
-                return str(raw_uid).strip()
-
-        filtered = {}
-        for name in field_names:
-            lowered = str(name).lower()
-            if lowered.startswith("fs_") or lowered in {"cal_id", "cal_uid"}:
-                continue
-            try:
-                filtered[name] = feature[name]
-            except (TypeError, ValueError, KeyError):
-                continue
-        return cls._signature_from_inputs(feature.geometry(), filtered, sequence=sequence)
-
-    @staticmethod
     def _normalized_weight_map(weights):
-        if not isinstance(weights, dict):
-            return {}
-        clean = {}
-        total = 0.0
-        for key, value in weights.items():
-            try:
-                weight = float(value)
-            except (TypeError, ValueError):
-                continue
-            if weight <= 0:
-                continue
-            clean[key] = weight
-            total += weight
-        if total <= 0:
-            return {}
-        return {key: value / total for key, value in clean.items()}
+        return normalized_weight_map(weights)
 
     @staticmethod
     def _calibration_row_id(feature, field_names=None):
         names = field_names or feature.fields().names()
-        if _FEATURE_UID_FIELD in names:
-            uid_value = feature[_FEATURE_UID_FIELD]
-            if str(uid_value).strip():
-                return str(uid_value).strip()
-        if "cal_uid" in names:
-            uid_value = feature["cal_uid"]
-            if str(uid_value).strip():
-                return str(uid_value).strip()
         if "cal_id" in names:
             try:
-                return f"legacy-cal:{int(feature['cal_id'])}"
+                return int(feature["cal_id"])
             except (TypeError, ValueError):
                 pass
-        return f"fid:{int(feature.id())}"
+        return int(feature.id())
 
     @staticmethod
     def _calibration_profile_parameters(profile):
-        if not isinstance(profile, dict):
-            return {}
-        parameters = {}
-        for key in ("slope_target", "slope_sigma", "tpi_target", "tpi_sigma"):
-            try:
-                parameters[key] = float(profile[key])
-            except (KeyError, TypeError, ValueError):
-                continue
-        return parameters
+        return calibration_profile_parameters(profile)
 
     def _calibration_raw_value(self, feature, key, field_names=None):
         names = list(field_names or feature.fields().names())
@@ -771,28 +747,6 @@ class FengShuiAnalyzer:
                 }
             )
         return rows
-
-    @staticmethod
-    def _split_calibration_rows_once(rows, random_seed=42, validation_ratio=0.20):
-        return split_calibration_rows_once(
-            rows,
-            random_seed=random_seed,
-            validation_ratio=validation_ratio,
-        )
-
-    @staticmethod
-    def _split_calibration_rows(
-        rows,
-        random_seed=42,
-        validation_ratio=0.20,
-        evaluation_ratio=0.10,
-    ):
-        return split_calibration_rows(
-            rows,
-            random_seed=random_seed,
-            validation_ratio=validation_ratio,
-            evaluation_ratio=evaluation_ratio,
-        )
 
     def _evaluate_calibration_rows(self, rows, profile):
         labels = []
@@ -890,28 +844,7 @@ class FengShuiAnalyzer:
         )
 
     def _parameter_candidate_profiles(self, rows, profile):
-        base_profile = dict(profile)
-        base_profile["weights"] = dict(self._normalized_weight_map(profile.get("weights", {})))
-        slope_candidates = self._parameter_candidates(
-            rows,
-            "slope",
-            float(base_profile.get("slope_target", 0.0)),
-            max(0.5, float(base_profile.get("slope_sigma", 1.0))),
-            0.5,
-        )
-        tpi_candidates = self._parameter_candidates(
-            rows,
-            "tpi",
-            float(base_profile.get("tpi_target", 0.0)),
-            max(0.02, float(base_profile.get("tpi_sigma", 0.1))),
-            0.02,
-        )
-        return parameter_candidate_profiles(
-            base_profile,
-            slope_candidates,
-            tpi_candidates,
-            max_candidates=24,
-        )
+        return parameter_candidate_profiles(rows, profile, max_candidates=24)
 
     def _fit_profile_weight_candidates(self, rows, profile, random_seed=42):
         base_weights = self._normalized_weight_map(profile.get("weights", {}))
@@ -948,18 +881,41 @@ class FengShuiAnalyzer:
             key: self._indicator_discrimination(rows, key, working_profile)
             for key in available_keys
         }
-        raw_candidates = candidate_weight_sets(
-            base_weights,
-            indicator_discrimination,
-            random_seed=random_seed,
-            trial_count=max(48, len(available_keys) * 20),
-            focus_limit=3,
+        heuristic_weights = {}
+        for key in available_keys:
+            quality = indicator_discrimination[key]["quality"]
+            heuristic_weights[key] = base_weights.get(key, 0.0) * (0.20 + quality)
+        heuristic_weights = self._normalized_weight_map(heuristic_weights) or dict(base_weights)
+
+        candidates = [dict(base_weights), dict(heuristic_weights)]
+        ranked_keys = sorted(
+            available_keys,
+            key=lambda item: indicator_discrimination[item]["quality"],
+            reverse=True,
         )
-        candidates = []
-        for raw_candidate in raw_candidates:
-            normalized_candidate = self._normalized_weight_map(raw_candidate)
-            if normalized_candidate:
-                candidates.append(normalized_candidate)
+        for focus_key in ranked_keys[: min(3, len(ranked_keys))]:
+            focused = {}
+            for key in available_keys:
+                focus_scale = 1.8 if key == focus_key else 0.55
+                quality_scale = 0.35 + indicator_discrimination[key]["quality"]
+                focused[key] = base_weights.get(key, 0.0) * focus_scale * quality_scale
+            normalized_focused = self._normalized_weight_map(focused)
+            if normalized_focused:
+                candidates.append(normalized_focused)
+
+        rng = random.Random(int(random_seed))
+        trial_count = max(48, len(available_keys) * 20)
+        for _ in range(trial_count):
+            trial_weights = {}
+            for key in available_keys:
+                quality = indicator_discrimination[key]["quality"]
+                jitter = 0.40 + (rng.random() * 1.80)
+                trial_weights[key] = (
+                    base_weights.get(key, 0.0) * jitter * (0.25 + quality)
+                )
+            normalized_trial = self._normalized_weight_map(trial_weights)
+            if normalized_trial:
+                candidates.append(normalized_trial)
 
         best_weights = dict(base_weights)
         best_metrics = dict(base_metrics)
@@ -981,11 +937,15 @@ class FengShuiAnalyzer:
         final_metrics = dict(best_metrics if weight_applied else base_metrics)
         final_scores_by_id = dict(best_scores_by_id if weight_applied else base_scores_by_id)
 
-        weight_deltas, weight_summary = weight_change_summary(
-            {key: base_weights.get(key, 0.0) for key in available_keys},
-            final_weights,
+        weight_deltas = {
+            key: final_weights.get(key, 0.0) - base_weights.get(key, 0.0)
+            for key in available_keys
+        }
+        weight_summary = summarize_named_deltas(
+            weight_deltas,
             threshold=0.01,
-            max_items=3,
+            limit=3,
+            empty_label="no-material-weight-change",
         )
 
         return {
@@ -1005,98 +965,35 @@ class FengShuiAnalyzer:
             self._normalized_weight_map(base_profile.get("weights", {}))
         )
         rows = self._calibration_rows(layer, base_profile)
-        split = self._split_calibration_rows(
-            rows,
+        fit_rows, evaluation_rows, split_plan = split_calibration_rows(
+            rows=rows,
             random_seed=random_seed,
-            validation_ratio=self.CALIBRATION_VALIDATION_RATIO,
-            evaluation_ratio=self.CALIBRATION_EVALUATION_RATIO,
+            split_ratio=0.75,
+            min_fit_count=6,
+            min_eval_count=3,
         )
-        model_rows = split.get("train", [])
-        validation_rows = split.get("validation", [])
-        evaluation_rows = split.get("evaluation", [])
-        use_validation_split = bool(validation_rows)
-        use_evaluation_split = bool(evaluation_rows)
-        has_selection_split = bool(model_rows) and use_validation_split
-        selection_phase = "validation" if use_validation_split else "none"
-        if use_evaluation_split:
-            reported_metric_phase = "held_out_evaluation"
-            reported_metric_notice = (
-                "Reported metrics come from held-out evaluation rows that were not used for candidate selection."
+        base_metrics, base_scores_by_id = self._evaluate_calibration_rows(
+            fit_rows,
+            base_profile,
+        )
+        validation_enabled = bool(split_plan.get("validation_enabled", False))
+        if validation_enabled and evaluation_rows:
+            base_evaluation_metrics, base_evaluation_scores_by_id = (
+                self._evaluate_calibration_rows(
+                    evaluation_rows,
+                    base_profile,
+                )
             )
         else:
-            reported_metric_phase = "no_held_out_evaluation"
-            reported_metric_notice = (
-                "No held-out evaluation rows were available, so this run exposes tuning diagnostics but no reportable evaluation metrics."
-            )
-
-        base_model_metrics, base_model_scores_by_id = self._evaluate_calibration_rows(
-            model_rows,
-            base_profile,
-        )
-        base_validation_metrics, base_validation_scores_by_id = (
-            self._evaluate_calibration_rows(
-                validation_rows,
-                base_profile,
-            )
-            if use_validation_split
-            else ({}, {})
-        )
-        base_report_metrics, base_report_scores_by_id = self._evaluate_calibration_rows(
-            evaluation_rows,
-            base_profile,
-        )
+            base_evaluation_metrics = dict(base_metrics)
+            base_evaluation_scores_by_id = dict(base_scores_by_id)
         base_profile_parameters = self._calibration_profile_parameters(base_profile)
-        full_layer_baseline_metrics, full_layer_baseline_scores_by_id = (
-            self._evaluate_calibration_rows(rows, base_profile)
-        )
-        selection_baseline_metrics = dict(base_validation_metrics)
-        if (
-            not rows
-            or not base_profile["weights"]
-            or not model_rows
-            or not has_selection_split
-        ):
-            return calibration_fallback_payload(
-                scope="threshold_only",
-                applied=False,
-                base_weights=dict(base_profile.get("weights", {})),
-                weights=dict(base_profile.get("weights", {})),
-                weight_deltas={},
-                weight_summary="no-weight-fit",
+        if not fit_rows or not base_profile["weights"]:
+            return empty_calibration_fit(
+                base_profile=base_profile,
                 base_profile_parameters=base_profile_parameters,
-                profile_parameters=base_profile_parameters,
-                parameter_deltas={},
-                parameter_summary="no-parameter-fit",
-                indicator_discrimination={},
-                base_metrics=base_report_metrics,
-                metrics=base_report_metrics,
-                scores_by_id=full_layer_baseline_scores_by_id,
-                annotation_metrics=full_layer_baseline_metrics,
-                reported_baseline_metrics=base_report_metrics,
-                reported_metrics=base_report_metrics,
-                reported_scores_by_id=base_report_scores_by_id,
-                reported_metric_phase=reported_metric_phase,
-                reported_metric_notice=reported_metric_notice,
-                calibration_split=calibration_split_manifest(
-                    total_count=len(rows),
-                    train_count=len(model_rows),
-                    validation_count=len(validation_rows),
-                    evaluation_count=len(evaluation_rows),
-                    used_validation=use_validation_split,
-                    used_evaluation=use_evaluation_split,
-                    train_role=self.CALIBRATION_TRAIN_ROLE,
-                    validation_role=self.CALIBRATION_VALIDATION_ROLE,
-                    evaluation_role=self.CALIBRATION_EVALUATION_ROLE,
-                    selection_phase=selection_phase,
-                    reported_metric_phase=reported_metric_phase,
-                ),
-                base_train_metrics=base_model_metrics,
-                base_validation_metrics=base_validation_metrics,
-                training_baseline_metrics=base_model_metrics,
-                training_candidate_metrics=base_model_metrics,
-                selection_phase=selection_phase,
-                selection_baseline_metrics=selection_baseline_metrics,
-                selection_candidate_metrics=selection_baseline_metrics,
+                base_metrics=base_metrics,
+                base_scores_by_id=base_scores_by_id,
             )
 
         best_fit = {
@@ -1107,123 +1004,71 @@ class FengShuiAnalyzer:
             },
             "weight_summary": "no-material-weight-change",
             "indicator_discrimination": {
-                key: self._indicator_discrimination(model_rows, key, base_profile)
+                key: self._indicator_discrimination(fit_rows, key, base_profile)
                 for key in base_profile["weights"].keys()
                 if any(
                     self._calibration_row_indicator(row, key, base_profile) is not None
-                    for row in model_rows
+                    for row in fit_rows
                 )
             },
-            "metrics": dict(base_model_metrics),
-            "scores_by_id": dict(base_model_scores_by_id),
+            "metrics": dict(base_metrics),
+            "scores_by_id": dict(base_scores_by_id),
             "weight_applied": False,
-            "selection_metrics": dict(selection_baseline_metrics),
         }
-        best_selection_metrics = dict(selection_baseline_metrics)
         for index, candidate_profile in enumerate(
-            self._parameter_candidate_profiles(model_rows, base_profile)
+            self._parameter_candidate_profiles(fit_rows, base_profile)
         ):
             candidate_fit = self._fit_profile_weight_candidates(
-                model_rows,
+                fit_rows,
                 candidate_profile,
                 random_seed=random_seed + index,
             )
-            candidate_selection_metrics = dict(candidate_fit["metrics"])
-            if validation_rows:
-                candidate_selection_metrics, _ = self._evaluate_calibration_rows(
-                    validation_rows,
-                    candidate_fit["profile"],
-                )
-            if self._metrics_better(candidate_selection_metrics, best_selection_metrics):
+            if self._metrics_better(candidate_fit["metrics"], best_fit["metrics"]):
                 best_fit = candidate_fit
-                best_selection_metrics = dict(candidate_selection_metrics)
-                best_fit["selection_metrics"] = dict(candidate_selection_metrics)
 
-        applied = self._metrics_better(
-            best_fit.get("selection_metrics", best_fit["metrics"]),
-            base_validation_metrics,
-        )
-        if applied:
-            final_profile = dict(best_fit["profile"])
-            final_weights = dict(best_fit["weights"])
-            final_weight_deltas = dict(best_fit["weight_deltas"])
-            final_weight_summary = best_fit["weight_summary"]
-            indicator_discrimination = dict(best_fit["indicator_discrimination"])
-            weight_applied = bool(best_fit.get("weight_applied"))
+        if validation_enabled:
+            final_profile_for_evaluation = dict(best_fit.get("profile", {}))
+            final_profile_for_evaluation["weights"] = dict(
+                best_fit.get("weights", {})
+            )
+            best_fit["evaluation_metrics"], best_fit["evaluation_scores_by_id"] = (
+                self._evaluate_calibration_rows(
+                    evaluation_rows,
+                    final_profile_for_evaluation,
+                )
+            )
+            applied = self._metrics_better(
+                best_fit["evaluation_metrics"],
+                base_evaluation_metrics,
+            )
+            if not applied:
+                best_fit["evaluation_metrics"] = dict(base_evaluation_metrics)
+                best_fit["evaluation_scores_by_id"] = dict(
+                    base_evaluation_scores_by_id
+                )
         else:
-            final_profile = dict(base_profile)
-            final_weights = dict(base_profile["weights"])
-            final_weight_deltas = {
-                key: 0.0 for key in final_weights.keys()
-            }
-            final_weight_summary = "no-material-weight-change"
-            indicator_discrimination = dict(best_fit["indicator_discrimination"])
-            weight_applied = False
-        final_profile["weights"] = dict(final_weights)
-        full_layer_metrics, full_layer_scores_by_id = self._evaluate_calibration_rows(
-            rows,
-            final_profile,
-        )
-        final_report_metrics, final_report_scores_by_id = self._evaluate_calibration_rows(
-            evaluation_rows,
-            final_profile,
-        )
-
-        final_profile_parameters = self._calibration_profile_parameters(final_profile)
-        parameter_deltas, parameter_summary, parameter_applied = parameter_change_summary(
-            base_profile_parameters,
-            final_profile_parameters,
-            threshold=0.01,
-            max_items=4,
-        )
-        scope = calibration_scope(applied, parameter_applied, weight_applied)
-
-        return calibration_fit_payload(
-            scope=scope,
-            applied=applied,
-            base_weights=dict(base_profile["weights"]),
-            weights=final_weights,
-            weight_deltas=final_weight_deltas,
-            weight_summary=final_weight_summary,
+            applied = False
+        best_fit = dict(best_fit)
+        best_fit["validation_plan"] = dict(split_plan or {})
+        best_fit["fit_rows"] = list(fit_rows)
+        best_fit["evaluation_rows"] = list(evaluation_rows)
+        best_fit["validation_enabled"] = validation_enabled
+        best_fit["final_profile_for_evaluation"] = dict(best_fit.get("profile", {}))
+        if not validation_enabled:
+            best_fit["evaluation_metrics"] = dict(base_evaluation_metrics)
+            best_fit["evaluation_scores_by_id"] = dict(base_evaluation_scores_by_id)
+        return finalize_calibration_fit(
+            base_profile=base_profile,
             base_profile_parameters=base_profile_parameters,
-            profile_parameters=final_profile_parameters,
-            parameter_deltas=parameter_deltas,
-            parameter_summary=parameter_summary,
-            indicator_discrimination=indicator_discrimination,
-            base_metrics=base_report_metrics,
-            metrics=final_report_metrics,
-            scores_by_id=full_layer_scores_by_id,
-            annotation_metrics=full_layer_metrics,
-            reported_baseline_metrics=base_report_metrics,
-            reported_metrics=final_report_metrics,
-            reported_scores_by_id=final_report_scores_by_id,
-            reported_metric_phase=reported_metric_phase,
-            reported_metric_notice=reported_metric_notice,
-            calibration_split=calibration_split_manifest(
-                total_count=len(rows),
-                train_count=len(model_rows),
-                validation_count=len(validation_rows),
-                evaluation_count=len(evaluation_rows),
-                used_validation=use_validation_split,
-                used_evaluation=use_evaluation_split,
-                train_role=self.CALIBRATION_TRAIN_ROLE,
-                validation_role=self.CALIBRATION_VALIDATION_ROLE,
-                evaluation_role=self.CALIBRATION_EVALUATION_ROLE,
-                selection_phase=selection_phase,
-                reported_metric_phase=reported_metric_phase,
-            ),
-            base_train_metrics=base_model_metrics,
-            base_validation_metrics=base_validation_metrics,
-            base_train_scores_by_id=base_model_scores_by_id,
-            base_validation_scores_by_id=base_validation_scores_by_id,
-            training_baseline_metrics=base_model_metrics,
-            training_candidate_metrics=best_fit["metrics"],
-            selection_phase=selection_phase,
-            selection_baseline_metrics=selection_baseline_metrics,
-            selection_candidate_metrics=best_fit.get(
-                "selection_metrics",
-                best_selection_metrics,
-            ),
+            base_metrics=base_metrics,
+            base_scores_by_id=base_scores_by_id,
+            best_fit=best_fit,
+            applied=applied,
+            base_fit_scores_by_id=base_scores_by_id,
+            evaluation_base_metrics=base_evaluation_metrics,
+            evaluation_scores_by_id=best_fit.get("evaluation_scores_by_id", {}),
+            validation_enabled=validation_enabled,
+            split_plan=split_plan,
         )
 
     def _score_points(
@@ -1255,7 +1100,7 @@ class FengShuiAnalyzer:
             )
 
         with edit(site_layer):
-            for feature_index, feature in enumerate(site_layer.getFeatures(), start=1):
+            for feature in site_layer.getFeatures():
                 slope_value = self._to_float(feature[slope_field]) if slope_field else None
                 aspect_value = self._to_float(feature[aspect_field]) if aspect_field else None
                 feature_geom = feature.geometry() if feature.hasGeometry() else None
@@ -1336,7 +1181,6 @@ class FengShuiAnalyzer:
                 feature["fs_tpi_lg"]    = dem_metrics.get("large_tpi_norm")
                 feature["fs_roughness"] = dem_metrics.get("roughness")
                 feature["fs_cut_depth"] = dem_metrics.get("cut_depth")
-                feature[_FEATURE_UID_FIELD] = self._feature_uid(feature, sequence=feature_index)
                 site_layer.updateFeature(feature)
 
     @classmethod
@@ -1344,34 +1188,14 @@ class FengShuiAnalyzer:
         return profile_spec(profile_key)
 
     def _prepare_water_reference(self, dem_layer, water_layer):
-        if dem_layer is None or water_layer is None:
-            return None, None
-
-        dem_crs = dem_layer.crs()
-        water_to_dem = self._build_transform(water_layer.crs(), dem_crs)
-        indexed_features = []
-        transformed_geoms = {}
-        for src_feature in water_layer.getFeatures():
-            if not src_feature.hasGeometry():
-                continue
-            transformed = self._transform_geometry(
-                src_feature.geometry(),
-                water_to_dem,
-            )
-            if transformed is None or transformed.isEmpty():
-                continue
-            feature_id = int(src_feature.id())
-            indexed = QgsFeature()
-            indexed.setId(feature_id)
-            indexed.setGeometry(transformed)
-            indexed_features.append(indexed)
-            transformed_geoms[feature_id] = transformed
-        if not indexed_features:
-            return None, None
-        spatial_index = QgsSpatialIndex(QgsSpatialIndex.FlagStoreFeatureGeometries)
-        for indexed_feature in indexed_features:
-            spatial_index.addFeature(indexed_feature)
-        return spatial_index, transformed_geoms
+        project = self.context.project() if self.context is not None else None
+        if project is None:
+            project = QgsProject.instance()
+        return prepare_water_reference(
+            dem_layer=dem_layer,
+            water_layer=water_layer,
+            project=project,
+        )
 
     @staticmethod
     def _contextualize_profile(profile, context, profile_key="profile"):
@@ -1530,181 +1354,44 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _metadata_text(value):
-        if value is None:
-            return ""
-        return str(value).strip()
+        return metadata_text(value)
 
     def _metadata_field_name(self, layer, candidates):
-        if layer is None:
-            return None
-        exact_map = {}
-        field_names = []
-        for field in layer.fields():
-            name = field.name()
-            lower_name = name.lower()
-            exact_map[lower_name] = name
-            field_names.append((name, lower_name))
-        for candidate in candidates:
-            if candidate in exact_map:
-                return exact_map[candidate]
-        for candidate in candidates:
-            for name, lower_name in field_names:
-                if candidate in lower_name:
-                    return name
-        return None
+        return metadata_field_name(layer, candidates)
 
     def _metadata_grouping(self, layer, kind, candidates, limit=8):
-        field_name = self._metadata_field_name(layer, candidates)
-        if not field_name:
-            return None
-        counts = defaultdict(int)
-        for feature in layer.getFeatures():
-            value_text = self._metadata_text(feature[field_name])
-            counts[value_text if value_text else "(empty)"] += 1
-        if not counts:
-            return None
-        total = sum(counts.values())
-        rows = []
-        for value, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:limit]:
-            rows.append(
-                {
-                    "value": value,
-                    "count": count,
-                    "share": (count / total) if total > 0 else 0.0,
-                }
-            )
-        return {
-            "kind": kind,
-            "field": field_name,
-            "distinct_count": len(counts),
-            "rows": rows,
-        }
+        return metadata_grouping(layer, kind, candidates, limit=limit)
 
     def _summarize_site_metadata(self, layer):
-        summary = {
-            "layer_name": layer.name() if layer is not None else "",
-            "groupings": [],
-        }
-        if layer is None:
-            return summary
-        grouping_specs = (
-            (
-                "site_group",
-                (
-                    "site_group",
-                    "site_type",
-                    "siteclass",
-                    "site_class",
-                    "category",
-                    "class",
-                    "type",
-                    "cluster",
-                    "group",
-                ),
-            ),
-            (
-                "country",
-                (
-                    "country",
-                    "nation",
-                    "state",
-                    "region",
-                    "culture",
-                    "tradition",
-                ),
-            ),
-            (
-                "period",
-                (
-                    "period",
-                    "era",
-                    "phase",
-                    "chronology",
-                    "date_period",
-                    "age",
-                ),
-            ),
-        )
-        for kind, candidates in grouping_specs:
-            grouping = self._metadata_grouping(layer, kind, candidates)
-            if grouping is not None:
-                summary["groupings"].append(grouping)
-        return summary
+        return summarize_site_metadata(layer)
 
     def _build_transform(self, source_crs, target_crs):
-        if source_crs is None or target_crs is None:
-            raise RuntimeError("Missing CRS required for coordinate transform.")
-        if not source_crs.isValid() or not target_crs.isValid():
-            raise RuntimeError("Invalid CRS encountered while preparing coordinate transform.")
-        if source_crs == target_crs:
-            return None
-
         project = self.context.project() if self.context is not None else None
         if project is None:
             project = QgsProject.instance()
-        try:
-            return QgsCoordinateTransform(source_crs, target_crs, project)
-        except Exception as exc:
-            raise RuntimeError(
-                f"Failed to build coordinate transform: {source_crs.authid()} -> {target_crs.authid()}"
-            ) from exc
+        return build_transform(source_crs, target_crs, project)
 
     @staticmethod
     def _transform_point(point, transformer):
-        if point is None:
-            return None
-        if transformer is None:
-            return QgsPointXY(point.x(), point.y())
-        try:
-            transformed = transformer.transform(QgsPointXY(point.x(), point.y()))
-            return QgsPointXY(transformed.x(), transformed.y())
-        except Exception as exc:
-            raise RuntimeError("Failed to transform point geometry.") from exc
+        return transform_point(point, transformer)
 
     @staticmethod
     def _transform_geometry(geometry, transformer):
-        if geometry is None or geometry.isEmpty():
-            return None
-        cloned = QgsGeometry(geometry)
-        if transformer is None:
-            return cloned
-        try:
-            cloned.transform(transformer)
-            return cloned
-        except Exception as exc:
-            raise RuntimeError("Failed to transform feature geometry.") from exc
+        return transform_geometry(geometry, transformer)
 
     @staticmethod
     def _geometry_point(geometry):
-        if geometry is None or geometry.isEmpty():
-            return None
-
-        centroid = geometry.centroid()
-        if centroid is None or centroid.isEmpty():
-            return None
-
-        point = centroid.asPoint()
-        if point is None:
-            return None
-        return QgsPointXY(point.x(), point.y())
+        return geometry_point(geometry)
 
     @staticmethod
     def _feature_point(feature):
-        if feature is None or not feature.hasGeometry():
-            return None
-        return FengShuiAnalyzer._geometry_point(feature.geometry())
+        return feature_point(feature)
 
     def _collect_points(self, layer, target_crs=None):
-        points = []
-        transformer = None
-        if target_crs is not None and layer is not None and hasattr(layer, "crs"):
-            transformer = self._build_transform(layer.crs(), target_crs)
-        for feature in layer.getFeatures():
-            point = self._feature_point(feature)
-            point = self._transform_point(point, transformer)
-            if point is not None:
-                points.append(point)
-        return points
+        project = self.context.project() if self.context is not None else None
+        if project is None:
+            project = QgsProject.instance()
+        return collect_points(layer=layer, target_crs=target_crs, project=project)
 
     def _sample_negative_points(
         self,
@@ -1717,12 +1404,6 @@ class FengShuiAnalyzer:
         extent = dem_layer.extent()
         dem_step = self._dem_step(dem_layer)
         calibration_rules = self._rules_section("calibration")
-        min_distance = max(
-            dem_step * 20.0,
-            min(extent.width(), extent.height()) / 240.0,
-        )
-        min_distance_sq = min_distance * min_distance
-        min_negative_separation_sq = (min_distance * 0.40) ** 2
         local_padding_factor = self._rule_float(
             calibration_rules,
             "local_bbox_padding_factor",
@@ -1744,31 +1425,21 @@ class FengShuiAnalyzer:
         rng = random.Random(random_seed)
         points = []
         trial_cap = max(target_count * trial_multiplier, 3000)
-
-        x_values = [point.x() for point in positive_points]
-        y_values = [point.y() for point in positive_points]
-        span_x = max(x_values) - min(x_values)
-        span_y = max(y_values) - min(y_values)
-        local_padding = max(
-            min_distance,
-            dem_step * local_padding_cells,
-            max(span_x, span_y) * local_padding_factor,
+        sampling_plan = negative_sampling_plan(
+            dem_step=dem_step,
+            extent_bounds=(
+                extent.xMinimum(),
+                extent.xMaximum(),
+                extent.yMinimum(),
+                extent.yMaximum(),
+            ),
+            positive_xy=[(point.x(), point.y()) for point in positive_points],
+            local_padding_factor=local_padding_factor,
+            local_padding_cells=local_padding_cells,
         )
-        local_window = (
-            max(extent.xMinimum(), min(x_values) - local_padding),
-            min(extent.xMaximum(), max(x_values) + local_padding),
-            max(extent.yMinimum(), min(y_values) - local_padding),
-            min(extent.yMaximum(), max(y_values) + local_padding),
-        )
-        dem_window = (
-            extent.xMinimum(),
-            extent.xMaximum(),
-            extent.yMinimum(),
-            extent.yMaximum(),
-        )
-        search_windows = [local_window]
-        if local_window != dem_window:
-            search_windows.append(dem_window)
+        min_distance_sq = sampling_plan["min_distance_sq"]
+        min_negative_separation_sq = sampling_plan["min_negative_separation_sq"]
+        search_windows = sampling_plan["search_windows"]
 
         def sample_from_window(window, max_trials):
             trial = 0
@@ -1825,7 +1496,6 @@ class FengShuiAnalyzer:
         data = layer.dataProvider()
         fields = QgsFields()
         fields.append(QgsField("cal_id", QVariant.Int))
-        fields.append(QgsField("fs_uid", QVariant.String, "string", 64))
         fields.append(QgsField("fs_label", QVariant.Int))
         fields.append(QgsField("fs_group", QVariant.String, "string", 8))
         data.addAttributes(fields)
@@ -1837,12 +1507,6 @@ class FengShuiAnalyzer:
             feature = QgsFeature(layer.fields())
             feature.setGeometry(QgsGeometry.fromPointXY(point))
             feature["cal_id"] = running
-            feature["fs_uid"] = cls._signature_from_inputs(
-                feature.geometry(),
-                {"cal_group": "positive"},
-                sequence=running,
-                extra={"point_type": "positive"},
-            )
             feature["fs_label"] = 1
             feature["fs_group"] = "positive"
             features.append(feature)
@@ -1851,12 +1515,6 @@ class FengShuiAnalyzer:
             feature = QgsFeature(layer.fields())
             feature.setGeometry(QgsGeometry.fromPointXY(point))
             feature["cal_id"] = running
-            feature["fs_uid"] = cls._signature_from_inputs(
-                feature.geometry(),
-                {"cal_group": "negative"},
-                sequence=running,
-                extra={"point_type": "negative"},
-            )
             feature["fs_label"] = 0
             feature["fs_group"] = "negative"
             features.append(feature)
@@ -1869,71 +1527,22 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _dem_step(dem_layer):
-        x_res = abs(dem_layer.rasterUnitsPerPixelX())
-        y_res = abs(dem_layer.rasterUnitsPerPixelY())
-        step = max(x_res, y_res)
-        return step if step > 0 else 1.0
+        return dem_step(dem_layer)
 
     def _nearest_water_distance(self, site_geom, site_point, water_index, water_geoms):
-        if (
-            site_geom is None
-            or site_geom.isEmpty()
-            or site_point is None
-            or water_index is None
-            or not water_geoms
-        ):
-            return None
-
-        try:
-            candidate_ids = water_index.nearestNeighbor(site_geom, 12)
-        except TypeError:
-            candidate_ids = water_index.nearestNeighbor(site_point, 12)
-        if not candidate_ids:
-            return None
-
-        best = None
-        for fid in candidate_ids:
-            water_geom = water_geoms.get(fid)
-            if water_geom is None:
-                continue
-            distance = site_geom.distance(water_geom)
-            if best is None or distance < best:
-                best = distance
-        return best
+        return nearest_water_distance(site_geom, site_point, water_index, water_geoms)
 
     @staticmethod
     def _score_gaussian(value, target, sigma):
-        if value is None:
-            return None
-        sigma = max(sigma, 1e-9)
-        return math.exp(-((value - target) / sigma) ** 2)
+        return score_gaussian(value, target, sigma)
 
     @staticmethod
     def _score_aspect(aspect_deg, hemisphere, context=None):
-        if aspect_deg is None:
-            return None
-        if context:
-            target = float(context["aspect_target"])
-            sharpness = max(0.5, float(context["aspect_sharpness"]))
-        else:
-            target = 180.0 if hemisphere == "north" else 0.0
-            sharpness = 1.0
-        diff = abs((aspect_deg - target + 180.0) % 360.0 - 180.0)
-        base_score = (math.cos(math.radians(diff)) + 1.0) / 2.0
-        return max(0.0, min(1.0, base_score**sharpness))
+        return score_aspect(aspect_deg, hemisphere, context=context)
 
     @staticmethod
     def _score_water_distance(distance_m, context=None):
-        if distance_m is None:
-            return None
-        if not context:
-            raise RuntimeError("Water-distance scoring requires a validated context.")
-        target = float(context["water_distance_target"])
-        sigma = float(context["water_distance_sigma"])
-        score = math.exp(-((distance_m - target) / sigma) ** 2)
-        if distance_m < 30.0:
-            return max(0.1, score * 0.5)
-        return score
+        return score_water_distance(distance_m, context=context)
 
     def _score_profile_slope(self, slope_deg, profile):
         if slope_deg is None:
@@ -1960,18 +1569,7 @@ class FengShuiAnalyzer:
         dem_step,
         context=None,
     ):
-        null_metrics = {
-            "form_score": None,
-            "long_score": None,
-            "dem_water_score": None,
-            "tpi_norm": None,
-            "convergence": None,
-            "sashinsa_score": None,
-            "enclosure_index": None,
-            "large_tpi_norm": None,
-            "roughness": None,
-            "cut_depth": None,
-        }
+        null_metrics = null_dem_metrics()
         if site_point is None:
             return null_metrics
 
@@ -1982,32 +1580,28 @@ class FengShuiAnalyzer:
         sampling_rules = self._rules_section("sampling")
         dem_rules = self._rules_section("dem_metrics")
 
-        micro_mult = 1.0
-        macro_mult = 1.0
-        if context:
-            micro_mult = float(context["micro_radius_multiplier"])
-            macro_mult = float(context["macro_radius_multiplier"])
-        micro_radius = dem_step * float(sampling_rules["micro_radius_factor"]) * micro_mult
-        macro_radius = dem_step * float(sampling_rules["macro_radius_factor"]) * macro_mult
-
-        macro_bearing_step = int(sampling_rules["macro_bearing_step"])
-        micro_bearing_step = int(sampling_rules["micro_bearing_step"])
-        macro_bearings = list(range(0, 360, max(1, macro_bearing_step)))
-        micro_bearings = list(range(0, 360, max(1, micro_bearing_step)))
+        sampling_state = sampling_setup(
+            dem_step=dem_step,
+            sampling_rules=sampling_rules,
+            context=context,
+        )
+        micro_radius = sampling_state["micro_radius"]
+        macro_radius = sampling_state["macro_radius"]
+        macro_bearings = sampling_state["macro_bearings"]
+        micro_bearings = sampling_state["micro_bearings"]
 
         macro_values = self._sample_ring(provider, site_point, macro_radius, macro_bearings)
         micro_values = self._sample_ring(provider, site_point, micro_radius, micro_bearings)
 
-        relief = None
-        mean_macro = None
-        std_macro = None
-        std_micro = None
-        if macro_values:
-            relief = max(macro_values) - min(macro_values)
-            mean_macro = sum(macro_values) / len(macro_values)
-            std_macro = self._stddev(macro_values)
-        if micro_values:
-            std_micro = self._stddev(micro_values)
+        stats = relief_statistics(
+            macro_values=macro_values,
+            micro_values=micro_values,
+            stddev_fn=self._stddev,
+        )
+        relief = stats["relief"]
+        mean_macro = stats["mean_macro"]
+        std_macro = stats["std_macro"]
+        std_micro = stats["std_micro"]
 
         card = self.CARDINALS.get(hemisphere, self.CARDINALS["north"])
         back_mean = self._direction_mean(provider, site_point, macro_radius, card["back"])
@@ -2015,126 +1609,69 @@ class FengShuiAnalyzer:
         left_mean = self._direction_mean(provider, site_point, macro_radius, card["left"])
         right_mean = self._direction_mean(provider, site_point, macro_radius, card["right"])
 
-        form_score = None
-        if (
-            relief is not None
-            and relief > 0
-            and back_mean is not None
-            and front_mean is not None
-            and left_mean is not None
-            and right_mean is not None
-        ):
-            back_norm = (back_mean - center) / relief
-            front_norm = (center - front_mean) / relief
-            side_norm = (left_mean - right_mean) / relief
+        form_score = compute_form_score(
+            center=center,
+            relief=relief,
+            back_mean=back_mean,
+            front_mean=front_mean,
+            left_mean=left_mean,
+            right_mean=right_mean,
+            dem_rules=dem_rules,
+            score_gaussian=self._score_gaussian,
+            mean_scores=self._mean_scores,
+        )
 
-            back_spec = dem_rules["form_back"]
-            front_spec = dem_rules["form_front"]
-            side_spec = dem_rules["form_side"]
-            back_score = self._score_gaussian(
-                back_norm, float(back_spec["target"]), float(back_spec["sigma"])
-            )
-            front_score = self._score_gaussian(
-                front_norm, float(front_spec["target"]), float(front_spec["sigma"])
-            )
-            side_score = self._score_gaussian(
-                side_norm, float(side_spec["target"]), float(side_spec["sigma"])
-            )
-            form_score = self._mean_scores(back_score, front_score, side_score)
+        long_score, tpi_norm = compute_long_score(
+            center=center,
+            relief=relief,
+            mean_macro=mean_macro,
+            std_micro=std_micro,
+            std_macro=std_macro,
+            dem_rules=dem_rules,
+            score_gaussian=self._score_gaussian,
+            mean_scores=self._mean_scores,
+        )
 
-        long_score = None
-        tpi_norm = None
-        if relief is not None and relief > 0 and mean_macro is not None:
-            tpi = center - mean_macro
-            tpi_norm = tpi / relief
-            xue_spec = dem_rules["xue"]
-            xue_score = self._score_gaussian(
-                tpi_norm, float(xue_spec["target"]), float(xue_spec["sigma"])
-            )
-            hierarchy_ratio = None
-            if std_micro is not None and std_macro is not None and std_macro > 0:
-                hierarchy_ratio = std_micro / std_macro
-            hierarchy_spec = dem_rules["hierarchy"]
-            hierarchy_score = self._score_gaussian(
-                hierarchy_ratio,
-                float(hierarchy_spec["target"]),
-                float(hierarchy_spec["sigma"]),
-            )
-            long_score = self._mean_scores(xue_score, hierarchy_score)
-
-        dem_water_score = None
-        convergence = None
-        if micro_values:
-            higher = sum(max(value - center, 0.0) for value in micro_values)
-            lower = sum(max(center - value, 0.0) for value in micro_values)
-            convergence = higher / (higher + lower + 1e-6)
-
-            if slope_deg is None:
-                slope_factor = 0.75
-            else:
-                slope_denominator = float(dem_rules["slope_denominator"])
-                slope_factor = max(0.25, 1.0 - min(1.0, slope_deg / slope_denominator))
-
-            wetness_spec = dem_rules["wetness"]
-            wetness_shape = self._score_gaussian(
-                convergence,
-                float(wetness_spec["target"]),
-                float(wetness_spec["sigma"]),
-            )
-            dem_water_score = max(
-                0.0, min(1.0, wetness_shape * (0.6 + 0.4 * slope_factor))
-            )
+        dem_water_score, convergence = compute_dem_water_score(
+            center=center,
+            micro_values=micro_values,
+            slope_deg=slope_deg,
+            dem_rules=dem_rules,
+            score_gaussian=self._score_gaussian,
+        )
 
         # ── 사신사(四神砂) 포위도 ──────────────────────────────────────
         # 참고: Um 2012 IntechOpen (한국 묘지 공간회귀);
         #       ISPRS IJGI 10(11):752 2021 Nanjing (砂→surface_peaks);
         #       Buildings 15(5):800 2025 Jimei (viewshed 사신사)
         sashinsa_score = None
-        if (
-            back_mean is not None
-            and front_mean is not None
-            and left_mean is not None
-            and right_mean is not None
-            and relief is not None
-            and relief > 0
-        ):
-            try:
-                ss_rules = self._rules_section("sashinsa")
-                back_tgt  = float(ss_rules.get("back_target_ratio", 0.12))
-                back_sig  = max(0.01, float(ss_rules.get("back_sigma", 0.18)))
-                front_tgt = float(ss_rules.get("front_target_ratio", -0.10))
-                front_sig = max(0.01, float(ss_rules.get("front_sigma", 0.18)))
-                side_tgt  = float(ss_rules.get("side_target_ratio", 0.06))
-                side_sig  = max(0.01, float(ss_rules.get("side_sigma", 0.15)))
-                ss_scores = [
-                    self._score_gaussian((back_mean  - center) / relief, back_tgt,  back_sig),
-                    self._score_gaussian((front_mean - center) / relief, front_tgt, front_sig),
-                    self._score_gaussian((left_mean  - center) / relief, side_tgt,  side_sig),
-                    self._score_gaussian((right_mean - center) / relief, side_tgt,  side_sig),
-                ]
-                valid_ss = [s for s in ss_scores if s is not None]
-                if valid_ss:
-                    prod = 1.0
-                    for s in valid_ss:
-                        prod *= max(1e-9, s)
-                    sashinsa_score = prod ** (1.0 / len(valid_ss))
-            except RuntimeError:
-                pass
+        try:
+            sashinsa_score = compute_sashinsa_score(
+                center=center,
+                relief=relief,
+                back_mean=back_mean,
+                front_mean=front_mean,
+                left_mean=left_mean,
+                right_mean=right_mean,
+                sashinsa_rules=self._rules_section("sashinsa"),
+                score_gaussian=self._score_gaussian,
+            )
+        except RuntimeError:
+            pass
 
         # ── 장풍(藏風) 포위도 지수 ────────────────────────────────────
         # 참고: Guan et al. 2024 Springer (하카마을 AHP-GIS 장풍득수);
         #       ISPRS IJGI 10(11):752 2021 (surface roughness → 龍 지표)
         enclosure_index = None
-        if macro_values:
-            try:
-                enc_rules = self._rules_section("enclosure")
-                enc_tgt   = float(enc_rules.get("target_ratio", 0.62))
-                enc_sig   = max(0.01, float(enc_rules.get("sigma", 0.22)))
-                higher    = sum(1 for v in macro_values if v > center)
-                enc_ratio = higher / len(macro_values)
-                enclosure_index = self._score_gaussian(enc_ratio, enc_tgt, enc_sig)
-            except RuntimeError:
-                pass
+        try:
+            enclosure_index = compute_enclosure_index(
+                center=center,
+                macro_values=macro_values,
+                enclosure_rules=self._rules_section("enclosure"),
+                score_gaussian=self._score_gaussian,
+            )
+        except RuntimeError:
+            pass
 
         # ── 대규모 TPI (이중 스케일) ───────────────────────────────────
         # 참고: Um 2012 IntechOpen (Palgong Mountain 국지·광역 지형 위치);
@@ -2150,16 +1687,11 @@ class FengShuiAnalyzer:
 
         # ── 표면 조도 (Surface Roughness) ─────────────────────────────
         # 참고: ISPRS IJGI 10(11):752 2021 Nanjing (표면조도 → 龍 판별 인자)
-        roughness = None
-        if std_macro is not None and relief is not None and relief > 0:
-            roughness = min(1.0, std_macro / relief)
+        roughness = compute_roughness(std_macro, relief)
 
         # ── 지형 절개깊이 (Surface Cutting Depth) ────────────────────
         # 참고: ISPRS IJGI 10(11):752 2021 Nanjing (절개깊이 → 砂 판별 인자)
-        cut_depth = None
-        if macro_values and relief is not None and relief > 0:
-            max_macro_val = max(macro_values)
-            cut_depth = max(0.0, min(2.0, (max_macro_val - center) / relief))
+        cut_depth = compute_cut_depth(macro_values, center, relief)
 
         return {
             "form_score": form_score,
@@ -2176,60 +1708,26 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _sample_dem(provider, point):
-        value, ok = provider.sample(point, 1)
-        if not ok:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
+        return sample_dem(provider, point)
 
     @staticmethod
     def _offset_point(point, distance, azimuth_deg):
-        rad = math.radians(azimuth_deg)
-        return QgsPointXY(
-            point.x() + (distance * math.sin(rad)),
-            point.y() + (distance * math.cos(rad)),
-        )
+        return offset_point(point, distance, azimuth_deg)
 
     def _sample_ring(self, provider, center_point, radius, azimuths):
-        values = []
-        for azimuth in azimuths:
-            sample_point = self._offset_point(center_point, radius, azimuth)
-            sample_value = self._sample_dem(provider, sample_point)
-            if sample_value is not None:
-                values.append(sample_value)
-        return values
+        return sample_ring(provider, center_point, radius, azimuths)
 
     @staticmethod
     def _mean_scores(*values):
-        valid = [v for v in values if v is not None]
-        if not valid:
-            return None
-        return sum(valid) / len(valid)
+        return mean_scores(*values)
 
     @staticmethod
     def _fmt_num(value, digits=3):
-        if value is None:
-            return "n/a"
-        return f"{float(value):.{digits}f}"
+        return fmt_num(value, digits=digits)
 
     @staticmethod
     def _azimuth_label(azimuth):
-        if azimuth is None:
-            return "ring"
-        directions = [
-            "북",
-            "북동",
-            "동",
-            "남동",
-            "남",
-            "남서",
-            "서",
-            "북서",
-        ]
-        idx = int(((azimuth % 360.0) + 22.5) // 45.0) % 8
-        return directions[idx]
+        return azimuth_label(azimuth)
 
     @staticmethod
     def _ridge_label(class_id, language="ko"):
@@ -2252,50 +1750,27 @@ class FengShuiAnalyzer:
         mode,
         note,
     ):
-        mode_ko = {
-            "max": "국지 최대점",
-            "min": "국지 최소점",
-            "gentle": "완경사점",
-            "refine": "전면 보정점",
-        }.get(mode, "추정점")
-        mode_hint = {
-            "max": "주변보다 상대적으로 높은 위치를 찾았습니다",
-            "min": "주변보다 상대적으로 낮은 위치를 찾았습니다",
-            "gentle": "경사가 완만한 위치를 찾았습니다",
-            "refine": "중심 혈 전면에서 위치를 미세 보정했습니다",
-        }.get(mode, "지형 패턴에 맞는 후보를 찾았습니다")
-        return (
-            f"{term_label_ko(term_id)} 후보입니다. 쉽게 보면 {mode_hint}. "
-            f"요약: 점수 {self._fmt_num(adjusted_score, 3)}, 적합도 {self._fmt_num(fit_score, 3)}, "
-            f"고도 {self._fmt_num(elev, 2)}m. "
-            f"[세부] 기저점수={self._fmt_num(base_score, 3)}, "
-            f"상대고도={self._fmt_num(delta_rel, 4)}(목표 {self._fmt_num(target_rel, 4)}), "
-            f"반경={self._fmt_num(radius_m, 1)}m, "
-            f"방위={self._fmt_num(azimuth, 1)}°({self._azimuth_label(azimuth)}), "
-            f"추출방식={mode_ko}, 근거={note}."
+        return compose_term_reason(
+            term_id=term_id,
+            adjusted_score=adjusted_score,
+            base_score=base_score,
+            elev=elev,
+            delta_rel=delta_rel,
+            target_rel=target_rel,
+            fit_score=fit_score,
+            radius_m=radius_m,
+            azimuth=azimuth,
+            mode=mode,
+            note=note,
         )
 
     @staticmethod
     def _score_band_label(value):
-        if value is None:
-            return "정보 없음"
-        if value >= 0.8:
-            return "매우 양호"
-        if value >= 0.65:
-            return "양호"
-        if value >= 0.5:
-            return "보통"
-        return "낮음"
+        return score_band_label(value)
 
     @staticmethod
     def _tpi_hint(tpi_norm):
-        if tpi_norm is None:
-            return "지형 곡률 정보 없음"
-        if tpi_norm <= -0.08:
-            return "완만한 오목 지형에 가까움"
-        if tpi_norm < 0.08:
-            return "평탄에 가까운 중립 지형"
-        return "완만한 볼록 지형에 가까움"
+        return tpi_hint(tpi_norm)
 
     def _compose_hyeol_reason(
         self,
@@ -2315,59 +1790,34 @@ class FengShuiAnalyzer:
         enclosure_index=None,
         large_tpi_norm=None,
     ):
-        gap_text = "판정 불가"
-        if base_score is not None:
-            gap = base_score - threshold
-            if gap >= 0:
-                gap_text = f"기준치보다 +{gap:.3f} 높아 통과"
-            else:
-                gap_text = f"기준치보다 {gap:.3f} 낮음"
-
-        tpi_class = self._tpi_class_label(tpi_norm, large_tpi_norm)
-        return (
-            f"혈 후보 #{rank}/{selected_total}. 한 줄 해석: {gap_text}입니다. "
-            f"형국 {self._fmt_num(form_score, 3)}({self._score_band_label(form_score)}), "
-            f"종심 {self._fmt_num(long_score, 3)}({self._score_band_label(long_score)}), "
-            f"수렴습윤 {self._fmt_num(wet_score, 3)}({self._score_band_label(wet_score)}), "
-            f"수렴도 {self._fmt_num(conv_score, 3)}({self._score_band_label(conv_score)}), "
-            f"TPI {self._fmt_num(tpi_norm, 4)}({self._tpi_hint(tpi_norm)}), "
-            f"사신사 {self._fmt_num(sashinsa_score, 3)}({self._sashinsa_hint(sashinsa_score)}), "
-            f"장풍 {self._fmt_num(enclosure_index, 3)}({self._enclosure_hint(enclosure_index)}), "
-            f"대TPI {self._fmt_num(large_tpi_norm, 4)}({tpi_class}), "
-            f"주변 기복 {self._fmt_num(relief, 1)}m, 중심 고도 {self._fmt_num(center_elev, 2)}m. "
-            f"[세부수치] 점수={self._fmt_num(base_score, 3)}, 기준치>={threshold:.3f}."
+        return compose_hyeol_reason(
+            rank=rank,
+            selected_total=selected_total,
+            base_score=base_score,
+            form_score=form_score,
+            long_score=long_score,
+            wet_score=wet_score,
+            tpi_norm=tpi_norm,
+            conv_score=conv_score,
+            relief=relief,
+            center_elev=center_elev,
+            threshold=threshold,
+            water_distance=water_distance,
+            sashinsa_score=sashinsa_score,
+            enclosure_index=enclosure_index,
+            large_tpi_norm=large_tpi_norm,
         )
 
     @staticmethod
     def _stddev(values):
-        if not values:
-            return None
-        if len(values) == 1:
-            return 0.0
-        mean_value = sum(values) / len(values)
-        variance = sum((value - mean_value) ** 2 for value in values) / len(values)
-        return math.sqrt(variance)
+        return stddev(values)
 
     def _direction_mean(self, provider, center_point, radius, center_azimuth):
-        offsets = (-30.0, -15.0, 0.0, 15.0, 30.0)
-        values = []
-        for offset in offsets:
-            azimuth = (center_azimuth + offset) % 360.0
-            sample_point = self._offset_point(center_point, radius, azimuth)
-            sample_value = self._sample_dem(provider, sample_point)
-            if sample_value is not None:
-                values.append(sample_value)
-        if not values:
-            return None
-        return sum(values) / len(values)
+        return direction_mean(provider, center_point, radius, center_azimuth)
 
     @staticmethod
     def _combine_hydro_scores(distance_score, dem_score):
-        if distance_score is not None and dem_score is not None:
-            return (0.7 * distance_score) + (0.3 * dem_score)
-        if distance_score is not None:
-            return distance_score
-        return dem_score
+        return combine_hydro_scores(distance_score, dem_score)
 
     @classmethod
     def adaptive_spacing_diagnostics(cls, dem_layer, dem_step=None):
@@ -2388,27 +1838,15 @@ class FengShuiAnalyzer:
         extent = dem_layer.extent()
         width = max(0.0, float(extent.width()))
         height = max(0.0, float(extent.height()))
-        min_span = min(extent.width(), extent.height())
-        spacing = max(dem_step * base_step_factor, min_span / min_span_divisor)
-        if spacing <= 0:
-            spacing = max(dem_step * base_step_factor, fallback_spacing)
-
-        cols = max(1, int(width / spacing) + 1)
-        rows = max(1, int(height / spacing) + 1)
-        total = cols * rows
-        if total > max_points:
-            spacing *= math.sqrt(total / max_points)
-            cols = max(1, int(width / spacing) + 1)
-            rows = max(1, int(height / spacing) + 1)
-            total = cols * rows
-        return {
-            "dem_step": dem_step,
-            "width": width,
-            "height": height,
-            "spacing": spacing,
-            "approx_nodes": total,
-            "max_points": max_points,
-        }
+        return compute_adaptive_spacing_diagnostics(
+            dem_step=dem_step,
+            width=width,
+            height=height,
+            base_step_factor=base_step_factor,
+            min_span_divisor=min_span_divisor,
+            fallback_spacing=fallback_spacing,
+            max_points=max_points,
+        )
 
     def _adaptive_spacing(self, dem_layer, dem_step):
         return self.adaptive_spacing_diagnostics(dem_layer, dem_step)["spacing"]
@@ -2421,32 +1859,17 @@ class FengShuiAnalyzer:
         )
 
         extent = dem_layer.extent()
-        approx_cols = max(1, int(extent.width() / max(spacing, 1e-6)))
-        approx_rows = max(1, int(extent.height() / max(spacing, 1e-6)))
-        approx_nodes = approx_cols * approx_rows
-        count = self._rule_threshold_value(
-            thresholds,
-            approx_nodes,
-            "count",
-            default_count,
+        return recommended_hyeol_count(
+            width=max(0.0, float(extent.width())),
+            height=max(0.0, float(extent.height())),
+            spacing=spacing,
+            thresholds=thresholds,
+            default_count=default_count,
         )
-        try:
-            return max(1, int(count))
-        except (TypeError, ValueError):
-            return default_count
 
     @staticmethod
     def _grid_points(dem_layer, spacing):
-        extent = dem_layer.extent()
-        x_start = extent.xMinimum() + (spacing * 0.5)
-        y_start = extent.yMinimum() + (spacing * 0.5)
-        x = x_start
-        while x < extent.xMaximum():
-            y = y_start
-            while y < extent.yMaximum():
-                yield QgsPointXY(x, y)
-                y += spacing
-            x += spacing
+        yield from grid_points(dem_layer.extent(), spacing)
 
     def _collect_hyeol_candidates(
         self,
@@ -2499,63 +1922,34 @@ class FengShuiAnalyzer:
                 water_index=water_index,
                 water_geoms=water_geoms,
             )
-            water_distance_score = self._score_water_distance(
-                water_distance,
+            candidate = evaluate_hyeol_candidate(
+                point=point,
+                center=center,
+                metrics=metrics,
+                water_distance=water_distance,
+                slope_value=slope_value,
+                aspect_value=aspect_value,
+                hemisphere=hemisphere,
                 context=context,
+                profile=profile,
+                tpi_min=tpi_min,
+                tpi_max=tpi_max,
+                score_profile_slope=self._score_profile_slope,
+                score_aspect=self._score_aspect,
+                score_profile_tpi=self._score_profile_tpi,
+                score_water_distance=self._score_water_distance,
+                profile_weighted_score=self._profile_weighted_score,
             )
-            water_score = self._combine_hydro_scores(
-                distance_score=water_distance_score,
-                dem_score=metrics["dem_water_score"],
-            )
-
-            hyeol_indicators = {
-                "slope":     self._score_profile_slope(slope_value, profile),
-                "aspect":    self._score_aspect(aspect_value, hemisphere, context=context),
-                "form":      metrics["form_score"],
-                "long":      metrics["long_score"],
-                "water":     water_score,
-                "conv":      metrics["convergence"],
-                "tpi":       self._score_profile_tpi(tpi_norm, profile),
-                "sashinsa":  metrics.get("sashinsa_score"),
-                "enclosure": metrics.get("enclosure_index"),
-            }
-            hyeol_score = self._profile_weighted_score(hyeol_indicators, profile)
-            if hyeol_score is None or hyeol_score < context["hyeol_threshold"]:
+            if candidate is None:
                 continue
-
-            candidates.append(
-                {
-                    "point": point,
-                    "score": hyeol_score,
-                    "elev": center,
-                    "metrics": metrics,
-                    "water_distance": water_distance,
-                    "hydro_score": water_score,
-                }
-            )
+            candidates.append(candidate)
 
         candidates.sort(key=lambda item: item["score"], reverse=True)
         return candidates
 
     @staticmethod
     def _suppress_near_duplicates(candidates, min_distance, keep):
-        selected = []
-        min_sq = min_distance * min_distance
-        for item in candidates:
-            point = item["point"]
-            too_close = False
-            for selected_item in selected:
-                dx = point.x() - selected_item["point"].x()
-                dy = point.y() - selected_item["point"].y()
-                if (dx * dx) + (dy * dy) < min_sq:
-                    too_close = True
-                    break
-            if too_close:
-                continue
-            selected.append(item)
-            if len(selected) >= keep:
-                break
-        return selected
+        return suppress_near_duplicates(candidates, min_distance, keep)
 
     def _build_term_layer(
         self,
@@ -2575,58 +1969,11 @@ class FengShuiAnalyzer:
             "memory",
         )
         data = term_layer.dataProvider()
-        fields = QgsFields()
-        fields.append(QgsField("term_id", QVariant.String, "string", 28))
-        fields.append(QgsField("term_ko", QVariant.String, "string", 28))
-        fields.append(QgsField("term_name", QVariant.String, "string", 28))
-        fields.append(QgsField("culture", QVariant.String, "string", 20))
-        fields.append(QgsField("period", QVariant.String, "string", 20))
-        fields.append(QgsField("profile", QVariant.String, "string", 20))
-        fields.append(QgsField("parent_id", QVariant.Int))
-        fields.append(QgsField("rank", QVariant.Int))
-        fields.append(QgsField("score", QVariant.Double, "double", 7, 3))
-        fields.append(QgsField("elev", QVariant.Double, "double", 12, 3))
-        fields.append(QgsField("base_sc", QVariant.Double, "double", 7, 3))
-        fields.append(QgsField("delta_rel", QVariant.Double, "double", 8, 4))
-        fields.append(QgsField("target_rel", QVariant.Double, "double", 8, 4))
-        fields.append(QgsField("fit_sc", QVariant.Double, "double", 7, 3))
-        fields.append(QgsField("radius_m", QVariant.Double, "double", 12, 3))
-        fields.append(QgsField("azimuth", QVariant.Double, "double", 7, 2))
-        fields.append(QgsField("mode", QVariant.String, "string", 8))
-        fields.append(QgsField("relief_m", QVariant.Double, "double", 12, 3))
-        fields.append(QgsField("note", QVariant.String, "string", 80))
-        fields.append(QgsField("reason_ko", QVariant.String, "string", 1024))
-        data.addAttributes(fields)
+        data.addAttributes(term_layer_fields())
         term_layer.updateFields()
 
         card = self.CARDINALS.get(hemisphere, self.CARDINALS["north"])
         scales = term_radius_scales()
-        inner_radius = (
-            dem_step
-            * float(scales["inner"])
-            * float(context["micro_radius_multiplier"])
-        )
-        outer_radius = (
-            dem_step
-            * float(scales["outer"])
-            * float(context["macro_radius_multiplier"])
-        )
-        far_radius = (
-            dem_step
-            * float(scales["far"])
-            * float(context["macro_radius_multiplier"])
-        )
-        culture_id = context["culture_key"]
-        period_id = context["period_key"]
-        term_bias = dict(context.get("term_bias", {}))
-        if not isinstance(profile, dict):
-            profile = {}
-        profile_term_bias = profile.get("term_bias", {})
-        if not isinstance(profile_term_bias, dict):
-            profile_term_bias = {}
-        for term_id, delta in profile_term_bias.items():
-            term_bias[term_id] = term_bias.get(term_id, 0.0) + delta
-        term_target_shift = float(context["term_target_shift"])
         hyeol_rules = self._rules_section("hyeol_selection")
         min_score_floor = self._rule_float(
             hyeol_rules, "min_score_floor", 0.42, min_value=0.0, max_value=1.0
@@ -2638,10 +1985,20 @@ class FengShuiAnalyzer:
             min_value=0.0,
             max_value=2.0,
         )
-        term_min_score = max(
-            min_score_floor,
-            float(context["hyeol_threshold"]) * threshold_multiplier,
+        term_state = term_runtime_state(
+            context=context,
+            profile=profile,
+            dem_step=dem_step,
+            scales=scales,
+            min_score_floor=min_score_floor,
+            threshold_multiplier=threshold_multiplier,
         )
+        culture_id = term_state["culture_id"]
+        period_id = term_state["period_id"]
+        term_bias = term_state["term_bias"]
+        term_target_shift = term_state["term_target_shift"]
+        term_min_score = term_state["term_min_score"]
+        radius_map = term_state["radius_map"]
 
         def add_term(
             term_id,
@@ -2663,17 +2020,14 @@ class FengShuiAnalyzer:
             relief_m=None,
             reason_text=None,
         ):
-            adjusted_score = score
-            if adjusted_score is not None:
-                adjusted_score = max(
-                    0.0,
-                    min(1.0, adjusted_score + term_bias.get(term_id, 0.0)),
-                )
-            if (
-                not mandatory
-                and adjusted_score is not None
-                and adjusted_score < term_min_score
-            ):
+            adjusted_score = adjusted_term_score(
+                score,
+                term_id=term_id,
+                term_bias=term_bias,
+                term_min_score=term_min_score,
+                mandatory=mandatory,
+            )
+            if adjusted_score is None and score is not None:
                 return
 
             reason_ko = reason_text or self._compose_term_reason(
@@ -2689,7 +2043,7 @@ class FengShuiAnalyzer:
                 mode=mode,
                 note=note,
             )
-            self._append_term_feature(
+            append_term_feature(
                 layer=term_layer,
                 term_id=term_id,
                 term_name=term_name,
@@ -2733,9 +2087,7 @@ class FengShuiAnalyzer:
                 radius=outer_radius,
                 azimuths=list(range(0, 360, 12)),
             )
-            relief = 1.0
-            if ring_values:
-                relief = max(1.0, max(ring_values) - min(ring_values))
+            relief = relief_from_ring_values(ring_values)
 
             parent_id = rank
             hyeol_reason = self._compose_hyeol_reason(
@@ -2756,21 +2108,18 @@ class FengShuiAnalyzer:
                 large_tpi_norm=metrics.get("large_tpi_norm"),
             )
             add_term(
-                term_id="hyeol",
-                term_name=term_label("hyeol", "en"),
-                parent_id=parent_id,
-                rank=rank,
-                point=center_point,
-                score=base_score,
-                elev=center_elev,
-                note="core candidate",
-                mandatory=True,
-                base_score_value=base_score,
-                relief_m=relief,
-                reason_text=hyeol_reason,
+                **core_hyeol_term_payload(
+                    parent_id=parent_id,
+                    rank=rank,
+                    point=center_point,
+                    base_score=base_score,
+                    center_elev=center_elev,
+                    relief=relief,
+                    reason_text=hyeol_reason,
+                    term_name=term_label("hyeol", "en"),
+                )
             )
 
-            radius_map = {"inner": inner_radius, "outer": outer_radius, "far": far_radius}
             special_terms = special_term_specs()
             myeongdang_spec = special_terms["myeongdang"]
             myeongdang_radius = radius_map[myeongdang_spec["radius"]]
@@ -2792,25 +2141,21 @@ class FengShuiAnalyzer:
                 myeongdang_target,
                 float(myeongdang_spec["sigma"]),
             )
-            myeongdang_score = self._mean_scores(base_score, myeongdang_fit)
             add_term(
-                term_id="myeongdang",
-                term_name=term_label("myeongdang", "en"),
-                parent_id=parent_id,
-                rank=rank,
-                point=myeongdang_point,
-                score=myeongdang_score,
-                elev=myeongdang_elev,
-                note="open core basin",
-                mandatory=True,
-                base_score_value=base_score,
-                delta_rel=myeongdang_delta,
-                target_rel=myeongdang_target,
-                fit_score=myeongdang_fit,
-                radius_m=myeongdang_radius * float(myeongdang_spec["offset_factor"]),
-                azimuth=card[myeongdang_spec["direction"]],
-                mode="refine",
-                relief_m=relief,
+                **myeongdang_term_payload(
+                    parent_id=parent_id,
+                    rank=rank,
+                    point=myeongdang_point,
+                    elev=myeongdang_elev,
+                    center_elev=center_elev,
+                    base_score=base_score,
+                    relief=relief,
+                    target_rel=myeongdang_target,
+                    fit_score=myeongdang_fit,
+                    radius_m=myeongdang_radius * float(myeongdang_spec["offset_factor"]),
+                    azimuth=card[myeongdang_spec["direction"]],
+                    term_name=term_label("myeongdang", "en"),
+                )
             )
             for spec in term_specs():
                 term_id = spec["term_id"]
@@ -2832,27 +2177,23 @@ class FengShuiAnalyzer:
                 delta = (elev - center_elev) / relief
                 target_rel = target + term_target_shift
                 fit_score = self._score_gaussian(delta, target_rel, sigma)
-                score = self._mean_scores(
-                    base_score,
-                    fit_score,
-                )
                 add_term(
-                    term_id=term_id,
-                    term_name=term_name,
-                    parent_id=parent_id,
-                    rank=rank,
-                    point=point,
-                    score=score,
-                    elev=elev,
-                    note=f"delta={delta:.3f}",
-                    base_score_value=base_score,
-                    delta_rel=delta,
-                    target_rel=target_rel,
-                    fit_score=fit_score,
-                    radius_m=radius,
-                    azimuth=azimuth,
-                    mode=mode,
-                    relief_m=relief,
+                    **generic_term_payload(
+                        term_id=term_id,
+                        term_name=term_name,
+                        parent_id=parent_id,
+                        rank=rank,
+                        point=point,
+                        elev=elev,
+                        center_elev=center_elev,
+                        base_score=base_score,
+                        relief=relief,
+                        target_rel=target_rel,
+                        fit_score=fit_score,
+                        radius_m=radius,
+                        azimuth=azimuth,
+                        mode=mode,
+                    )
                 )
 
             ipsu_spec = special_terms["ipsu"]
@@ -2871,27 +2212,21 @@ class FengShuiAnalyzer:
                     target_rel,
                     float(ipsu_spec["sigma"]),
                 )
-                score = self._mean_scores(
-                    base_score,
-                    fit_score,
-                )
                 add_term(
-                    term_id="ipsu",
-                    term_name=term_label("ipsu", "en"),
-                    parent_id=parent_id,
-                    rank=rank,
-                    point=ipsu_point,
-                    score=score,
-                    elev=ipsu_elev,
-                    note=f"ring_min delta={delta:.3f}",
-                    base_score_value=base_score,
-                    delta_rel=delta,
-                    target_rel=target_rel,
-                    fit_score=fit_score,
-                    radius_m=ipsu_radius,
-                    azimuth=None,
-                    mode=ipsu_spec["mode"],
-                    relief_m=relief,
+                    **ipsu_term_payload(
+                        parent_id=parent_id,
+                        rank=rank,
+                        point=ipsu_point,
+                        elev=ipsu_elev,
+                        center_elev=center_elev,
+                        base_score=base_score,
+                        relief=relief,
+                        target_rel=target_rel,
+                        fit_score=fit_score,
+                        radius_m=ipsu_radius,
+                        mode=ipsu_spec["mode"],
+                        term_name=term_label("ipsu", "en"),
+                    )
                 )
 
             misa_point, misa_elev = self._sector_gentle_point(
@@ -2912,27 +2247,21 @@ class FengShuiAnalyzer:
                     target_rel,
                     float(misa_spec["sigma"]),
                 )
-                score = self._mean_scores(
-                    base_score,
-                    fit_score,
-                )
                 add_term(
-                    term_id="misa",
-                    term_name=term_label("misa", "en"),
-                    parent_id=parent_id,
-                    rank=rank,
-                    point=misa_point,
-                    score=score,
-                    elev=misa_elev,
-                    note=f"gentle delta={delta:.3f}",
-                    base_score_value=base_score,
-                    delta_rel=delta,
-                    target_rel=target_rel,
-                    fit_score=fit_score,
-                    radius_m=radius_map[misa_spec["radius"]],
-                    azimuth=card[misa_spec["direction"]],
-                    mode="gentle",
-                    relief_m=relief,
+                    **misa_term_payload(
+                        parent_id=parent_id,
+                        rank=rank,
+                        point=misa_point,
+                        elev=misa_elev,
+                        center_elev=center_elev,
+                        base_score=base_score,
+                        relief=relief,
+                        target_rel=target_rel,
+                        fit_score=fit_score,
+                        radius_m=radius_map[misa_spec["radius"]],
+                        azimuth=card[misa_spec["direction"]],
+                        term_name=term_label("misa", "en"),
+                    )
                 )
 
         term_layer.updateExtents()
@@ -2963,29 +2292,30 @@ class FengShuiAnalyzer:
         profile=None,
         reason_ko=None,
     ):
-        feature = QgsFeature(layer.fields())
-        feature.setGeometry(QgsGeometry.fromPointXY(point))
-        feature["term_id"] = term_id
-        feature["term_ko"] = term_ko if term_ko else term_id
-        feature["term_name"] = term_name
-        feature["culture"] = culture if culture else ""
-        feature["period"] = period if period else ""
-        feature["profile"] = profile if profile else ""
-        feature["parent_id"] = parent_id
-        feature["rank"] = rank
-        feature["score"] = score
-        feature["elev"] = elev
-        feature["base_sc"] = base_sc
-        feature["delta_rel"] = delta_rel
-        feature["target_rel"] = target_rel
-        feature["fit_sc"] = fit_sc
-        feature["radius_m"] = radius_m
-        feature["azimuth"] = azimuth
-        feature["mode"] = mode if mode else ""
-        feature["relief_m"] = relief_m
-        feature["note"] = note
-        feature["reason_ko"] = reason_ko if reason_ko else ""
-        layer.dataProvider().addFeature(feature)
+        append_term_feature(
+            layer,
+            term_id=term_id,
+            term_name=term_name,
+            parent_id=parent_id,
+            rank=rank,
+            point=point,
+            score=score,
+            elev=elev,
+            note=note,
+            base_sc=base_sc,
+            delta_rel=delta_rel,
+            target_rel=target_rel,
+            fit_sc=fit_sc,
+            radius_m=radius_m,
+            azimuth=azimuth,
+            mode=mode,
+            relief_m=relief_m,
+            term_ko=term_ko,
+            culture=culture,
+            period=period,
+            profile=profile,
+            reason_ko=reason_ko,
+        )
 
     def build_term_links(self, term_layer):
         link_layer = QgsVectorLayer(
@@ -2994,41 +2324,12 @@ class FengShuiAnalyzer:
             "memory",
         )
         data = link_layer.dataProvider()
-        fields = QgsFields()
-        fields.append(QgsField("term_id", QVariant.String, "string", 28))
-        fields.append(QgsField("term_ko", QVariant.String, "string", 28))
-        fields.append(QgsField("term_en", QVariant.String, "string", 28))
-        fields.append(QgsField("parent_id", QVariant.Int))
-        fields.append(QgsField("rank", QVariant.Int))
-        fields.append(QgsField("score", QVariant.Double, "double", 7, 3))
-        fields.append(QgsField("culture", QVariant.String, "string", 20))
-        fields.append(QgsField("period", QVariant.String, "string", 20))
-        fields.append(QgsField("profile", QVariant.String, "string", 20))
-        fields.append(QgsField("src_id", QVariant.String, "string", 28))
-        fields.append(QgsField("src_ko", QVariant.String, "string", 28))
-        fields.append(QgsField("src_en", QVariant.String, "string", 28))
-        fields.append(QgsField("dst_id", QVariant.String, "string", 28))
-        fields.append(QgsField("dst_ko", QVariant.String, "string", 28))
-        fields.append(QgsField("dst_en", QVariant.String, "string", 28))
-        fields.append(QgsField("link_type", QVariant.String, "string", 20))
-        fields.append(QgsField("len_m", QVariant.Double, "double", 12, 3))
-        fields.append(QgsField("azimuth", QVariant.Double, "double", 7, 2))
-        fields.append(QgsField("curved", QVariant.Int))
-        fields.append(QgsField("reason_ko", QVariant.String, "string", 1024))
-        data.addAttributes(fields)
+        data.addAttributes(term_link_fields())
         link_layer.updateFields()
         link_rules = self._rules_section("term_links")
         path_plan = self._term_link_plan(link_rules)
 
-        grouped = defaultdict(dict)
-        for feature in term_layer.getFeatures():
-            term_id = feature["term_id"]
-            parent_id = feature["parent_id"]
-            if not term_id or parent_id is None:
-                continue
-            if not feature.hasGeometry():
-                continue
-            grouped[parent_id][term_id] = feature
+        grouped = group_term_features(term_layer.getFeatures())
 
         link_features = []
         min_link_score = self._rule_float(
@@ -3053,71 +2354,32 @@ class FengShuiAnalyzer:
                 if missing:
                     continue
 
-                distinct_points = self._distinct_points(
-                    points, min_distance=distinct_min_distance
+                payload = link_ready_payload(
+                    nodes,
+                    points,
+                    spec=spec,
+                    min_link_score=min_link_score,
+                    distinct_min_distance=distinct_min_distance,
+                    smooth_passes=smooth_passes,
+                    to_float=self._to_float,
                 )
-                if len(distinct_points) < 2:
+                if payload is None:
                     continue
 
-                smoothed_points = self._smooth_polyline(
-                    distinct_points, passes=smooth_passes
-                )
-                if len(smoothed_points) < 2:
-                    continue
-
-                source = nodes[0]
-                target = nodes[-1]
-                source_id = source["term_id"]
-                target_id = target["term_id"]
-                style_term = spec["style_term"]
-
-                score = self._path_mean_score(nodes)
-                if (
-                    score is not None
-                    and score < min_link_score
-                    and spec["link_type"] != "backbone"
-                ):
-                    continue
-
-                origin = smoothed_points[0]
-                destination = smoothed_points[-1]
-                dx = destination.x() - origin.x()
-                dy = destination.y() - origin.y()
-                length_m = self._polyline_length(smoothed_points)
-                if length_m <= 0:
-                    continue
-                azimuth = (math.degrees(math.atan2(dx, dy)) + 360.0) % 360.0
-                rank_value = (
-                    source["rank"] if source["rank"] is not None else target["rank"]
-                )
-
-                line_feature = QgsFeature(link_layer.fields())
-                line_feature.setGeometry(QgsGeometry.fromPolylineXY(smoothed_points))
-                line_feature["term_id"] = style_term
-                line_feature["term_ko"] = term_label_ko(style_term)
-                line_feature["term_en"] = term_label(style_term, "en")
-                line_feature["parent_id"] = parent_id
-                line_feature["rank"] = rank_value
-                line_feature["score"] = score
-                line_feature["culture"] = source["culture"] or target["culture"]
-                line_feature["period"] = source["period"] or target["period"]
-                line_feature["profile"] = source["profile"] or target["profile"]
-                line_feature["src_id"] = source_id
-                line_feature["src_ko"] = term_label_ko(source_id)
-                line_feature["src_en"] = term_label(source_id, "en")
-                line_feature["dst_id"] = target_id
-                line_feature["dst_ko"] = term_label_ko(target_id)
-                line_feature["dst_en"] = term_label(target_id, "en")
-                line_feature["link_type"] = spec["link_type"]
-                line_feature["len_m"] = length_m
-                line_feature["azimuth"] = azimuth
-                line_feature["curved"] = 1
-                score_text = "n/a" if score is None else f"{score:.3f}"
-                line_feature["reason_ko"] = (
-                    f"{spec['label']} 경로 {term_label_ko(source_id)}→{term_label_ko(target_id)}. "
-                    f"표현={term_label_ko(style_term)}, 형태=완만 곡선, 평균점수={score_text}, "
-                    f"거리={length_m:.1f}m, 방위={azimuth:.1f}°({self._azimuth_label(azimuth)}), "
-                    "명당 중심 방사 연결 대신 감싸는 구조를 우선 적용."
+                line_feature = build_term_link_feature(
+                    fields=link_layer.fields(),
+                    smoothed_points=payload["smoothed_points"],
+                    parent_id=parent_id,
+                    rank_value=payload["rank_value"],
+                    score=payload["score"],
+                    source=payload["source"],
+                    target=payload["target"],
+                    spec=spec,
+                    length_m=payload["length_m"],
+                    azimuth=payload["azimuth"],
+                    azimuth_label=self._azimuth_label,
+                    term_label=term_label,
+                    term_label_ko=term_label_ko,
                 )
                 link_features.append(line_feature)
 
@@ -3198,64 +2460,19 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _path_mean_score(features):
-        values = []
-        for feature in features:
-            value = FengShuiAnalyzer._to_float(feature["score"])
-            if value is not None:
-                values.append(value)
-        if not values:
-            return None
-        return sum(values) / len(values)
+        return path_mean_score(features, FengShuiAnalyzer._to_float)
 
     @staticmethod
     def _polyline_length(points):
-        length = 0.0
-        for idx in range(1, len(points)):
-            prev = points[idx - 1]
-            curr = points[idx]
-            length += math.hypot(curr.x() - prev.x(), curr.y() - prev.y())
-        return length
+        return polyline_length(points)
 
     @staticmethod
     def _distinct_points(points, min_distance=0.1):
-        if not points:
-            return []
-        clean = [QgsPointXY(points[0].x(), points[0].y())]
-        min_sq = max(1e-6, float(min_distance) * float(min_distance))
-        for point in points[1:]:
-            prev = clean[-1]
-            dx = point.x() - prev.x()
-            dy = point.y() - prev.y()
-            if (dx * dx) + (dy * dy) < min_sq:
-                continue
-            clean.append(QgsPointXY(point.x(), point.y()))
-        if len(clean) == 1 and len(points) > 1:
-            tail = points[-1]
-            clean.append(QgsPointXY(tail.x(), tail.y()))
-        return clean
+        return distinct_points(points, min_distance=min_distance)
 
     @staticmethod
     def _smooth_polyline(points, passes=1):
-        if len(points) < 3 or passes <= 0:
-            return [QgsPointXY(point.x(), point.y()) for point in points]
-
-        current = [QgsPointXY(point.x(), point.y()) for point in points]
-        for _ in range(passes):
-            if len(current) < 3:
-                break
-            smoothed = [QgsPointXY(current[0].x(), current[0].y())]
-            for idx in range(len(current) - 1):
-                point_a = current[idx]
-                point_b = current[idx + 1]
-                qx = (0.75 * point_a.x()) + (0.25 * point_b.x())
-                qy = (0.75 * point_a.y()) + (0.25 * point_b.y())
-                rx = (0.25 * point_a.x()) + (0.75 * point_b.x())
-                ry = (0.25 * point_a.y()) + (0.75 * point_b.y())
-                smoothed.append(QgsPointXY(qx, qy))
-                smoothed.append(QgsPointXY(rx, ry))
-            smoothed.append(QgsPointXY(current[-1].x(), current[-1].y()))
-            current = smoothed
-        return current
+        return smooth_polyline(points, passes=passes)
 
     def _prepare_display_polyline(
         self,
@@ -4698,17 +3915,17 @@ class FengShuiAnalyzer:
         )
         max_points = self._rule_int(rules, "spacing_max_points", 26000, min_value=50)
         coarse = self._adaptive_spacing(dem_layer, dem_step)
-        spacing = max(dem_step * spacing_step_factor, coarse * spacing_coarse_factor)
-        if spacing <= 0:
-            spacing = max(dem_step * spacing_step_factor, spacing_fallback)
-
         extent = dem_layer.extent()
-        cols = max(1, int(extent.width() / spacing) + 1)
-        rows = max(1, int(extent.height() / spacing) + 1)
-        total = cols * rows
-        if total > max_points:
-            spacing *= math.sqrt(total / max_points)
-        return spacing
+        return compute_hydro_spacing(
+            dem_step=dem_step,
+            coarse_spacing=coarse,
+            width=extent.width(),
+            height=extent.height(),
+            spacing_step_factor=spacing_step_factor,
+            spacing_coarse_factor=spacing_coarse_factor,
+            spacing_fallback=spacing_fallback,
+            max_points=max_points,
+        )
 
     @classmethod
     def _hydro_keep_quantile(cls, node_count):
@@ -4720,10 +3937,7 @@ class FengShuiAnalyzer:
             "quantile",
             default_quantile,
         )
-        try:
-            return max(0.0, min(1.0, float(value)))
-        except (TypeError, ValueError):
-            return default_quantile
+        return clamp_quantile(value, default_quantile=default_quantile)
 
     @classmethod
     def _hydro_min_order(cls, node_count):
@@ -4734,10 +3948,7 @@ class FengShuiAnalyzer:
             "order",
             2,
         )
-        try:
-            return max(1, int(value))
-        except (TypeError, ValueError):
-            return 2
+        return clamp_min_order(value, default_order=2)
 
     @classmethod
     def _hydro_min_path_length(cls, dem_layer, spacing, node_count):
@@ -4758,43 +3969,18 @@ class FengShuiAnalyzer:
             "spacing_factor",
             None,
         )
-        if sized is not None:
-            try:
-                length = max(length, spacing * max(0.1, float(sized)))
-            except (TypeError, ValueError):
-                pass
-        return length
+        return compute_hydro_min_path_length(
+            width=extent.width(),
+            height=extent.height(),
+            spacing=spacing,
+            base_spacing_factor=base_spacing_factor,
+            base_diag_ratio=base_diag_ratio,
+            node_spacing_factor=sized,
+        )
 
     @staticmethod
     def _compute_stream_order(nodes, downstream, upstream):
-        pending = {key: len(upstream.get(key, [])) for key in nodes.keys()}
-        seeds = [key for key, cnt in pending.items() if cnt == 0]
-        seeds.sort(key=lambda k: nodes[k]["elev"], reverse=True)
-        queue = deque(seeds)
-        order = {}
-        collected = defaultdict(list)
-
-        while queue:
-            key = queue.popleft()
-            incoming = collected.get(key, [])
-            if not incoming:
-                order[key] = 1
-            else:
-                max_value = max(incoming)
-                if incoming.count(max_value) >= 2:
-                    order[key] = max_value + 1
-                else:
-                    order[key] = max_value
-
-            target = downstream.get(key)
-            if target is None:
-                continue
-            collected[target].append(order[key])
-            pending[target] -= 1
-            if pending[target] == 0:
-                queue.append(target)
-
-        return order
+        return compute_stream_order(nodes, downstream, upstream)
 
     @staticmethod
     def _trace_downstream_path(
@@ -4803,128 +3989,24 @@ class FengShuiAnalyzer:
         upstream_selected,
         visited_edges,
     ):
-        if start not in selected_downstream:
-            return None
-
-        path = [start]
-        current = start
-        while current in selected_downstream:
-            target = selected_downstream[current]
-            edge_key = (current, target)
-            if edge_key in visited_edges:
-                break
-            visited_edges.add(edge_key)
-            path.append(target)
-            if upstream_selected.get(target, 0) != 1:
-                break
-            current = target
-
-        if len(path) < 2:
-            return None
-        return path
+        return trace_downstream_path(
+            start,
+            selected_downstream,
+            upstream_selected,
+            visited_edges,
+        )
 
     @staticmethod
     def _stream_class(order):
-        if order >= 6:
-            return "main"
-        if order >= 5:
-            return "secondary"
-        if order >= 4:
-            return "branch"
-        return "minor"
+        return stream_class(order)
 
     @staticmethod
     def _binary_classification_metrics(labels, scores):
-        if not labels or not scores or len(labels) != len(scores):
-            return {
-                "count": 0,
-                "roc_auc": 0.0,
-                "pr_auc": 0.0,
-                "best_f1": 0.0,
-                "best_f1_threshold": 0.0,
-                "best_youden_j": 0.0,
-                "best_youden_threshold": 0.0,
-            }
-
-        pairs = sorted(zip(scores, labels), key=lambda item: item[0], reverse=True)
-        positive_count = sum(1 for _, label in pairs if label == 1)
-        negative_count = sum(1 for _, label in pairs if label == 0)
-        if positive_count == 0 or negative_count == 0:
-            return {
-                "count": len(pairs),
-                "roc_auc": 0.0,
-                "pr_auc": 0.0,
-                "best_f1": 0.0,
-                "best_f1_threshold": 0.0,
-                "best_youden_j": 0.0,
-                "best_youden_threshold": 0.0,
-            }
-
-        tp = 0
-        fp = 0
-        roc_points = [(0.0, 0.0)]
-        pr_points = [(0.0, 1.0)]
-        best_f1 = (0.0, pairs[0][0])
-        best_youden = (-999.0, pairs[0][0])
-
-        index = 0
-        while index < len(pairs):
-            score = pairs[index][0]
-            group_tp = 0
-            group_fp = 0
-            while index < len(pairs) and pairs[index][0] == score:
-                if pairs[index][1] == 1:
-                    group_tp += 1
-                else:
-                    group_fp += 1
-                index += 1
-
-            tp += group_tp
-            fp += group_fp
-            tpr = tp / positive_count
-            fpr = fp / negative_count
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
-            recall = tpr
-            roc_points.append((fpr, tpr))
-            pr_points.append((recall, precision))
-
-            f1 = (
-                (2.0 * precision * recall) / (precision + recall)
-                if (precision + recall) > 0
-                else 0.0
-            )
-            if f1 > best_f1[0]:
-                best_f1 = (f1, score)
-            youden = tpr - fpr
-            if youden > best_youden[0]:
-                best_youden = (youden, score)
-
-        roc_auc = FengShuiAnalyzer._trapezoid_auc(roc_points)
-        pr_auc = FengShuiAnalyzer._trapezoid_auc(pr_points)
-        return {
-            "count": len(pairs),
-            "roc_auc": roc_auc,
-            "pr_auc": pr_auc,
-            "best_f1": best_f1[0],
-            "best_f1_threshold": best_f1[1],
-            "best_youden_j": best_youden[0],
-            "best_youden_threshold": best_youden[1],
-        }
+        return binary_classification_metrics(labels, scores)
 
     @staticmethod
     def _trapezoid_auc(points):
-        if len(points) < 2:
-            return 0.0
-        ordered = sorted(points, key=lambda item: item[0])
-        area = 0.0
-        for index in range(1, len(ordered)):
-            x0, y0 = ordered[index - 1]
-            x1, y1 = ordered[index]
-            dx = x1 - x0
-            if dx <= 0:
-                continue
-            area += dx * ((y0 + y1) * 0.5)
-        return max(0.0, min(1.0, area))
+        return trapezoid_auc(points)
 
     def _sector_extreme(
         self, provider, center_point, radius, center_azimuth, mode, span=80.0, samples=17
@@ -4984,29 +4066,11 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _profile_weighted_score(indicators, profile):
-        weights = profile["weights"]
-        weighted = []
-        for key, weight in weights.items():
-            value = indicators.get(key)
-            if value is not None:
-                weighted.append((weight, value))
-        if not weighted:
-            return None
-        numerator = sum(weight * value for weight, value in weighted)
-        denominator = sum(weight for weight, _ in weighted)
-        return numerator / denominator
+        return profile_weighted_score(indicators, profile)
 
     @staticmethod
     def _profile_confidence(indicators, profile):
-        weights = profile["weights"]
-        total = sum(weights.values())
-        if total <= 0:
-            return None
-        available = 0.0
-        for key, weight in weights.items():
-            if indicators.get(key) is not None:
-                available += weight
-        return available / total
+        return profile_confidence(indicators, profile)
 
     @staticmethod
     def _indicator_label_ko(key):
@@ -5025,29 +4089,7 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _indicator_contributions(indicators, profile):
-        rows = []
-        weights = profile.get("weights", {})
-        if not isinstance(weights, dict):
-            return rows
-        for key, weight in weights.items():
-            score = indicators.get(key)
-            if score is None:
-                continue
-            try:
-                weight_value = float(weight)
-                score_value = float(score)
-            except (TypeError, ValueError):
-                continue
-            rows.append(
-                {
-                    "key": key,
-                    "weight": weight_value,
-                    "score": score_value,
-                    "contrib": weight_value * score_value,
-                }
-            )
-        rows.sort(key=lambda item: item["contrib"], reverse=True)
-        return rows
+        return indicator_contributions(indicators, profile)
 
     def _compose_site_reason(
         self,
@@ -5136,51 +4178,11 @@ class FengShuiAnalyzer:
 
     @classmethod
     def _paper_evidence_summary(cls, profile):
-        records = profile.get("paper_evidence_records") if isinstance(profile, dict) else None
-        if not isinstance(records, list) or not records:
-            return ""
-
-        summary_keys = []
-        sources = []
-        for record in records:
-            if not isinstance(record, dict):
-                continue
-            group = str(record.get("group", "")).strip()
-            name = str(record.get("name", "")).strip()
-            value = record.get("value")
-            level = str(record.get("evidence_level", "U")).strip().upper() or "U"
-            if group and name:
-                if isinstance(value, (int, float)):
-                    summary_keys.append(f"{group}.{name}={value:+.2f}({level})")
-                else:
-                    summary_keys.append(f"{group}.{name}({level})")
-            for source in record.get("source_doi", []):
-                if source and source not in sources:
-                    sources.append(source)
-
-        if not sources:
-            return ""
-
-        refs = reference_display_text(sources, language="ko", limit=3)
-        if not refs:
-            return ""
-
-        selected = ", ".join(summary_keys[:3]) if summary_keys else "profile-paper-evidence"
-        return f"{selected} | {refs}"
+        return paper_evidence_summary(profile, language="ko", limit=3)
 
     @staticmethod
     def _explain_top_factors(indicators, profile):
-        weighted = []
-        for key, weight in profile["weights"].items():
-            score = indicators.get(key)
-            if score is None:
-                continue
-            weighted.append((weight * score, key, score))
-        if not weighted:
-            return "no-data"
-        weighted.sort(reverse=True)
-        top = weighted[:2]
-        return ",".join(f"{key}:{score:.2f}" for _, key, score in top)
+        return explain_top_factors(indicators, profile)
 
     def _compute_large_tpi_value(
         self,
@@ -5234,83 +4236,12 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _tpi_class_label(tpi_small, tpi_large=None):
-        """이중-스케일 TPI 기반 지형 분류 레이블.
-
-        참고문헌:
-        • Lee & Kim (2021). PLOS ONE 16(10):e0259651.
-          → 한반도 TPI 이중 스케일 지형 분류 (Zimmermann 방법론 적용).
-        • Weiss (2001). ESRI User Conference. (원본 TPI 분류표)
-
-        소규모 TPI (능선·사면·계곡):
-          > +0.1  → 능선(Ridge)
-          -0.1~+0.1 → 중간 사면(Mid-slope)
-          < -0.1  → 계곡(Valley)
-
-        이중-스케일 조합 (한반도 풍수 지형 분류):
-          대형양(+) + 소형양(+) → 산릉(山陵)  ← 주산/현무 가장 적합
-          대형양(+) + 소형중(-) → 중산복(中山腹)
-          대형중(0) + 소형중(0) → 평탄지 ← 명당(明堂) 적합
-          대형음(-) + 소형음(-) → 평지 저습지
-        """
-        if tpi_small is None:
-            return "지형정보 없음"
-        if tpi_large is None:
-            if tpi_small > 0.10:
-                return "능선(능)"
-            if tpi_small < -0.10:
-                return "계곡(곡)"
-            return "중간 사면"
-        # Dual-scale
-        if tpi_large > 0.10:
-            if tpi_small > 0.10:
-                return "산릉(山陵)"
-            if tpi_small < -0.10:
-                return "산지 계곡"
-            return "중산복(中山腹)"
-        if tpi_large < -0.10:
-            if tpi_small > 0.10:
-                return "평야 구릉"
-            if tpi_small < -0.10:
-                return "평지 저습지"
-            return "평원 사면"
-        # large flat
-        if tpi_small > 0.10:
-            return "대지 능선"
-        if tpi_small < -0.10:
-            return "대지 계곡"
-        return "평탄지(平)"
+        return tpi_class_label(tpi_small, tpi_large)
 
     @staticmethod
     def _sashinsa_hint(sashinsa_score):
-        """사신사 포위도 점수 설명 레이블.
-
-        참고문헌:
-        • Um (2012), ISPRS IJGI 2021, Buildings 2025 - 사신사 포위도 기준.
-        """
-        if sashinsa_score is None:
-            return "사신사 정보 없음"
-        if sashinsa_score >= 0.75:
-            return "사신사 배치 우수"
-        if sashinsa_score >= 0.55:
-            return "사신사 배치 양호"
-        if sashinsa_score >= 0.35:
-            return "사신사 배치 보통"
-        return "사신사 배치 미흡"
+        return sashinsa_hint(sashinsa_score)
 
     @staticmethod
     def _enclosure_hint(enclosure_index):
-        """장풍 포위도 지수 설명 레이블.
-
-        참고문헌:
-        • Guan et al. (2024) Springer (하카마을 장풍 조건);
-        • ISPRS IJGI 2021 Nanjing (표면조도 기반 포위도).
-        """
-        if enclosure_index is None:
-            return "장풍 정보 없음"
-        if enclosure_index >= 0.75:
-            return "장풍득수 조건 우수"
-        if enclosure_index >= 0.55:
-            return "장풍 양호"
-        if enclosure_index >= 0.35:
-            return "장풍 보통"
-        return "장풍 미흡(개방지형)"
+        return enclosure_hint(enclosure_index)
