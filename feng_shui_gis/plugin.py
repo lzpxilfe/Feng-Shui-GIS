@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import traceback
 from html import escape
 from datetime import datetime
 
@@ -9,6 +10,7 @@ from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtWidgets import QAction, QDialog, QVBoxLayout, QTextBrowser
 from qgis.core import (
+    QgsApplication,
     QgsCategorizedSymbolRenderer,
     QgsFeature,
     QgsFeatureRequest,
@@ -17,6 +19,7 @@ from qgis.core import (
     QgsMessageLog,
     Qgis,
     QgsRendererCategory,
+    QgsTask,
     QgsSymbol,
     QgsWkbTypes,
     QgsVectorLayer,
@@ -40,9 +43,33 @@ from .locale import tr
 from .mountain_lookup import MountainNameService
 from .mountain_options import mountain_options
 from .errors import FengShuiError, FengShuiErrorCode
-from .profile_catalog import analysis_rules
+from .profile_catalog import (
+    analysis_rules,
+    local_profiles_payload,
+    write_local_profiles_payload,
+)
 from .reference_catalog import reference_display_text
 from .ui_catalog import ui_text
+
+
+class _BackgroundTask(QgsTask):
+    def __init__(self, description, callback):
+        super().__init__(description)
+        self._callback = callback
+        self._result = None
+        self._exception = None
+        self._traceback = ""
+
+    def run(self):
+        if self.isCanceled():
+            return False
+        try:
+            self._result = self._callback()
+            return True
+        except Exception as exc:  # pylint: disable=broad-except
+            self._exception = exc
+            self._traceback = traceback.format_exc()
+            return False
 
 
 class FengShuiGisPlugin:
@@ -98,6 +125,7 @@ class FengShuiGisPlugin:
         self._compare_dialog = None
         self._compare_browser = None
         self._context_warning_cache = set()
+        self._analysis_task = None
 
     def initGui(self):
         icon_path = os.path.join(self.plugin_dir, "yingyang.png")
@@ -111,6 +139,9 @@ class FengShuiGisPlugin:
         self.iface.addPluginToMenu(tr("menu_title"), self.action)
 
     def unload(self):
+        if self._analysis_task and self._analysis_task.isActive():
+            self._analysis_task.cancel()
+            self._analysis_task = None
         for layer_id, slot in list(self._selection_hooks.items()):
             layer = QgsProject.instance().mapLayer(layer_id)
             if layer is None:
@@ -211,6 +242,77 @@ class FengShuiGisPlugin:
             self._publish_error(context, exc, failure_code=failure_code)
             return None
 
+    def _run_background_task(
+        self,
+        description,
+        callback,
+        on_success,
+        *,
+        failure_code=None,
+        failure_context=None,
+    ):
+        if self._analysis_task is not None and self._analysis_task.isActive():
+            message = ui_text(
+                "analysis_task_running",
+                self._label_language(),
+                default="A task is already running. Please wait or cancel it before starting another.",
+            )
+            self.iface.messageBar().pushWarning(tr("plugin_title"), message)
+            if self.dock:
+                self.dock.set_status(message)
+            return False
+
+        task = _BackgroundTask(description, callback)
+
+        def _on_completed():
+            if self._analysis_task is task:
+                self._analysis_task = None
+            if task._exception is not None:
+                self._publish_error(
+                    failure_context or description,
+                    task._exception,
+                    failure_code=failure_code,
+                )
+                return
+            try:
+                on_success(task._result)
+            except Exception as exc:  # pylint: disable=broad-except
+                self._publish_error(
+                    failure_context or description,
+                    exc,
+                    failure_code=failure_code,
+                )
+
+        def _on_terminated():
+            if self._analysis_task is task:
+                self._analysis_task = None
+            if task._exception is None and task.isCanceled():
+                message = ui_text(
+                    "analysis_task_cancelled",
+                    self._label_language(),
+                    default="Operation was canceled.",
+                )
+                self.iface.messageBar().pushWarning(
+                    tr("plugin_title"),
+                    message,
+                )
+                if self.dock:
+                    self.dock.set_status(message)
+                return
+            if task._exception is not None:
+                self._publish_error(
+                    failure_context or description,
+                    task._exception,
+                    failure_code=failure_code,
+                )
+                return
+
+        self._analysis_task = task
+        task.taskCompleted.connect(_on_completed)
+        task.taskTerminated.connect(_on_terminated)
+        QgsApplication.taskManager().addTask(task)
+        return True
+
     def _report_dir(self):
         project_home = QgsProject.instance().homePath().strip()
         if not project_home:
@@ -250,18 +352,21 @@ class FengShuiGisPlugin:
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
 
+        request = AnalysisRequest(
+            site_layer=site_layer,
+            dem_layer=dem_layer,
+            water_layer=water_layer,
+            hemisphere=hemisphere,
+            profile_key=profile_key,
+            culture_key=culture_key,
+            period_key=period_key,
+            auto_hydro=auto_hydro,
+        )
+
         def _execute():
-            request = AnalysisRequest(
-                site_layer=site_layer,
-                dem_layer=dem_layer,
-                water_layer=water_layer,
-                hemisphere=hemisphere,
-                profile_key=profile_key,
-                culture_key=culture_key,
-                period_key=period_key,
-                auto_hydro=auto_hydro,
-            )
-            result = self._analysis_service.run_analysis(request)
+            return self._analysis_service.run_analysis(request)
+
+        def _on_success(result):
             output_layer = result.analysis_layer
             auto_hydro_layer = result.auto_hydro_layer
             if auto_hydro_layer is not None:
@@ -280,27 +385,25 @@ class FengShuiGisPlugin:
                 )
             QgsProject.instance().addMapLayer(output_layer)
             self._configure_layer_click_info(output_layer, label_lang)
-            return output_layer, mountain_updated
-
-        result = self._run_with_error_handler(
-            "Analysis failed",
-            _execute,
-            failure_code=FengShuiErrorCode.ANALYSIS_FAILURE,
-        )
-        if result is None:
-            return
-        output_layer, mountain_updated = result
-        self.iface.messageBar().pushSuccess(
-            tr("plugin_title"),
-            f"{tr('ok_finished')}: {output_layer.name()}",
-        )
-        if mountain_enabled and mountain_updated > 0:
-            self.iface.messageBar().pushInfo(
+            self.iface.messageBar().pushSuccess(
                 tr("plugin_title"),
-                self._mountain_attached_message(mountain_updated),
+                f"{tr('ok_finished')}: {output_layer.name()}",
             )
-        if self.dock:
-            self.dock.set_status(tr("status_done"))
+            if mountain_enabled and mountain_updated > 0:
+                self.iface.messageBar().pushInfo(
+                    tr("plugin_title"),
+                    self._mountain_attached_message(mountain_updated),
+                )
+            if self.dock:
+                self.dock.set_status(tr("status_done"))
+
+        self._run_background_task(
+            "Run feng shui analysis",
+            _execute,
+            _on_success,
+            failure_code=FengShuiErrorCode.ANALYSIS_FAILURE,
+            failure_context="Analysis failed",
+        )
 
     def run_term_extraction(
         self,
@@ -344,8 +447,11 @@ class FengShuiGisPlugin:
                 auto_hydro=auto_hydro,
                 include_terms=include_terms,
             )
-            result = self._analysis_service.run_term_extraction(request)
+            return self._analysis_service.run_term_extraction(request)
 
+        def _on_success(result):
+            if not result:
+                return
             ridge_layer = result.ridge_layer
             hydro_layer = result.hydro_layer
             terms_layer = result.terms_layer
@@ -384,35 +490,35 @@ class FengShuiGisPlugin:
                     preferred_language=mountain_lang,
                 )
             self._insert_output_layers(layers_top_to_bottom, label_lang)
-            return ridge_layer, hydro_layer, terms_layer, line_layer, mountain_total
 
-        result = self._run_with_error_handler(
-            "Landscape extraction failed",
-            _execute,
-            failure_code=FengShuiErrorCode.TERM_EXTRACTION_FAILURE,
-        )
-        if result is None:
-            return
-        ridge_layer, hydro_layer, terms_layer, line_layer, mountain_total = result
-
-        created = [f"{ridge_layer.name()} ({ridge_layer.featureCount()})"]
-        if hydro_layer:
-            created.insert(0, f"{hydro_layer.name()} ({hydro_layer.featureCount()})")
-        if include_terms and line_layer and terms_layer:
-            created.insert(0, f"{line_layer.name()} ({line_layer.featureCount()})")
-            created.insert(0, f"{terms_layer.name()} ({terms_layer.featureCount()})")
-        message_key = "ok_terms_finished" if include_terms else "ok_landscape_finished"
-        self.iface.messageBar().pushSuccess(
-            tr("plugin_title"),
-            f"{tr(message_key)}: " + ", ".join(created),
-        )
-        if mountain_enabled and mountain_total > 0:
-            self.iface.messageBar().pushInfo(
-                tr("plugin_title"),
-                self._mountain_attached_message(mountain_total),
+            created = [f"{ridge_layer.name()} ({ridge_layer.featureCount()})"]
+            if hydro_layer:
+                created.insert(0, f"{hydro_layer.name()} ({hydro_layer.featureCount()})")
+            if include_terms and line_layer and terms_layer:
+                created.insert(0, f"{line_layer.name()} ({line_layer.featureCount()})")
+                created.insert(0, f"{terms_layer.name()} ({terms_layer.featureCount()})")
+            message_key = (
+                "ok_terms_finished" if include_terms else "ok_landscape_finished"
             )
-        if self.dock:
-            self.dock.set_status(tr("status_done"))
+            self.iface.messageBar().pushSuccess(
+                tr("plugin_title"),
+                f"{tr(message_key)}: " + ", ".join(created),
+            )
+            if mountain_enabled and mountain_total > 0:
+                self.iface.messageBar().pushInfo(
+                    tr("plugin_title"),
+                    self._mountain_attached_message(mountain_total),
+                )
+            if self.dock:
+                self.dock.set_status(tr("status_done"))
+
+        self._run_background_task(
+            "Run feng shui term extraction",
+            _execute,
+            _on_success,
+            failure_code=FengShuiErrorCode.TERM_EXTRACTION_FAILURE,
+            failure_context="Term extraction failed",
+        )
 
     @staticmethod
     def _score_stats(layer):
@@ -1211,7 +1317,9 @@ class FengShuiGisPlugin:
                 period_key=period_key,
                 auto_hydro=auto_hydro,
             )
-            result = self._analysis_service.run_profile_compare(request)
+            return self._analysis_service.run_profile_compare(request)
+
+        def _on_success(result):
             base_layer = result.base_layer
             compare_layer = result.compare_layer
             auto_hydro_layer = result.auto_hydro_layer
@@ -1284,24 +1392,26 @@ class FengShuiGisPlugin:
                 base_layer_name=base_layer.name(),
                 compare_layer_name=compare_layer.name(),
             )
-            return True
 
-        success = self._run_with_error_handler(
-            "Profile comparison failed",
+            success_message = ui_text(
+                "profile_compare_status_done",
+                self._label_language(),
+                default="Created base/calibrated comparison layers.",
+            )
+            self.iface.messageBar().pushSuccess(
+                tr("plugin_title"),
+                success_message,
+            )
+            if self.dock:
+                self.dock.set_status(success_message)
+
+        self._run_background_task(
+            "Run feng shui profile comparison",
             _execute,
+            _on_success,
             failure_code=FengShuiErrorCode.COMPARISON_FAILURE,
+            failure_context="Profile comparison failed",
         )
-        if not success:
-            return
-
-        success_message = ui_text(
-            "profile_compare_status_done",
-            label_lang,
-            default="Created base/calibrated comparison layers.",
-        )
-        self.iface.messageBar().pushSuccess(tr("plugin_title"), success_message)
-        if self.dock:
-            self.dock.set_status(success_message)
 
     def run_calibration(
         self,
@@ -1360,7 +1470,9 @@ class FengShuiGisPlugin:
                 random_seed=random_seed,
                 auto_hydro=auto_hydro,
             )
-            result = self._analysis_service.run_calibration(request)
+            return self._analysis_service.run_calibration(request)
+
+        def _on_success(result):
             scored_layer = result.calibrated_layer
             report = result.report
             auto_hydro_layer = result.auto_hydro_layer
@@ -1389,36 +1501,34 @@ class FengShuiGisPlugin:
 
             json_path, md_path = self._write_calibration_report(report)
             self._show_report_popup(report, json_path, md_path)
-            return scored_layer, mountain_updated, report
 
-        result = self._run_with_error_handler(
-            "Calibration failed",
-            _execute,
-            failure_code=FengShuiErrorCode.CALIBRATION_FAILURE,
-        )
-        if result is None:
-            return
-        scored_layer, mountain_updated, report = result
-
-        self.iface.messageBar().pushSuccess(
-            tr("plugin_title"),
-            ui_text(
-                "calibration_success_template",
-                default="Calibration done: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}",
-            ).format(
-                roc_auc=report.get("roc_auc", 0),
-                pr_auc=report.get("pr_auc", 0),
-            ),
-        )
-        if mountain_enabled and mountain_updated > 0:
-            self.iface.messageBar().pushInfo(
+            self.iface.messageBar().pushSuccess(
                 tr("plugin_title"),
-                self._mountain_attached_message(mountain_updated),
+                ui_text(
+                    "calibration_success_template",
+                    default="Calibration done: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}",
+                ).format(
+                    roc_auc=report.get("roc_auc", 0),
+                    pr_auc=report.get("pr_auc", 0),
+                ),
             )
-        if self.dock:
-            self.dock.set_status(
-                ui_text("calibration_status_done", default="Calibration completed.")
-            )
+            if mountain_enabled and mountain_updated > 0:
+                self.iface.messageBar().pushInfo(
+                    tr("plugin_title"),
+                    self._mountain_attached_message(mountain_updated),
+                )
+            if self.dock:
+                self.dock.set_status(
+                    ui_text("calibration_status_done", default="Calibration completed.")
+                )
+
+        self._run_background_task(
+            "Run feng shui calibration",
+            _execute,
+            _on_success,
+            failure_code=FengShuiErrorCode.CALIBRATION_FAILURE,
+            failure_context="Calibration failed",
+        )
 
     def _warn_if_geographic(self, layer):
         if layer and layer.crs().isGeographic():
@@ -2642,19 +2752,15 @@ class FengShuiGisPlugin:
                 indent=2,
             )
 
-        local_profile_path = os.path.join(self.plugin_dir, "config", "local_profiles.json")
         try:
-            with open(local_profile_path, "r", encoding="utf-8") as handle:
-                local_profiles = json.load(handle)
-        except FileNotFoundError:
-            local_profiles = {}
-        except json.JSONDecodeError:
+            local_profiles = local_profiles_payload()
+        except RuntimeError:
             local_profiles = {}
         if not isinstance(local_profiles, dict):
             local_profiles = {}
+            # fail-safe fallback keeps export metadata usable even when cache is malformed
         local_profiles[exported_profile_key] = profile_spec
-        with open(local_profile_path, "w", encoding="utf-8") as handle:
-            json.dump(local_profiles, handle, ensure_ascii=False, indent=2)
+        write_local_profiles_payload(local_profiles)
         clear_cache()
 
         export_info.update(
@@ -2662,7 +2768,11 @@ class FengShuiGisPlugin:
                 "profile_export_status": "saved",
                 "exported_profile_key": exported_profile_key,
                 "profile_export_path": snapshot_path,
-                "local_profile_registry_path": local_profile_path,
+                "local_profile_registry_path": os.path.join(
+                    self.plugin_dir,
+                    "config",
+                    "local_profiles.json",
+                ),
             }
         )
         return export_info
@@ -3337,4 +3447,3 @@ class FengShuiGisPlugin:
         self._report_dialog.show()
         self._report_dialog.raise_()
         self._report_dialog.activateWindow()
-
