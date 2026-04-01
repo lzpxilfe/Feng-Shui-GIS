@@ -87,7 +87,12 @@ _SCHEMA_MIGRATIONS = {
     "terms.json": {},
     "references.json": {},
     "ui_texts.json": {},
-    "local_profiles.json": {},
+    "local_profiles.json": {
+        None: lambda payload: {
+            _SCHEMA_VERSION_KEY: _SUPPORTED_SCHEMA_VERSIONS["local_profiles.json"],
+            **payload,
+        },
+    },
 }
 
 
@@ -137,11 +142,15 @@ def _require_dict(value, path):
 
 
 def _normalize_schema(payload: Dict[str, Any], file_label: str, expected_version: int):
-    version = _coerce_int(payload.get(_SCHEMA_VERSION_KEY), file_label)
+    migrations = _SCHEMA_MIGRATIONS.get(file_label, {})
+    raw_version = payload.get(_SCHEMA_VERSION_KEY)
+    if raw_version is None and None in migrations:
+        version = None
+    else:
+        version = _coerce_int(raw_version, file_label)
     if version == expected_version:
         return payload
 
-    migrations = _SCHEMA_MIGRATIONS.get(file_label, {})
     if version not in migrations:
         if version > expected_version:
             _fail(
@@ -149,6 +158,8 @@ def _normalize_schema(payload: Dict[str, Any], file_label: str, expected_version
                 "Schema is newer than supported "
                 f"(found v{version}, expected v{expected_version}).",
             )
+        if version is None:
+            raise RuntimeError(f"{file_label}: schema_version is required.")
         raise RuntimeError(f"{file_label}: Unsupported schema version v{version}.")
 
     try:

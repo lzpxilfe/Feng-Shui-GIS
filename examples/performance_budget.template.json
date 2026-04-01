@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "budgets": {
+    "analysis": {
+      "small": {
+        "runtime_seconds_max": 20.0,
+        "peak_memory_mb_max": 512,
+        "cancel_latency_ms_max": 1500
+      },
+      "medium": {
+        "runtime_seconds_max": 45.0,
+        "peak_memory_mb_max": 1024,
+        "cancel_latency_ms_max": 2200
+      },
+      "large": {
+        "runtime_seconds_max": 120.0,
+        "peak_memory_mb_max": 2048,
+        "cancel_latency_ms_max": 4000
+      }
+    },
+    "compare": {
+      "small": {
+        "runtime_seconds_max": 10.0,
+        "peak_memory_mb_max": 384,
+        "cancel_latency_ms_max": 1200
+      },
+      "medium": {
+        "runtime_seconds_max": 25.0,
+        "peak_memory_mb_max": 768,
+        "cancel_latency_ms_max": 1800
+      },
+      "large": {
+        "runtime_seconds_max": 60.0,
+        "peak_memory_mb_max": 1536,
+        "cancel_latency_ms_max": 3200
+      }
+    },
+    "calibration": {
+      "small": {
+        "runtime_seconds_max": 30.0,
+        "peak_memory_mb_max": 768,
+        "cancel_latency_ms_max": 1800
+      },
+      "medium": {
+        "runtime_seconds_max": 75.0,
+        "peak_memory_mb_max": 1536,
+        "cancel_latency_ms_max": 2600
+      },
+      "large": {
+        "runtime_seconds_max": 180.0,
+        "peak_memory_mb_max": 3072,
+        "cancel_latency_ms_max": 4500
+      }
+    },
+    "term_extraction": {
+      "small": {
+        "runtime_seconds_max": 18.0,
+        "peak_memory_mb_max": 512,
+        "cancel_latency_ms_max": 1400
+      },
+      "medium": {
+        "runtime_seconds_max": 40.0,
+        "peak_memory_mb_max": 1024,
+        "cancel_latency_ms_max": 2200
+      },
+      "large": {
+        "runtime_seconds_max": 95.0,
+        "peak_memory_mb_max": 2048,
+        "cancel_latency_ms_max": 3800
+      }
+    }
+  },
+  "notes": {
+    "small": "Localized study area or exploratory pass.",
+    "medium": "Normal research workflow for one case study.",
+    "large": "Dense or long-running workflow that should be archived with extra care."
+  }
+}
