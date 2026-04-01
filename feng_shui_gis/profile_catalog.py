@@ -2,6 +2,7 @@
 """Profile, term, and rules catalogs loaded from validated JSON configs."""
 
 import json
+import math
 import os
 
 from .config_loader import load_config_json
@@ -68,23 +69,78 @@ def _require_string(container, key, context):
     return value
 
 
+def _require_finite_number(container, key, context):
+    value = _require_number(container, key, context)
+    if not math.isfinite(value):
+        raise RuntimeError(f"Invalid numeric value for '{key}' in {context}.")
+    return value
+
+
+def _validate_label_map(label_map, context):
+    labels = _require_dict(label_map, context)
+    has_text = False
+    for language_key, raw_value in labels.items():
+        text = str(raw_value or "").strip()
+        if not text:
+            raise RuntimeError(f"Missing text value for '{language_key}' in {context}.")
+        has_text = True
+    if not has_text:
+        raise RuntimeError(f"{context} must include at least one localized label.")
+    return labels
+
+
+def _validate_weights(weights, context):
+    normalized = _require_dict(weights, context)
+    if not normalized:
+        raise RuntimeError(f"{context} must not be empty.")
+    total = 0.0
+    for weight_key, raw_value in normalized.items():
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Invalid weight '{weight_key}' in {context}."
+            ) from exc
+        if not math.isfinite(value):
+            raise RuntimeError(f"Invalid weight '{weight_key}' in {context}.")
+        if value < 0.0:
+            raise RuntimeError(
+                f"Weight '{weight_key}' in {context} must be zero or greater."
+            )
+        total += value
+    if total <= 0.0:
+        raise RuntimeError(f"{context} must sum to a positive value.")
+    return normalized
+
+
+def _validate_profile_spec(profile_key, spec, context_name):
+    context = f"{context_name}:{profile_key}"
+    spec = _require_dict(spec, context)
+    _validate_label_map(spec.get("label"), f"{context}.label")
+    _validate_weights(spec.get("weights"), f"{context}.weights")
+    slope_target = _require_finite_number(spec, "slope_target", context)
+    slope_sigma = _require_finite_number(spec, "slope_sigma", context)
+    tpi_target = _require_finite_number(spec, "tpi_target", context)
+    tpi_sigma = _require_finite_number(spec, "tpi_sigma", context)
+    if slope_sigma <= 0.0:
+        raise RuntimeError(f"{context}.slope_sigma must be greater than 0.")
+    if tpi_sigma <= 0.0:
+        raise RuntimeError(f"{context}.tpi_sigma must be greater than 0.")
+    if abs(slope_target) > 90.0:
+        raise RuntimeError(f"{context}.slope_target must stay within [-90, 90].")
+    if abs(tpi_target) > 1000000.0:
+        raise RuntimeError(f"{context}.tpi_target is outside the supported range.")
+    return spec
+
+
 def _validate_profiles(data, context_name=_PROFILE_FILE, allow_empty=False):
     payload = _payload_without_schema_version(data, context_name, allow_empty=allow_empty)
     profiles = _require_dict(payload, context_name, allow_empty=allow_empty)
     for profile_key, spec in profiles.items():
-        context = f"{context_name}:{profile_key}"
-        spec = _require_dict(spec, context)
-        _require_dict(spec.get("label"), f"{context}.label")
-        weights = _require_dict(spec.get("weights"), f"{context}.weights")
-        for weight_key, value in weights.items():
-            try:
-                float(value)
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError(
-                    f"Invalid weight '{weight_key}' in {context}.weights."
-                ) from exc
-        for field_name in ("slope_target", "slope_sigma", "tpi_target", "tpi_sigma"):
-            _require_number(spec, field_name, context)
+        profile_name = str(profile_key or "").strip()
+        if not profile_name:
+            raise RuntimeError(f"{context_name}: profile key must not be empty.")
+        _validate_profile_spec(profile_name, spec, context_name)
     return profiles
 
 

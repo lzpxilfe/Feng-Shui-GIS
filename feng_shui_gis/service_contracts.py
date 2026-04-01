@@ -22,6 +22,7 @@ class AnalysisOutput:
     analysis_layer: Any
     auto_hydro_layer: Optional[Any]
     used_water_layer: Any
+    run_manifest: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class TermExtractionOutput:
     terms_layer: Optional[Any]
     term_links_layer: Optional[Any]
     used_water_layer: Any
+    run_manifest: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,7 @@ class CompareOutput:
     compare_layer: Any
     auto_hydro_layer: Optional[Any]
     used_water_layer: Any
+    run_manifest: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,7 @@ class CalibrationOutput:
     report: Dict[str, Any]
     auto_hydro_layer: Optional[Any]
     used_water_layer: Any
+    run_manifest: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
