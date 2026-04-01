@@ -1,0 +1,5 @@
+{
+  "service": "analysis",
+  "required_sections": ["run_manifest"],
+  "score_drift_tolerance": 0.05
+}

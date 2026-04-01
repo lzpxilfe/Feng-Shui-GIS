@@ -1,0 +1,24 @@
+{
+  "type": "FeatureCollection",
+  "name": "sample_water",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Sample Stream"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [5, 95],
+          [20, 82],
+          [35, 68],
+          [50, 55],
+          [65, 40],
+          [80, 24],
+          [92, 10]
+        ]
+      }
+    }
+  ]
+}

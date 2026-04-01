@@ -246,6 +246,7 @@ class FengShuiDockWidget(QWidget):
     compare_requested = pyqtSignal(object, object, object, str, str, str, str, str, bool)
     terms_requested = pyqtSignal(object, object, str, str, str, str, bool, bool)
     cancel_requested = pyqtSignal()
+    support_bundle_requested = pyqtSignal()
     calibration_requested = pyqtSignal(
         object,
         object,
@@ -890,6 +891,12 @@ class FengShuiDockWidget(QWidget):
         self.goal_hint_label.setTextFormat(Qt.RichText)
         controls_layout.addWidget(self.goal_hint_label)
 
+        self.trust_badge_label = QLabel("", self)
+        self.trust_badge_label.setObjectName("contextHint")
+        self.trust_badge_label.setWordWrap(True)
+        self.trust_badge_label.setTextFormat(Qt.RichText)
+        controls_layout.addWidget(self.trust_badge_label)
+
         self.advanced_options_button = QToolButton(self)
         self.advanced_options_button.setObjectName("advancedToggle")
         self.advanced_options_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -1254,6 +1261,19 @@ class FengShuiDockWidget(QWidget):
         self.workflow_status_label.setWordWrap(True)
         card_layout.addWidget(self.workflow_status_label)
 
+        self.export_support_bundle_button = QPushButton(
+            ui_text(
+                "support_bundle_button",
+                default="Export Support Bundle",
+            ),
+            card,
+        )
+        self.export_support_bundle_button.setObjectName("helpButton")
+        self.export_support_bundle_button.clicked.connect(
+            self._emit_support_bundle_requested
+        )
+        card_layout.addWidget(self.export_support_bundle_button)
+
         self.cancel_button = QPushButton(
             ui_text("cancel_workflow_button", default="Cancel running workflow"),
             card,
@@ -1541,6 +1561,7 @@ class FengShuiDockWidget(QWidget):
                 widget.setVisible(workflow_mode != "quick")
 
         developer_hidden_controls = (
+            getattr(self, "export_support_bundle_button", None),
             getattr(self, "workflow_status_label", None),
             getattr(self, "dem_diag_widget", None),
         )
@@ -2007,6 +2028,29 @@ class FengShuiDockWidget(QWidget):
             )
         )
 
+    def _update_trust_boundary_hint(self):
+        if not hasattr(self, "trust_badge_label"):
+            return
+        from .trust_metadata import badges_html, build_trust_metadata
+
+        culture_key = ""
+        if hasattr(self, "culture_combo"):
+            culture_key = str(self.culture_combo.currentData() or "")
+        profile_key = ""
+        if hasattr(self, "profile_combo"):
+            profile_key = str(self.profile_combo.currentData() or "")
+        trust_metadata = build_trust_metadata(
+            self.label_language(),
+            advanced_context_enabled=self._advanced_context_enabled(),
+            culture_key=culture_key,
+            profile_key=profile_key,
+        )
+        badge_html = badges_html(trust_metadata)
+        score_note = str((trust_metadata or {}).get("score_notice") or "")
+        self.trust_badge_label.setText(
+            f"{badge_html}<br/>{score_note}" if badge_html else score_note
+        )
+
     def _update_dem_diagnostics_hint(self, *_args):
         if not hasattr(self, "dem_diag_widget"):
             return
@@ -2189,6 +2233,7 @@ class FengShuiDockWidget(QWidget):
             return
 
         workflow_state = self._workflow_presentation_state()
+        self._update_trust_boundary_hint()
         self.workflow_progress.setValue(workflow_state.percent)
         self._update_usage_goal_guidance()
         self.progress_summary_label.setText(workflow_state.summary_text)
@@ -2261,6 +2306,105 @@ class FengShuiDockWidget(QWidget):
         code = self.label_language_combo.currentData()
         return code if code in ("ko", "en") else "ko"
 
+    def support_bundle_snapshot(self):
+        from .trust_metadata import build_trust_metadata
+
+        current_goal = self._usage_goal_key() if hasattr(self, "purpose_combo") else "general"
+        culture_key = (
+            str(self.culture_combo.currentData() or "")
+            if hasattr(self, "culture_combo")
+            else ""
+        )
+        profile_key = (
+            str(self.profile_combo.currentData() or "")
+            if hasattr(self, "profile_combo")
+            else ""
+        )
+        trust_metadata = build_trust_metadata(
+            self.label_language(),
+            advanced_context_enabled=self._advanced_context_enabled(),
+            culture_key=culture_key,
+            profile_key=profile_key,
+        )
+        return {
+            "ui_language": self.ui_language(),
+            "label_language": self.label_language(),
+            "workflow_mode": self._workflow_mode() if hasattr(self, "workflow_mode_combo") else "quick",
+            "goal_key": current_goal,
+            "goal_label": self._usage_goal_label(current_goal),
+            "profile_key": (
+                str(self.profile_combo.currentData() or "")
+                if hasattr(self, "profile_combo")
+                else ""
+            ),
+            "profile_label": self.profile_combo.currentText() if hasattr(self, "profile_combo") else "",
+            "culture_key": (
+                str(self.culture_combo.currentData() or "")
+                if hasattr(self, "culture_combo")
+                else ""
+            ),
+            "period_key": (
+                str(self.period_combo.currentData() or "")
+                if hasattr(self, "period_combo")
+                else ""
+            ),
+            "hemisphere": (
+                str(self.hemisphere_combo.currentData() or "")
+                if hasattr(self, "hemisphere_combo")
+                else "north"
+            ),
+            "advanced_context_enabled": self._advanced_context_enabled(),
+            "show_experimental_contexts": self._show_experimental_contexts(),
+            "analysis_auto_hydro": (
+                bool(self.analysis_auto_hydro_checkbox.isChecked())
+                if hasattr(self, "analysis_auto_hydro_checkbox")
+                else False
+            ),
+            "landscape_auto_hydro": (
+                bool(self.landscape_auto_hydro_checkbox.isChecked())
+                if hasattr(self, "landscape_auto_hydro_checkbox")
+                else False
+            ),
+            "include_terms": (
+                bool(self.include_terms_checkbox.isChecked())
+                if hasattr(self, "include_terms_checkbox")
+                else False
+            ),
+            "mountain_name_enrichment_enabled": self.mountain_name_enrichment_enabled(),
+            "mountain_name_radius_m": self.mountain_name_radius_m(),
+            "mountain_name_max_features": self.mountain_name_max_features(),
+            "mountain_name_language_preference": self.mountain_name_language_preference(),
+            "selected_layers": {
+                "sites": (
+                    self.sites_combo.currentLayer().name()
+                    if hasattr(self, "sites_combo") and self.sites_combo.currentLayer()
+                    else ""
+                ),
+                "dem": (
+                    self.dem_combo.currentLayer().name()
+                    if hasattr(self, "dem_combo") and self.dem_combo.currentLayer()
+                    else ""
+                ),
+                "water": (
+                    self.water_combo.currentLayer().name()
+                    if hasattr(self, "water_combo") and self.water_combo.currentLayer()
+                    else ""
+                ),
+            },
+            "trust_metadata": trust_metadata,
+            "latest_task_summary": {
+                "progress_summary": self.progress_summary_label.text()
+                if hasattr(self, "progress_summary_label")
+                else "",
+                "next_step": self.next_step_label.text()
+                if hasattr(self, "next_step_label")
+                else "",
+                "workflow_status": self.workflow_status_label.text()
+                if hasattr(self, "workflow_status_label")
+                else "",
+            },
+        }
+
     def _emit_run_requested(self):
         culture_key, period_key = self._effective_context_keys()
         self.run_requested.emit(
@@ -2276,6 +2420,9 @@ class FengShuiDockWidget(QWidget):
 
     def _emit_cancel_requested(self):
         self.cancel_requested.emit()
+
+    def _emit_support_bundle_requested(self):
+        self.support_bundle_requested.emit()
 
     def _emit_terms_requested(self):
         culture_key, period_key = self._effective_context_keys()

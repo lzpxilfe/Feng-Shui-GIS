@@ -129,6 +129,18 @@
       "ko": "컨텍스트 근거 보기",
       "en": "View Context Evidence"
     },
+    "support_bundle_button": {
+      "ko": "지원 번들 내보내기",
+      "en": "Export Support Bundle"
+    },
+    "support_bundle_menu_action": {
+      "ko": "지원 번들 내보내기",
+      "en": "Export Support Bundle"
+    },
+    "support_bundle_success_template": {
+      "ko": "지원 번들을 내보냈습니다: {path}",
+      "en": "Support bundle exported: {path}"
+    },
     "context_general_mode_hint": {
       "ko": "현재 일반 원칙 모드입니다. 지역·시대 가중치가 적용되지 않습니다.",
       "en": "General-principles mode is active. Region/period overrides are disabled."
@@ -228,6 +240,26 @@
     "report_section_audit_title": {
       "ko": "감사 메타",
       "en": "Audit"
+    },
+    "trust_badge_general_principles": {
+      "ko": "일반 원칙",
+      "en": "General Principles"
+    },
+    "trust_badge_advanced_context": {
+      "ko": "고급 컨텍스트",
+      "en": "Advanced Context"
+    },
+    "trust_badge_exploratory_context": {
+      "ko": "탐색적 컨텍스트",
+      "en": "Exploratory Context"
+    },
+    "trust_badge_local_calibration": {
+      "ko": "로컬 보정 적용",
+      "en": "Local Calibration Applied"
+    },
+    "trust_boundary_score_note": {
+      "ko": "<b>fs_score</b>를 유적 존재 확률처럼 해석하지 마세요. 비교 가능한 공간 읽기 프레임으로 다루세요.",
+      "en": "Do not interpret <b>fs_score</b> as the probability of site presence. Treat it as a comparative reading frame."
     },
     "compare_report_interpretation_note": {
       "ko": "이 비교는 보정 프로파일이 기본 프로파일에 비해 점수를 어떻게 바꾸는지 설명할 뿐이며, 독립적인 검증 결과는 아닙니다.",

@@ -3,6 +3,7 @@
 
 from html import escape
 
+from ..trust_metadata import badges_html, badges_markdown, build_trust_metadata, section_titles
 from ..ui_catalog import ui_text
 
 
@@ -15,26 +16,6 @@ class CompareReportWriter:
         return clean[: max(1, int(limit)) - 1].rstrip() + "..."
 
     @staticmethod
-    def section_titles(text_lang):
-        return {
-            "interpretation": ui_text(
-                "report_section_interpretation_title",
-                text_lang,
-                default="Interpretation",
-            ),
-            "analytical": ui_text(
-                "report_section_analytical_title",
-                text_lang,
-                default="Analytical",
-            ),
-            "audit": ui_text(
-                "report_section_audit_title",
-                text_lang,
-                default="Audit",
-            ),
-        }
-
-    @staticmethod
     def interpretation_payload(
         *,
         site_layer_name,
@@ -42,13 +23,11 @@ class CompareReportWriter:
         compare_profile_key,
         change_layer_name,
         top_changes,
+        trust_metadata,
     ):
         return {
             "claim_scope": "comparative_score_reading_only",
-            "reading_note": (
-                "This comparison explains how the calibrated profile shifts scores "
-                "relative to the base profile; it is not a standalone validation result."
-            ),
+            "reading_note": str((trust_metadata or {}).get("compare_notice") or ""),
             "site_layer_name": site_layer_name,
             "base_profile_key": base_profile_key,
             "compare_profile_key": compare_profile_key,
@@ -105,8 +84,15 @@ class CompareReportWriter:
         top_changes,
         change_layer_name,
         reason_excerpt_limit=88,
+        trust_metadata=None,
     ):
         top_changes = list(top_changes or [])
+        trust_metadata = trust_metadata or build_trust_metadata(
+            "en",
+            advanced_context_enabled=False,
+            culture_key="",
+            profile_key=compare_profile_key,
+        )
         return {
             "timestamp": stamp,
             "site_layer_name": site_layer_name,
@@ -117,12 +103,14 @@ class CompareReportWriter:
             "delta_stats": dict(delta_stats or {}),
             "top_changes": top_changes,
             "change_layer_name": change_layer_name,
+            "trust_metadata": dict(trust_metadata or {}),
             "interpretation": cls.interpretation_payload(
                 site_layer_name=site_layer_name,
                 base_profile_key=base_profile_key,
                 compare_profile_key=compare_profile_key,
                 change_layer_name=change_layer_name,
                 top_changes=top_changes,
+                trust_metadata=trust_metadata,
             ),
             "analytical": cls.analytical_payload(
                 base_stats=base_stats,
@@ -165,14 +153,22 @@ class CompareReportWriter:
         top_changes,
         change_layer_name,
         reason_excerpt_limit,
+        trust_metadata=None,
     ):
-        section_titles = cls.section_titles(text_lang)
+        trust_metadata = trust_metadata or build_trust_metadata(
+            text_lang,
+            advanced_context_enabled=False,
+            culture_key="",
+            profile_key=compare_profile_key,
+        )
+        titles = section_titles(text_lang)
         interpretation = cls.interpretation_payload(
             site_layer_name=site_layer_name,
             base_profile_key=base_profile_key,
             compare_profile_key=compare_profile_key,
             change_layer_name=change_layer_name,
             top_changes=top_changes,
+            trust_metadata=trust_metadata,
         )
         audit = cls.audit_payload(
             stamp=stamp,
@@ -236,11 +232,7 @@ class CompareReportWriter:
                 default="No top-changed features were recorded.",
             )
 
-        interpretation_note = ui_text(
-            "compare_report_interpretation_note",
-            text_lang,
-            default=interpretation["reading_note"],
-        )
+        interpretation_note = str((trust_metadata or {}).get("compare_notice") or interpretation["reading_note"])
         top_change_count_label = ui_text(
             "compare_report_top_change_count_label",
             text_lang,
@@ -266,19 +258,27 @@ class CompareReportWriter:
             text_lang,
             default="Top change feature_uids",
         )
+        badges_label = ui_text("trust_badge_label", text_lang, default="Trust badges")
+        score_notice_label = ui_text(
+            "trust_score_notice_label",
+            text_lang,
+            default="Score notice",
+        )
 
         top_change_uid_text = ", ".join(audit.get("top_change_feature_uids", [])) or "n/a"
 
         return (
             f"# {ui_text('compare_report_title_template', text_lang, default='Feng Shui Comparison Report ({stamp})').format(stamp=stamp)}\n\n"
-            f"## {section_titles['interpretation']}\n\n"
+            f"## {titles['interpretation']}\n\n"
             f"- {ui_text('compare_report_site_layer_label', text_lang, default='Site layer')}: {site_layer_name}\n"
             f"- {ui_text('compare_report_base_profile_label', text_lang, default='Base profile')}: {base_profile_key}\n"
             f"- {ui_text('compare_report_calibrated_profile_label', text_lang, default='Calibrated profile')}: {compare_profile_key}\n"
             f"- {ui_text('compare_report_change_layer_label', text_lang, default='Change layer')}: {change_layer_name or 'n/a'}\n"
             f"- {top_change_count_label}: {interpretation.get('top_change_count', 0)}\n"
+            f"- {badges_label}: {badges_markdown(trust_metadata)}\n"
+            f"- {score_notice_label}: {str((trust_metadata or {}).get('score_notice') or '')}\n"
             f"- {reading_note_label}: {interpretation_note}\n\n"
-            f"## {section_titles['analytical']}\n\n"
+            f"## {titles['analytical']}\n\n"
             f"### {ui_text('compare_report_summary_title', text_lang, default='Summary statistics')}\n\n"
             f"- {ui_text('compare_report_base_mean_label', text_lang, default='Base mean')}: {float(base_stats.get('mean', 0.0) if isinstance(base_stats, dict) else 0.0):.4f}\n"
             f"- {ui_text('compare_report_calibrated_mean_label', text_lang, default='Calibrated mean')}: {float(compare_stats.get('mean', 0.0) if isinstance(compare_stats, dict) else 0.0):.4f}\n"
@@ -287,7 +287,7 @@ class CompareReportWriter:
             f"- {ui_text('compare_report_max_drop_label', text_lang, default='Max drop')}: {float(delta_stats.get('max_drop', 0.0) if isinstance(delta_stats, dict) else 0.0):+.4f}\n\n"
             f"### {ui_text('compare_report_top_changes_title', text_lang, default='Top changed features')}\n\n"
             f"{top_change_table}\n\n"
-            f"## {section_titles['audit']}\n\n"
+            f"## {titles['audit']}\n\n"
             f"- {audit_timestamp_label}: {stamp}\n"
             f"- {audit_reason_limit_label}: {audit.get('reason_excerpt_limit', reason_excerpt_limit)}\n"
             f"- {top_change_count_label}: {audit.get('top_change_count', 0)}\n"
@@ -313,16 +313,16 @@ class CompareReportWriter:
         base_layer_name,
         compare_layer_name,
         reason_excerpt_limit,
+        trust_metadata=None,
     ):
-        section_titles = cls.section_titles(text_lang)
-        reading_note = ui_text(
-            "compare_report_interpretation_note",
+        trust_metadata = trust_metadata or build_trust_metadata(
             text_lang,
-            default=(
-                "This comparison explains how the calibrated profile shifts scores "
-                "relative to the base profile; it is not a standalone validation result."
-            ),
+            advanced_context_enabled=False,
+            culture_key="",
+            profile_key=compare_profile_key,
         )
+        titles = section_titles(text_lang)
+        reading_note = str((trust_metadata or {}).get("compare_notice") or "")
         top_change_count_label = ui_text(
             "compare_report_top_change_count_label",
             text_lang,
@@ -447,15 +447,18 @@ class CompareReportWriter:
 
         return (
             f"<h3>{escape(ui_text('profile_compare_heading_template', text_lang, default='{base} vs {calibrated}').format(base=base_profile_key, calibrated=compare_profile_key))}</h3>"
-            f"<h4>{escape(section_titles['interpretation'])}</h4>"
+            f"<h4>{escape(titles['interpretation'])}</h4>"
+            f"{badges_html(trust_metadata)}"
             f"<p><b>{escape(ui_text('profile_compare_base_layer_label', text_lang, default='Base layer'))}</b>: {escape(base_layer_name)}<br/>"
             f"<b>{escape(ui_text('profile_compare_calibrated_layer_label', text_lang, default='Calibrated layer'))}</b>: {escape(compare_layer_name)}<br/>"
             f"<b>{escape(top_change_count_label)}</b>: {len(list(top_changes or []))}<br/>"
+            f"<b>{escape(ui_text('trust_badge_label', text_lang, default='Trust badges'))}</b>: {escape(badges_markdown(trust_metadata))}<br/>"
+            f"<b>{escape(ui_text('trust_score_notice_label', text_lang, default='Score notice'))}</b>: {escape(str((trust_metadata or {}).get('score_notice') or ''))}<br/>"
             f"<b>{escape(ui_text('compare_report_reading_note_label', text_lang, default='Reading note'))}</b>: {escape(reading_note)}</p>"
             f"{selection_note}"
             f"{zoom_note}"
             f"{export_note}"
-            f"<h4>{escape(section_titles['analytical'])}</h4>"
+            f"<h4>{escape(titles['analytical'])}</h4>"
             f"<table border='1' cellspacing='0' cellpadding='4'>"
             f"<thead><tr>"
             f"<th>{escape(ui_text('profile_compare_profile_label', text_lang, default='Profile'))}</th>"
@@ -473,7 +476,7 @@ class CompareReportWriter:
             f"</tbody></table>"
             f"{delta_html}"
             f"{top_change_html}"
-            f"<h4>{escape(section_titles['audit'])}</h4>"
+            f"<h4>{escape(titles['audit'])}</h4>"
             f"<p><b>{escape(ui_text('profile_compare_json_label', text_lang, default='Compare JSON'))}</b>: {escape(json_path)}<br/>"
             f"<b>{escape(ui_text('profile_compare_markdown_label', text_lang, default='Compare Markdown'))}</b>: {escape(md_path)}<br/>"
             f"<b>{escape(ui_text('compare_report_reason_excerpt_limit_label', text_lang, default='Reason excerpt limit'))}</b>: {int(reason_excerpt_limit)}</p>"
