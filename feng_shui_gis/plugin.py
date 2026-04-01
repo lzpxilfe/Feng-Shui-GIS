@@ -1,43 +1,101 @@
 # -*- coding: utf-8 -*-
+import configparser
+import hashlib
 import json
 import os
+import traceback
 from html import escape
 from datetime import datetime
+from time import perf_counter
 
 from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtWidgets import QAction, QDialog, QVBoxLayout, QTextBrowser
 from qgis.core import (
+    QgsApplication,
     QgsCategorizedSymbolRenderer,
     QgsFeature,
     QgsFeatureRequest,
     QgsField,
     QgsProject,
-    QgsProcessingContext,
-    QgsProcessingFeedback,
+    QgsMessageLog,
+    Qgis,
     QgsRendererCategory,
+    QgsTask,
     QgsSymbol,
     QgsWkbTypes,
     QgsVectorLayer,
     edit,
 )
 
-from .analysis import FengShuiAnalyzer
 from .cultural_context import (
     base_period_key,
     context_evidence_records,
     neutral_context_key,
 )
+from .compare_contracts import (
+    top_score_changes as compare_top_score_changes,
+    validate_compare_feature_contract,
+    validate_compare_top_change_contract,
+)
 from .dock_widget import FengShuiDockWidget
+from .service_contracts import (
+    AnalysisRequest,
+    CalibrationRequest,
+    CompareRequest,
+    TermExtractionRequest,
+)
+from .services.analysis_service import FengShuiAnalysisService
 from .locale import tr
 from .mountain_lookup import MountainNameService
 from .mountain_options import mountain_options
-from .profile_catalog import analysis_rules
+from .errors import FengShuiError, FengShuiErrorCode
+from .profile_catalog import (
+    analysis_rules,
+    local_profiles_payload,
+    write_local_profiles_payload,
+)
 from .reference_catalog import reference_display_text
+from .reporting.benchmark_manifest_writer import BenchmarkManifestWriter
+from .reporting.calibration_report_writer import CalibrationReportWriter
+from .reporting.compare_report_writer import CompareReportWriter
+from .reporting.support_bundle_writer import SupportBundleWriter
 from .ui_catalog import ui_text
 
 
+class _BackgroundTask(QgsTask):
+    def __init__(self, description, callback):
+        super().__init__(description)
+        self._callback = callback
+        self._result = None
+        self._exception = None
+        self._traceback = ""
+        self._runtime_seconds = 0.0
+        self._started_at = None
+        self._finished_at = None
+
+    def run(self):
+        if self.isCanceled():
+            return False
+        self._started_at = perf_counter()
+        try:
+            self._result = self._callback()
+            return True
+        except Exception as exc:  # pylint: disable=broad-except
+            self._exception = exc
+            self._traceback = traceback.format_exc()
+            return False
+        finally:
+            self._finished_at = perf_counter()
+            if self._started_at is not None:
+                self._runtime_seconds = max(
+                    0.0,
+                    self._finished_at - self._started_at,
+                )
+
+
 class FengShuiGisPlugin:
+    _LOG_TAG = "Feng-Shui GIS"
     _COMPARE_DELTA_EPSILON = 0.01
     _COMPARE_TOP_CHANGE_LIMIT = 8
     _COMPARE_REASON_EXCERPT = 96
@@ -72,12 +130,16 @@ class FengShuiGisPlugin:
         },
     }
 
-    def __init__(self, iface):
+    def __init__(self, iface, analysis_service=None):
         self.iface = iface
         self.action = None
+        self.support_bundle_action = None
         self.toolbar = None
         self.dock = None
         self.plugin_dir = os.path.dirname(__file__)
+        self._analysis_service = (
+            analysis_service if analysis_service is not None else FengShuiAnalysisService()
+        )
         self._selection_hooks = {}
         self._reason_dialog = None
         self._reason_browser = None
@@ -86,6 +148,8 @@ class FengShuiGisPlugin:
         self._compare_dialog = None
         self._compare_browser = None
         self._context_warning_cache = set()
+        self._analysis_task = None
+        self._recent_error_records = []
 
     def initGui(self):
         icon_path = os.path.join(self.plugin_dir, "yingyang.png")
@@ -97,16 +161,32 @@ class FengShuiGisPlugin:
         self.toolbar.addAction(self.action)
         self.toolbar.setVisible(True)
         self.iface.addPluginToMenu(tr("menu_title"), self.action)
+        self.support_bundle_action = QAction(
+            ui_text(
+                "support_bundle_menu_action",
+                default="Export Support Bundle",
+            ),
+            self.iface.mainWindow(),
+        )
+        self.support_bundle_action.triggered.connect(self.export_support_bundle)
+        self.iface.addPluginToMenu(tr("menu_title"), self.support_bundle_action)
 
     def unload(self):
+        if self._analysis_task and self._analysis_task.isActive():
+            self._analysis_task.cancel()
+            self._analysis_task = None
         for layer_id, slot in list(self._selection_hooks.items()):
             layer = QgsProject.instance().mapLayer(layer_id)
             if layer is None:
                 continue
             try:
                 layer.selectionChanged.disconnect(slot)
-            except TypeError:
-                pass
+            except (RuntimeError, TypeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"selectionChanged disconnect skipped for layer {layer_id}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
         self._selection_hooks.clear()
 
         if self.action:
@@ -116,6 +196,10 @@ class FengShuiGisPlugin:
             self.iface.removePluginMenu(tr("menu_title"), self.action)
             self.action.deleteLater()
             self.action = None
+        if self.support_bundle_action:
+            self.iface.removePluginMenu(tr("menu_title"), self.support_bundle_action)
+            self.support_bundle_action.deleteLater()
+            self.support_bundle_action = None
         if self.toolbar:
             self.toolbar.deleteLater()
             self.toolbar = None
@@ -150,6 +234,8 @@ class FengShuiGisPlugin:
             self.dock.compare_requested.connect(self.run_profile_compare)
             self.dock.terms_requested.connect(self.run_term_extraction)
             self.dock.calibration_requested.connect(self.run_calibration)
+            self.dock.cancel_requested.connect(self.cancel_running_tasks)
+            self.dock.support_bundle_requested.connect(self.export_support_bundle)
         if self.dock.isVisible():
             self.dock.hide()
         else:
@@ -158,8 +244,174 @@ class FengShuiGisPlugin:
             self.dock.activateWindow()
 
     @staticmethod
-    def _runtime_error_message(context, exc):
+    def _debug_error_message(context, exc):
         return f"{context}: {type(exc).__name__}: {exc}"
+
+    def _resolve_user_message(self, message):
+        if not message:
+            return message
+        language = self._label_language()
+        translated = ui_text(message, language, default=message)
+        return translated or message
+
+    @staticmethod
+    def _contract_error(code, message, details, user_message):
+        return FengShuiError(
+            code=code,
+            message=message,
+            details=str(details),
+            user_message=user_message,
+        )
+
+    def _publish_error(self, context, exc, *, failure_code=None):
+        if isinstance(exc, FengShuiError):
+            code = exc.code
+            user_message = self._resolve_user_message(
+                exc.user_message or exc.message
+            )
+            details = exc.details or self._debug_error_message(context, exc)
+        else:
+            code = failure_code or FengShuiErrorCode.UNEXPECTED
+            user_message = self._resolve_user_message(str(exc))
+            details = self._debug_error_message(context, exc)
+
+        log_message = f"{code.value} | {details}"
+        QgsMessageLog.logMessage(log_message, "Feng-Shui GIS", level=Qgis.Critical)
+
+        ui_message = f"{context}: {user_message}" if user_message else context
+        self._recent_error_records.append(
+            {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "context": context,
+                "code": getattr(code, "value", str(code)),
+                "details": details,
+                "ui_message": ui_message,
+            }
+        )
+        self._recent_error_records = self._recent_error_records[-50:]
+        self.iface.messageBar().pushCritical(tr("warn_failed"), ui_message)
+        if self.dock:
+            self.dock.set_status(ui_message)
+
+    def _run_with_error_handler(self, context, callback, failure_code=None):
+        try:
+            return callback()
+        except Exception as exc:  # pylint: disable=broad-except
+            self._publish_error(context, exc, failure_code=failure_code)
+            return None
+
+    def _run_background_task(
+        self,
+        description,
+        callback,
+        on_success,
+        *,
+        failure_code=None,
+        failure_context=None,
+    ):
+        if self._analysis_task is not None and self._analysis_task.isActive():
+            message = ui_text(
+                "analysis_task_running",
+                self._label_language(),
+                default="A task is already running. Please wait or cancel it before starting another.",
+            )
+            self.iface.messageBar().pushWarning(tr("plugin_title"), message)
+            if self.dock:
+                self.dock.set_status(message)
+            return False
+
+        task = _BackgroundTask(description, callback)
+
+        def _on_completed():
+            if self._analysis_task is task:
+                self._analysis_task = None
+            if task._exception is not None:
+                self._publish_error(
+                    failure_context or description,
+                    task._exception,
+                    failure_code=failure_code,
+                )
+                if self.dock:
+                    self.dock.set_running_state(False, task_key=str(id(task)))
+                return
+            try:
+                on_success(task._result, task)
+            except Exception as exc:  # pylint: disable=broad-except
+                self._publish_error(
+                    failure_context or description,
+                    exc,
+                    failure_code=failure_code,
+                )
+            finally:
+                if self.dock:
+                    self.dock.set_running_state(False, task_key=str(id(task)))
+
+        def _on_terminated():
+            if self._analysis_task is task:
+                self._analysis_task = None
+            if task._exception is None and task.isCanceled():
+                message = ui_text(
+                    "analysis_task_cancelled",
+                    self._label_language(),
+                    default="Operation was canceled.",
+                )
+                self.iface.messageBar().pushWarning(
+                    tr("plugin_title"),
+                    message,
+                )
+                if self.dock:
+                    self.dock.set_status(message)
+                    self.dock.set_running_state(False, task_key=str(id(task)))
+                return
+            if task._exception is not None:
+                self._publish_error(
+                    failure_context or description,
+                    task._exception,
+                    failure_code=failure_code,
+                )
+                if self.dock:
+                    self.dock.set_running_state(False, task_key=str(id(task)))
+                return
+            if self.dock:
+                self.dock.set_running_state(False, task_key=str(id(task)))
+
+        self._analysis_task = task
+        task.taskCompleted.connect(_on_completed)
+        task.taskTerminated.connect(_on_terminated)
+        QgsApplication.taskManager().addTask(task)
+        if self.dock:
+            self.dock.set_running_state(
+                True,
+                task_key=str(id(task)),
+                task_label=str(description),
+            )
+        return True
+
+    def cancel_running_tasks(self):
+        if self._analysis_task is None or not self._analysis_task.isActive():
+            if self._analysis_task is not None:
+                self._analysis_task = None
+            message = ui_text(
+                "analysis_no_task_to_cancel",
+                self._label_language(),
+                default="No running workflow to cancel.",
+            )
+            if self.dock:
+                self.dock.set_status(message)
+            self.iface.messageBar().pushInfo(tr("plugin_title"), message)
+            if self.dock:
+                self.dock.set_running_state(False)
+            return
+
+        self._analysis_task.cancel()
+        message = ui_text(
+            "analysis_task_cancel_requested",
+            self._label_language(),
+            default="Cancel request sent. Waiting for workflow to stop.",
+        )
+        self.iface.messageBar().pushInfo(tr("plugin_title"), message)
+        if self.dock:
+            self.dock.set_status(message)
 
     def _report_dir(self):
         project_home = QgsProject.instance().homePath().strip()
@@ -168,6 +420,254 @@ class FengShuiGisPlugin:
         report_dir = os.path.join(project_home, "reports")
         os.makedirs(report_dir, exist_ok=True)
         return report_dir
+
+    @staticmethod
+    def _latest_prefixed_file(directory, prefixes, suffix):
+        if not directory or not os.path.isdir(directory):
+            return ""
+        prefixes = tuple(prefixes or ())
+        candidates = []
+        for name in os.listdir(directory):
+            if suffix and not name.endswith(suffix):
+                continue
+            if prefixes and not any(name.startswith(prefix) for prefix in prefixes):
+                continue
+            path = os.path.join(directory, name)
+            if os.path.isfile(path):
+                candidates.append(path)
+        if not candidates:
+            return ""
+        return max(candidates, key=os.path.getmtime)
+
+    def _plugin_metadata_payload(self):
+        metadata_path = os.path.join(self.plugin_dir, "metadata.txt")
+        parser = configparser.ConfigParser()
+        parser.read(metadata_path, encoding="utf-8")
+        general = parser["general"] if parser.has_section("general") else {}
+        return {
+            "metadata_path": metadata_path,
+            "name": general.get("name", "Feng Shui GIS"),
+            "version": general.get("version", ""),
+            "qgis_minimum_version": general.get("qgisMinimumVersion", ""),
+            "homepage": general.get("homepage", ""),
+            "repository": general.get("repository", ""),
+            "tracker": general.get("tracker", ""),
+        }
+
+    @staticmethod
+    def _layer_support_summary(layer):
+        if layer is None:
+            return None
+        summary = {"name": "", "source": "", "crs": "", "provider": "", "feature_count": None}
+        try:
+            summary["name"] = str(layer.name())
+        except Exception:
+            pass
+        try:
+            summary["source"] = str(layer.source())
+        except Exception:
+            pass
+        try:
+            summary["crs"] = str(layer.crs().authid())
+        except Exception:
+            pass
+        try:
+            summary["provider"] = str(layer.dataProvider().name())
+        except Exception:
+            pass
+        try:
+            summary["feature_count"] = int(layer.featureCount())
+        except Exception:
+            summary["feature_count"] = None
+        summary["fingerprint"] = hashlib.sha1(
+            json.dumps(summary, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        return summary
+
+    def _selected_layer_support_summary(self):
+        if not self.dock:
+            return {}
+        return {
+            "sites": self._layer_support_summary(
+                self.dock.sites_combo.currentLayer()
+                if hasattr(self.dock, "sites_combo")
+                else None
+            ),
+            "dem": self._layer_support_summary(
+                self.dock.dem_combo.currentLayer()
+                if hasattr(self.dock, "dem_combo")
+                else None
+            ),
+            "water": self._layer_support_summary(
+                self.dock.water_combo.currentLayer()
+                if hasattr(self.dock, "water_combo")
+                else None
+            ),
+        }
+
+    def _project_layer_support_summary(self):
+        summary = []
+        for layer in QgsProject.instance().mapLayers().values():
+            row = self._layer_support_summary(layer)
+            if row is not None:
+                summary.append(row)
+        return summary
+
+    def _latest_support_artifacts(self):
+        report_dir = self._report_dir()
+        latest_report_json = self._latest_prefixed_file(
+            report_dir,
+            (
+                "feng_shui_calibration_",
+                "feng_shui_compare_",
+            ),
+            ".json",
+        )
+        latest_report_md = self._latest_prefixed_file(
+            report_dir,
+            (
+                "feng_shui_calibration_",
+                "feng_shui_compare_",
+            ),
+            ".md",
+        )
+        return {
+            "run_manifest": self._latest_prefixed_file(
+                report_dir,
+                ("feng_shui_run_",),
+                ".json",
+            ),
+            "benchmark_manifest": self._latest_prefixed_file(
+                report_dir,
+                ("feng_shui_benchmark_",),
+                ".json",
+            ),
+            "report_json": latest_report_json,
+            "report_markdown": latest_report_md,
+        }
+
+    def export_support_bundle(self):
+        report_dir = self._report_dir()
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = os.path.join(report_dir, f"support_bundle_{stamp}.zip")
+        artifacts = self._latest_support_artifacts()
+        ui_snapshot = (
+            self.dock.support_bundle_snapshot()
+            if self.dock and hasattr(self.dock, "support_bundle_snapshot")
+            else {}
+        )
+        bundle_manifest = {
+            "bundle_created_at": datetime.now().isoformat(timespec="seconds"),
+            "plugin": self._plugin_metadata_payload(),
+            "ui_snapshot": ui_snapshot,
+            "selected_layers": self._selected_layer_support_summary(),
+            "project_layers": self._project_layer_support_summary(),
+            "latest_artifacts": artifacts,
+            "trust_metadata": dict(ui_snapshot.get("trust_metadata") or {}),
+            "latest_task_summary": dict(ui_snapshot.get("latest_task_summary") or {}),
+            "notes": {
+                "raw_input_policy": (
+                    "Raw DEM and source vectors are not embedded; only references, CRS, "
+                    "feature counts, and fingerprints are included."
+                )
+            },
+        }
+        payload_entries = {
+            "bundle_manifest.json": bundle_manifest,
+            "ui_snapshot.json": bundle_manifest["ui_snapshot"],
+            "selected_layers.json": bundle_manifest["selected_layers"],
+            "project_layers.json": bundle_manifest["project_layers"],
+            "recent_errors.json": list(self._recent_error_records),
+        }
+        file_entries = {
+            "plugin/metadata.txt": os.path.join(self.plugin_dir, "metadata.txt"),
+        }
+        config_dir = os.path.join(self.plugin_dir, "config")
+        if os.path.isdir(config_dir):
+            for name in sorted(os.listdir(config_dir)):
+                if name.endswith(".json"):
+                    file_entries[f"config/{name}"] = os.path.join(config_dir, name)
+        for archive_name, path in (
+            ("reports/latest_run_manifest.json", artifacts.get("run_manifest")),
+            ("reports/latest_benchmark_manifest.json", artifacts.get("benchmark_manifest")),
+            ("reports/latest_report.json", artifacts.get("report_json")),
+            ("reports/latest_report.md", artifacts.get("report_markdown")),
+        ):
+            if path:
+                file_entries[archive_name] = path
+        SupportBundleWriter.write_bundle(
+            output_path,
+            payload_entries=payload_entries,
+            file_entries=file_entries,
+        )
+        message = ui_text(
+            "support_bundle_success_template",
+            self._label_language(),
+            default="Support bundle exported: {path}",
+        ).format(path=output_path)
+        self.iface.messageBar().pushSuccess(tr("plugin_title"), message)
+        if self.dock:
+            self.dock.set_status(message)
+        return output_path
+
+    @staticmethod
+    def _write_json_payload(path, payload):
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        return path
+
+    def _write_run_manifest_snapshot(self, service_name, run_manifest):
+        if not isinstance(run_manifest, dict) or not run_manifest:
+            return ""
+        report_dir = self._report_dir()
+        run_id = str(run_manifest.get("run_id") or "").strip()
+        if not run_id:
+            run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(
+            report_dir,
+            f"feng_shui_run_{service_name}_{run_id}.json",
+        )
+        self._write_json_payload(path, run_manifest)
+        return path
+
+    def _write_benchmark_manifest(
+        self,
+        *,
+        service_name,
+        run_manifest,
+        runtime_seconds,
+        run_manifest_path="",
+        report_json_path="",
+        report_md_path="",
+        notes="",
+    ):
+        if not isinstance(run_manifest, dict) or not run_manifest:
+            return ""
+        run_id = str(run_manifest.get("run_id") or "").strip()
+        if not run_id:
+            run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        payload = BenchmarkManifestWriter.build_manifest(
+            dataset_id=run_id,
+            service_name=service_name,
+            qgis_version=run_manifest.get("qgis_version"),
+            runtime_seconds=runtime_seconds,
+            run_manifest=run_manifest,
+            run_manifest_path=run_manifest_path,
+            report_json_path=report_json_path,
+            report_md_path=report_md_path,
+            notes=notes,
+        )
+        path = os.path.join(
+            self._report_dir(),
+            f"feng_shui_benchmark_{service_name}_{run_id}.json",
+        )
+        BenchmarkManifestWriter.write_json(path, payload)
+        QgsMessageLog.logMessage(
+            f"Saved benchmark manifest: {path}",
+            self._LOG_TAG,
+            level=Qgis.Info,
+        )
+        return path
 
     def run_analysis(
         self,
@@ -200,32 +700,28 @@ class FengShuiGisPlugin:
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
 
-        try:
-            context = QgsProcessingContext()
-            context.setProject(QgsProject.instance())
-            feedback = QgsProcessingFeedback()
-            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
-            prepared_water = water_layer
-            auto_hydro_layer = None
-            if prepared_water is None and auto_hydro:
-                auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
-                if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
-                    analyzer.style_hydro_network(auto_hydro_layer)
-                    auto_hydro_layer.setName(
-                        self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
-                    )
-                    QgsProject.instance().addMapLayer(auto_hydro_layer)
-                    prepared_water = auto_hydro_layer
+        request = AnalysisRequest(
+            site_layer=site_layer,
+            dem_layer=dem_layer,
+            water_layer=water_layer,
+            hemisphere=hemisphere,
+            profile_key=profile_key,
+            culture_key=culture_key,
+            period_key=period_key,
+            auto_hydro=auto_hydro,
+        )
 
-            output_layer = analyzer.run(
-                site_layer,
-                dem_layer,
-                water_layer=prepared_water,
-                hemisphere=hemisphere,
-                profile_key=profile_key,
-                culture_key=culture_key,
-                period_key=period_key,
-            )
+        def _execute():
+            return self._analysis_service.run_analysis(request)
+
+        def _on_success(result, task):
+            output_layer = result.analysis_layer
+            auto_hydro_layer = result.auto_hydro_layer
+            if auto_hydro_layer is not None:
+                auto_hydro_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
+                )
+                QgsProject.instance().addMapLayer(auto_hydro_layer)
             output_layer.setName(self._output_layer_name(site_layer.name(), "analysis", label_lang))
             mountain_updated = 0
             if mountain_enabled:
@@ -237,31 +733,36 @@ class FengShuiGisPlugin:
                 )
             QgsProject.instance().addMapLayer(output_layer)
             self._configure_layer_click_info(output_layer, label_lang)
-
-        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
-            message = self._runtime_error_message("Analysis failed", exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
-        except Exception as exc:  # pylint: disable=broad-except
-            message = self._runtime_error_message(tr("warn_failed"), exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
-
-        self.iface.messageBar().pushSuccess(
-            tr("plugin_title"),
-            f"{tr('ok_finished')}: {output_layer.name()}",
-        )
-        if mountain_enabled and mountain_updated > 0:
-            self.iface.messageBar().pushInfo(
-                tr("plugin_title"),
-                self._mountain_attached_message(mountain_updated),
+            run_manifest_path = self._write_run_manifest_snapshot(
+                "analysis",
+                result.run_manifest,
             )
-        if self.dock:
-            self.dock.set_status(tr("status_done"))
+            self._write_benchmark_manifest(
+                service_name="analysis",
+                run_manifest=result.run_manifest,
+                runtime_seconds=getattr(task, "_runtime_seconds", 0.0),
+                run_manifest_path=run_manifest_path,
+                notes="Auto-saved from QGIS UI analysis run.",
+            )
+            self.iface.messageBar().pushSuccess(
+                tr("plugin_title"),
+                f"{tr('ok_finished')}: {output_layer.name()}",
+            )
+            if mountain_enabled and mountain_updated > 0:
+                self.iface.messageBar().pushInfo(
+                    tr("plugin_title"),
+                    self._mountain_attached_message(mountain_updated),
+                )
+            if self.dock:
+                self.dock.set_status(tr("status_done"))
+
+        self._run_background_task(
+            "Run feng shui analysis",
+            _execute,
+            _on_success,
+            failure_code=FengShuiErrorCode.ANALYSIS_FAILURE,
+            failure_context="Analysis failed",
+        )
 
     def run_term_extraction(
         self,
@@ -294,55 +795,42 @@ class FengShuiGisPlugin:
             return
         self._warn_if_crs_mismatch(dem_layer, water_layer)
 
-        try:
-            context = QgsProcessingContext()
-            context.setProject(QgsProject.instance())
-            feedback = QgsProcessingFeedback()
-            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
+        def _execute():
+            request = TermExtractionRequest(
+                dem_layer=dem_layer,
+                water_layer=water_layer,
+                hemisphere=hemisphere,
+                profile_key=profile_key,
+                culture_key=culture_key,
+                period_key=period_key,
+                auto_hydro=auto_hydro,
+                include_terms=include_terms,
+            )
+            return self._analysis_service.run_term_extraction(request)
 
-            ridge_layer = analyzer.build_ridge_network(dem_layer)
-            ridge_layer.setName(self._output_layer_name(dem_layer.name(), "ridge", label_lang))
-            analyzer.style_ridge_network(ridge_layer)
+        def _on_success(result, task):
+            if not result:
+                return
+            ridge_layer = result.ridge_layer
+            hydro_layer = result.hydro_layer
+            terms_layer = result.terms_layer
+            line_layer = result.term_links_layer
 
-            hydro_reference_layer = water_layer
-            hydro_layer = None
-            if water_layer is not None and self._is_line_layer(water_layer):
-                hydro_layer = self._copy_vector_layer(
-                    water_layer,
-                    self._output_layer_name(dem_layer.name(), "hydro", label_lang),
+            ridge_layer.setName(
+                self._output_layer_name(dem_layer.name(), "ridge", label_lang)
+            )
+            if hydro_layer is not None:
+                hydro_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "hydro", label_lang)
                 )
-                if hydro_layer and hydro_layer.featureCount() > 0:
-                    analyzer.style_hydro_network(hydro_layer)
-                else:
-                    hydro_layer = None
-            elif auto_hydro:
-                hydro_layer = analyzer.build_hydro_network(dem_layer)
-                if hydro_layer and hydro_layer.featureCount() > 0:
-                    hydro_layer.setName(
-                        self._output_layer_name(dem_layer.name(), "hydro", label_lang)
-                    )
-                    analyzer.style_hydro_network(hydro_layer)
-                    if hydro_reference_layer is None:
-                        hydro_reference_layer = hydro_layer
-                else:
-                    hydro_layer = None
-
-            terms_layer = None
-            line_layer = None
-            if include_terms:
-                terms_layer = analyzer.extract_terms(
-                    dem_layer,
-                    water_layer=hydro_reference_layer,
-                    hemisphere=hemisphere,
-                    profile_key=profile_key,
-                    culture_key=culture_key,
-                    period_key=period_key,
+            if terms_layer is not None:
+                terms_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "terms", label_lang)
                 )
-                terms_layer.setName(self._output_layer_name(dem_layer.name(), "terms", label_lang))
-                line_layer = analyzer.build_term_links(terms_layer)
-                line_layer.setName(self._output_layer_name(dem_layer.name(), "term_links", label_lang))
-                analyzer.style_term_points(terms_layer)
-                analyzer.style_term_links(line_layer)
+            if line_layer is not None:
+                line_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "term_links", label_lang)
+                )
 
             layers_top_to_bottom = []
             if include_terms and terms_layer:
@@ -361,37 +849,46 @@ class FengShuiGisPlugin:
                     preferred_language=mountain_lang,
                 )
             self._insert_output_layers(layers_top_to_bottom, label_lang)
-        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
-            message = self._runtime_error_message("Landscape extraction failed", exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
-        except Exception as exc:  # pylint: disable=broad-except
-            message = self._runtime_error_message(tr("warn_failed"), exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
 
-        created = [f"{ridge_layer.name()} ({ridge_layer.featureCount()})"]
-        if hydro_layer:
-            created.insert(0, f"{hydro_layer.name()} ({hydro_layer.featureCount()})")
-        if include_terms and line_layer and terms_layer:
-            created.insert(0, f"{line_layer.name()} ({line_layer.featureCount()})")
-            created.insert(0, f"{terms_layer.name()} ({terms_layer.featureCount()})")
-        message_key = "ok_terms_finished" if include_terms else "ok_landscape_finished"
-        self.iface.messageBar().pushSuccess(
-            tr("plugin_title"),
-            f"{tr(message_key)}: " + ", ".join(created),
-        )
-        if mountain_enabled and mountain_total > 0:
-            self.iface.messageBar().pushInfo(
-                tr("plugin_title"),
-                self._mountain_attached_message(mountain_total),
+            created = [f"{ridge_layer.name()} ({ridge_layer.featureCount()})"]
+            if hydro_layer:
+                created.insert(0, f"{hydro_layer.name()} ({hydro_layer.featureCount()})")
+            if include_terms and line_layer and terms_layer:
+                created.insert(0, f"{line_layer.name()} ({line_layer.featureCount()})")
+                created.insert(0, f"{terms_layer.name()} ({terms_layer.featureCount()})")
+            message_key = (
+                "ok_terms_finished" if include_terms else "ok_landscape_finished"
             )
-        if self.dock:
-            self.dock.set_status(tr("status_done"))
+            self.iface.messageBar().pushSuccess(
+                tr("plugin_title"),
+                f"{tr(message_key)}: " + ", ".join(created),
+            )
+            if mountain_enabled and mountain_total > 0:
+                self.iface.messageBar().pushInfo(
+                    tr("plugin_title"),
+                    self._mountain_attached_message(mountain_total),
+                )
+            run_manifest_path = self._write_run_manifest_snapshot(
+                "term_extraction",
+                result.run_manifest,
+            )
+            self._write_benchmark_manifest(
+                service_name="term_extraction",
+                run_manifest=result.run_manifest,
+                runtime_seconds=getattr(task, "_runtime_seconds", 0.0),
+                run_manifest_path=run_manifest_path,
+                notes="Auto-saved from QGIS UI term extraction run.",
+            )
+            if self.dock:
+                self.dock.set_status(tr("status_done"))
+
+        self._run_background_task(
+            "Run feng shui term extraction",
+            _execute,
+            _on_success,
+            failure_code=FengShuiErrorCode.TERM_EXTRACTION_FAILURE,
+            failure_context="Term extraction failed",
+        )
 
     @staticmethod
     def _score_stats(layer):
@@ -417,30 +914,156 @@ class FengShuiGisPlugin:
     def _pairwise_score_delta(base_layer, compare_layer):
         if base_layer is None or compare_layer is None:
             return None
-        base_scores = []
-        compare_scores = []
+        base_scores = {}
+        compare_scores = {}
         for feature in base_layer.getFeatures():
+            feature_uid = FengShuiGisPlugin._feature_uid(feature)
             try:
-                base_scores.append(float(feature["fs_score"]))
+                base_scores[feature_uid] = float(feature["fs_score"])
             except (KeyError, TypeError, ValueError):
                 continue
         for feature in compare_layer.getFeatures():
+            feature_uid = FengShuiGisPlugin._feature_uid(feature)
             try:
-                compare_scores.append(float(feature["fs_score"]))
+                compare_scores[feature_uid] = float(feature["fs_score"])
             except (KeyError, TypeError, ValueError):
                 continue
-        pair_count = min(len(base_scores), len(compare_scores))
-        if pair_count <= 0:
+        shared_uids = set(base_scores.keys()) & set(compare_scores.keys())
+        if not shared_uids:
             return None
         deltas = [
-            compare_scores[index] - base_scores[index] for index in range(pair_count)
+            compare_scores[feature_uid] - base_scores[feature_uid]
+            for feature_uid in shared_uids
         ]
+        if not deltas:
+            return None
         return {
-            "count": pair_count,
-            "mean_delta": sum(deltas) / pair_count,
+            "count": len(deltas),
+            "mean_delta": sum(deltas) / len(deltas),
             "max_gain": max(deltas),
             "max_drop": min(deltas),
         }
+
+    @staticmethod
+    def _validate_compare_feature_contract(base_layer, compare_layer):
+        return validate_compare_feature_contract(
+            base_layer,
+            compare_layer,
+            FengShuiGisPlugin._feature_uid,
+        )
+
+    @staticmethod
+    def _validate_compare_top_change_contract(base_layer, compare_layer, top_changes):
+        return validate_compare_top_change_contract(
+            base_layer,
+            compare_layer,
+            top_changes,
+            FengShuiGisPlugin._feature_uid,
+        )
+
+    @staticmethod
+    def _validate_calibration_feature_contract(calibrated_layer, report=None):
+        if calibrated_layer is None:
+            return {
+                "ok": False,
+                "message": "Calibrated layer is missing.",
+                "count": 0,
+            }
+
+        feature_uids = []
+        for feature in calibrated_layer.getFeatures():
+            feature_uid = str(FengShuiGisPlugin._feature_uid(feature))
+            if feature_uid:
+                feature_uids.append(feature_uid)
+
+        if not feature_uids:
+            return {
+                "ok": False,
+                "message": "Calibrated layer does not expose feature_uid.",
+                "count": 0,
+            }
+
+        unique_count = len(set(feature_uids))
+        if unique_count != len(feature_uids):
+            return {
+                "ok": False,
+                "message": "Duplicate feature_uid values detected in calibrated layer.",
+                "count": unique_count,
+            }
+
+        return {
+            "ok": True,
+            "message": "",
+            "count": unique_count,
+        }
+
+    @staticmethod
+    def _normalize_signature_value(value):
+        if value is None:
+            return ""
+        if isinstance(value, float):
+            return f"{value:.12g}"
+        if isinstance(value, (list, tuple, dict)):
+            return json.dumps(value, sort_keys=True, ensure_ascii=False)
+        return str(value)
+
+    @classmethod
+    def _signature_from_inputs(cls, geometry, attributes, sequence=None):
+        payload = {
+            "sequence": int(sequence) if sequence is not None else None,
+            "geometry": "",
+            "attributes": {},
+        }
+        if geometry is not None:
+            try:
+                wkb_bytes = geometry.asWkb()
+            except Exception:
+                wkb_bytes = None
+            if wkb_bytes:
+                payload["geometry"] = wkb_bytes.hex()
+        if attributes:
+            for key in sorted(attributes):
+                payload["attributes"][str(key)] = cls._normalize_signature_value(
+                    attributes[key]
+                )
+        return hashlib.sha1(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+
+    @staticmethod
+    def _feature_uid(feature):
+        if feature is None:
+            return ""
+        field_names = feature.fields().names()
+        lowered = {name.lower(): name for name in field_names}
+        for candidate in ("fs_uid", "feature_uid", "cal_uid", "cal_id"):
+            if candidate in lowered:
+                try:
+                    value = feature[lowered[candidate]]
+                except (KeyError, TypeError, ValueError):
+                    continue
+                text = str(value or "").strip()
+                if text:
+                    return text
+
+        attributes = {}
+        excluded = {"fid", "id", "objectid", "globalid", "uuid"}
+        for name in field_names:
+            lowered_name = str(name).lower()
+            if lowered_name.startswith("fs_"):
+                continue
+            if lowered_name in excluded:
+                continue
+            try:
+                attributes[name] = feature[name]
+            except (TypeError, ValueError, KeyError):
+                continue
+
+        geometry = feature.geometry() if feature.hasGeometry() else None
+        signature = FengShuiGisPlugin._signature_from_inputs(geometry, attributes)
+        if signature:
+            return f"geom:{signature}"
+        return f"fid:{int(feature.id())}"
 
     @staticmethod
     def _feature_display_name(feature):
@@ -466,6 +1089,9 @@ class FengShuiGisPlugin:
                 text = str(value or "").strip()
                 if text:
                     return text
+        uid = FengShuiGisPlugin._feature_uid(feature)
+        if uid:
+            return uid
         return f"fid:{int(feature.id())}"
 
     @staticmethod
@@ -504,70 +1130,47 @@ class FengShuiGisPlugin:
         return "neutral"
 
     def _top_score_changes(self, base_layer, compare_layer, limit=None):
-        if base_layer is None or compare_layer is None:
-            return []
         if limit is None:
             limit = self._COMPARE_TOP_CHANGE_LIMIT
-        base_by_id = {}
-        compare_by_id = {}
-        for feature in base_layer.getFeatures():
-            try:
-                score = float(feature["fs_score"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            feature_id = int(feature.id())
-            base_by_id[feature_id] = {
-                "label": self._feature_display_name(feature),
-                "score": score,
-                "reason": self._feature_reason_text(feature),
-            }
-        for feature in compare_layer.getFeatures():
-            try:
-                score = float(feature["fs_score"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            feature_id = int(feature.id())
-            compare_by_id[feature_id] = {
-                "label": self._feature_display_name(feature),
-                "score": score,
-                "reason": self._feature_reason_text(feature),
-            }
-        shared_ids = sorted(set(base_by_id.keys()) & set(compare_by_id.keys()))
-        rows = []
-        for feature_id in shared_ids:
-            base_entry = base_by_id[feature_id]
-            compare_entry = compare_by_id[feature_id]
-            delta = compare_entry["score"] - base_entry["score"]
-            rows.append(
-                {
-                    "feature_id": feature_id,
-                    "label": compare_entry.get("label") or base_entry.get("label") or f"fid:{feature_id}",
-                    "base_score": base_entry["score"],
-                    "compare_score": compare_entry["score"],
-                    "delta": delta,
-                    "base_reason": base_entry.get("reason", ""),
-                    "compare_reason": compare_entry.get("reason", ""),
-                }
-            )
-        rows.sort(
-            key=lambda item: (abs(float(item.get("delta", 0.0))), float(item.get("delta", 0.0))),
-            reverse=True,
+        return compare_top_score_changes(
+            base_layer,
+            compare_layer,
+            feature_uid_resolver=self._feature_uid,
+            label_resolver=self._feature_display_name,
+            reason_resolver=self._feature_reason_text,
+            limit=limit,
         )
-        return rows[: max(1, int(limit))]
 
     @staticmethod
-    def _feature_ids_from_change_rows(change_rows):
-        feature_ids = []
+    def _feature_uids_from_change_rows(change_rows):
+        feature_uids = []
         for row in change_rows or []:
-            try:
-                feature_id = int(row.get("feature_id"))
-            except (TypeError, ValueError, AttributeError):
+            feature_uid = row.get("feature_uid")
+            if not feature_uid:
                 continue
-            feature_ids.append(feature_id)
-        return feature_ids
+            feature_uids.append(str(feature_uid))
+        return feature_uids
+
+    @staticmethod
+    def _feature_uids_to_fids(layer, feature_uids):
+        if layer is None:
+            return []
+        target_uids = {str(item) for item in feature_uids}
+        resolved = {}
+        for feature in layer.getFeatures():
+            uid = str(FengShuiGisPlugin._feature_uid(feature))
+            if uid in target_uids:
+                resolved[uid] = int(feature.id())
+        selected = []
+        for uid in feature_uids:
+            fid = resolved.get(str(uid))
+            if fid is not None:
+                selected.append(fid)
+        return selected
 
     def _select_top_changed_features(self, base_layer, compare_layer, change_rows):
-        feature_ids = self._feature_ids_from_change_rows(change_rows)
+        feature_uids = self._feature_uids_from_change_rows(change_rows)
+        feature_ids = self._feature_uids_to_fids(compare_layer, feature_uids)
         if not feature_ids:
             return 0
         selected_count = 0
@@ -576,18 +1179,31 @@ class FengShuiGisPlugin:
                 continue
             try:
                 layer.removeSelection()
-            except Exception:  # pylint: disable=broad-except
-                pass
+            except (RuntimeError, TypeError, AttributeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to clear selection on layer {getattr(layer, 'name', lambda: layer)()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
             try:
                 layer.selectByIds(feature_ids)
                 selected_count = max(selected_count, len(layer.selectedFeatureIds()))
-            except Exception:  # pylint: disable=broad-except
+            except (RuntimeError, TypeError, AttributeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to select changed features on layer {getattr(layer, 'name', lambda: layer)()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
                 continue
         if compare_layer is not None:
             try:
                 self.iface.setActiveLayer(compare_layer)
-            except Exception:  # pylint: disable=broad-except
-                pass
+            except (RuntimeError, AttributeError, TypeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to activate compare layer {compare_layer.name()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
         return selected_count
 
     def _zoom_to_selected_features(self, layer):
@@ -595,14 +1211,24 @@ class FengShuiGisPlugin:
             return False
         try:
             selected_ids = layer.selectedFeatureIds()
-        except Exception:  # pylint: disable=broad-except
+        except (RuntimeError, AttributeError, TypeError) as exc:
+            QgsMessageLog.logMessage(
+                f"Failed to read selected feature ids from layer {layer.name()}: {type(exc).__name__}: {exc}",
+                self._LOG_TAG,
+                level=Qgis.Warning,
+            )
             return False
         if not selected_ids:
             return False
         try:
             self.iface.mapCanvas().zoomToSelected(layer)
             return True
-        except Exception:  # pylint: disable=broad-except
+        except (RuntimeError, AttributeError, TypeError) as exc:
+            QgsMessageLog.logMessage(
+                f"Zoom-to-selected failed for layer {layer.name()}: {type(exc).__name__}: {exc}",
+                self._LOG_TAG,
+                level=Qgis.Warning,
+            )
             return False
 
     def _export_top_changed_features_layer(
@@ -616,11 +1242,10 @@ class FengShuiGisPlugin:
             return None
         feature_map = {}
         for row in top_changes:
-            try:
-                feature_id = int(row.get("feature_id"))
-            except (TypeError, ValueError, AttributeError):
+            feature_uid = row.get("feature_uid")
+            if not feature_uid:
                 continue
-            feature_map[feature_id] = row
+            feature_map[str(feature_uid)] = row
         if not feature_map:
             return None
 
@@ -644,6 +1269,7 @@ class FengShuiGisPlugin:
         provider.addAttributes(
             [
                 QgsField("cmp_label", QVariant.String, "string", 120),
+                QgsField("cmp_uid", QVariant.String, "string", 80),
                 QgsField("cmp_base", QVariant.Double, "double", 7, 4),
                 QgsField("cmp_score", QVariant.Double, "double", 7, 4),
                 QgsField("cmp_delta", QVariant.Double, "double", 7, 4),
@@ -658,11 +1284,9 @@ class FengShuiGisPlugin:
         new_features = []
         output_fields = export_layer.fields()
         original_field_names = compare_layer.fields().names()
-        for source_feature in compare_layer.getFeatures(
-            QgsFeatureRequest().setFilterFids(list(feature_map.keys()))
-        ):
-            feature_id = int(source_feature.id())
-            row = feature_map.get(feature_id)
+        for source_feature in compare_layer.getFeatures():
+            feature_uid = str(self._feature_uid(source_feature))
+            row = feature_map.get(feature_uid)
             if row is None:
                 continue
             new_feature = QgsFeature(output_fields)
@@ -673,6 +1297,7 @@ class FengShuiGisPlugin:
                 except (KeyError, TypeError, ValueError):
                     continue
             new_feature["cmp_label"] = str(row.get("label", ""))
+            new_feature["cmp_uid"] = str(row.get("feature_uid", ""))
             new_feature["cmp_base"] = float(row.get("base_score", 0.0))
             new_feature["cmp_score"] = float(row.get("compare_score", 0.0))
             new_feature["cmp_delta"] = float(row.get("delta", 0.0))
@@ -721,85 +1346,63 @@ class FengShuiGisPlugin:
         json_path = os.path.join(report_dir, f"{base_name}.json")
         md_path = os.path.join(report_dir, f"{base_name}.md")
         text_lang = self._label_language()
+        trust_metadata = self._current_trust_metadata(profile_key=compare_profile_key)
 
-        payload = {
-            "timestamp": stamp,
-            "site_layer_name": site_layer_name,
-            "base_profile_key": base_profile_key,
-            "compare_profile_key": compare_profile_key,
-            "base_stats": dict(base_stats or {}),
-            "compare_stats": dict(compare_stats or {}),
-            "delta_stats": dict(delta_stats or {}),
-            "top_changes": list(top_changes or []),
-            "change_layer_name": change_layer_name,
-        }
+        payload = CompareReportWriter.payload(
+            stamp=stamp,
+            site_layer_name=site_layer_name,
+            base_profile_key=base_profile_key,
+            compare_profile_key=compare_profile_key,
+            base_stats=base_stats,
+            compare_stats=compare_stats,
+            delta_stats=delta_stats,
+            top_changes=top_changes,
+            change_layer_name=change_layer_name,
+            reason_excerpt_limit=self._COMPARE_REPORT_REASON_EXCERPT,
+            trust_metadata=trust_metadata,
+        )
         with open(json_path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
 
-        top_change_rows = []
-        for row in top_changes or []:
-            reason_compare = ui_text(
-                "compare_report_reason_compare_template",
-                text_lang,
-                default="Base: {base} / Calibrated: {calibrated}",
-            ).format(
-                base=self._reason_excerpt(
-                    row.get("base_reason", ""),
-                    self._COMPARE_REPORT_REASON_EXCERPT,
-                ),
-                calibrated=self._reason_excerpt(
-                    row.get("compare_reason", ""),
-                    self._COMPARE_REPORT_REASON_EXCERPT,
-                ),
-            )
-            top_change_rows.append(
-                [
-                    row.get("label", ""),
-                    f"{float(row.get('base_score', 0.0)):.4f}",
-                    f"{float(row.get('compare_score', 0.0)):.4f}",
-                    f"{float(row.get('delta', 0.0)):+.4f}",
-                    reason_compare,
-                ]
-            )
-
-        if top_change_rows:
-            top_change_table = self._markdown_table(
-                (
-                    [
-                        ui_text("compare_report_feature_label", text_lang, default="Feature"),
-                        ui_text("compare_report_base_label", text_lang, default="Base"),
-                        ui_text("compare_report_calibrated_label", text_lang, default="Calibrated"),
-                        ui_text("compare_report_delta_label", text_lang, default="Delta"),
-                        ui_text("compare_report_reason_compare_label", text_lang, default="Reason compare"),
-                    ]
-                ),
-                top_change_rows,
-            )
-        else:
-            top_change_table = ui_text(
-                "compare_report_no_top_changes",
-                text_lang,
-                default="No top-changed features were recorded.",
-            )
-
-        markdown = (
-            f"# {ui_text('compare_report_title_template', text_lang, default='Feng Shui Comparison Report ({stamp})').format(stamp=stamp)}\n\n"
-            f"- {ui_text('compare_report_site_layer_label', text_lang, default='Site layer')}: {site_layer_name}\n"
-            f"- {ui_text('compare_report_base_profile_label', text_lang, default='Base profile')}: {base_profile_key}\n"
-            f"- {ui_text('compare_report_calibrated_profile_label', text_lang, default='Calibrated profile')}: {compare_profile_key}\n"
-            f"- {ui_text('compare_report_change_layer_label', text_lang, default='Change layer')}: {change_layer_name or 'n/a'}\n\n"
-            f"## {ui_text('compare_report_summary_title', text_lang, default='Summary statistics')}\n\n"
-            f"- {ui_text('compare_report_base_mean_label', text_lang, default='Base mean')}: {float(base_stats.get('mean', 0.0) if isinstance(base_stats, dict) else 0.0):.4f}\n"
-            f"- {ui_text('compare_report_calibrated_mean_label', text_lang, default='Calibrated mean')}: {float(compare_stats.get('mean', 0.0) if isinstance(compare_stats, dict) else 0.0):.4f}\n"
-            f"- {ui_text('compare_report_mean_delta_label', text_lang, default='Mean score delta')}: {float(delta_stats.get('mean_delta', 0.0) if isinstance(delta_stats, dict) else 0.0):+.4f}\n"
-            f"- {ui_text('compare_report_max_gain_label', text_lang, default='Max gain')}: {float(delta_stats.get('max_gain', 0.0) if isinstance(delta_stats, dict) else 0.0):+.4f}\n"
-            f"- {ui_text('compare_report_max_drop_label', text_lang, default='Max drop')}: {float(delta_stats.get('max_drop', 0.0) if isinstance(delta_stats, dict) else 0.0):+.4f}\n\n"
-            f"## {ui_text('compare_report_top_changes_title', text_lang, default='Top changed features')}\n\n"
-            f"{top_change_table}\n"
+        markdown = CompareReportWriter.build_markdown(
+            stamp=stamp,
+            text_lang=text_lang,
+            site_layer_name=site_layer_name,
+            base_profile_key=base_profile_key,
+            compare_profile_key=compare_profile_key,
+            base_stats=base_stats,
+            compare_stats=compare_stats,
+            delta_stats=delta_stats,
+            top_changes=top_changes,
+            change_layer_name=change_layer_name,
+            reason_excerpt_limit=self._COMPARE_REPORT_REASON_EXCERPT,
+            trust_metadata=trust_metadata,
         )
         with open(md_path, "w", encoding="utf-8") as handle:
             handle.write(markdown)
         return json_path, md_path
+
+    def _current_trust_metadata(self, profile_key="", reported_metric_phase=""):
+        from .trust_metadata import build_trust_metadata
+
+        culture_key = ""
+        advanced_context_enabled = False
+        if self.dock is not None:
+            try:
+                culture_key, _period_key = self.dock._effective_context_keys()
+            except Exception:
+                culture_key = ""
+            try:
+                advanced_context_enabled = bool(self.dock._advanced_context_enabled())
+            except Exception:
+                advanced_context_enabled = False
+        return build_trust_metadata(
+            self._label_language(),
+            advanced_context_enabled=advanced_context_enabled,
+            culture_key=culture_key,
+            profile_key=profile_key,
+            reported_metric_phase=reported_metric_phase,
+        )
 
     def _style_compare_change_layer(self, layer, label_lang):
         if layer is None or not isinstance(layer, QgsVectorLayer):
@@ -813,12 +1416,20 @@ class FengShuiGisPlugin:
             symbol.setOpacity(0.88)
             try:
                 symbol.setWidth(0.9)
-            except AttributeError:
-                pass
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to set compare style width on layer {layer.name()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
             try:
                 symbol.setSize(4.6)
-            except AttributeError:
-                pass
+            except (AttributeError, TypeError, RuntimeError) as exc:
+                QgsMessageLog.logMessage(
+                    f"Failed to set compare style size on layer {layer.name()}: {type(exc).__name__}: {exc}",
+                    self._LOG_TAG,
+                    level=Qgis.Warning,
+                )
             categories.append(
                 QgsRendererCategory(
                     value,
@@ -863,145 +1474,23 @@ class FengShuiGisPlugin:
                 default="Base vs calibrated quick comparison",
             )
         )
-        delta_html = ""
-        if isinstance(delta_stats, dict):
-            delta_label = ui_text(
-                "profile_compare_delta_label",
-                text_lang,
-                default="Mean score delta",
-            )
-            gain_label = ui_text(
-                "profile_compare_max_gain_label",
-                text_lang,
-                default="Max gain",
-            )
-            drop_label = ui_text(
-                "profile_compare_max_drop_label",
-                text_lang,
-                default="Max drop",
-            )
-            delta_html = (
-                f"<p><b>{delta_label}</b>: {delta_stats.get('mean_delta', 0.0):+.4f}<br/>"
-                f"<b>{gain_label}</b>: {delta_stats.get('max_gain', 0.0):+.4f}<br/>"
-                f"<b>{drop_label}</b>: {delta_stats.get('max_drop', 0.0):+.4f}</p>"
-            )
-        top_change_html = ""
-        if top_changes:
-            header_cells = (
-                f"<th>{escape(ui_text('profile_compare_feature_label', text_lang, default='Feature'))}</th>"
-                f"<th>{escape(ui_text('profile_compare_base_short_label', text_lang, default='Base'))}</th>"
-                f"<th>{escape(ui_text('profile_compare_calibrated_short_label', text_lang, default='Calibrated'))}</th>"
-                f"<th>{escape(ui_text('profile_compare_delta_short_label', text_lang, default='Delta'))}</th>"
-            )
-            row_html = []
-            base_reason_label = ui_text(
-                "profile_compare_base_reason_label",
-                text_lang,
-                default="Base",
-            )
-            compare_reason_label = ui_text(
-                "profile_compare_calibrated_reason_label",
-                text_lang,
-                default="Calibrated",
-            )
-            for row in top_changes:
-                base_reason_text = self._reason_excerpt(row.get("base_reason", ""), limit=88)
-                compare_reason_text = self._reason_excerpt(row.get("compare_reason", ""), limit=88)
-                reason_html = (
-                    f"<div style='font-size:11px;color:#5f5646;'>"
-                    f"{escape(base_reason_label)}: {escape(base_reason_text or '-')}<br/>"
-                    f"{escape(compare_reason_label)}: {escape(compare_reason_text or '-')}"
-                    f"</div>"
-                )
-                row_html.append(
-                    "<tr>"
-                    f"<td>{escape(str(row.get('label', '')))}{reason_html}</td>"
-                    f"<td>{float(row.get('base_score', 0.0)):.4f}</td>"
-                    f"<td>{float(row.get('compare_score', 0.0)):.4f}</td>"
-                    f"<td>{float(row.get('delta', 0.0)):+.4f}</td>"
-                    "</tr>"
-                )
-            title = (
-                ui_text(
-                    "profile_compare_top_changes_title",
-                    text_lang,
-                    default="Top changed features",
-                )
-            )
-            selection_note = (
-                (
-                    "<p><b>"
-                    + escape(
-                        ui_text(
-                            "profile_compare_auto_selected_template",
-                            text_lang,
-                            default="Auto-selected: selected {count} top changed features on the map.",
-                        ).format(count=selected_change_count)
-                    )
-                    + "</b></p>"
-                )
-                if selected_change_count > 0
-                else ""
-            )
-            zoom_note = (
-                (
-                    "<p><b>"
-                    + escape(
-                        ui_text(
-                            "profile_compare_auto_zoom_note",
-                            text_lang,
-                            default="Auto-zoom: moved to the selected calibrated features.",
-                        )
-                    )
-                    + "</b></p>"
-                )
-                if zoom_applied
-                else ""
-            )
-            export_note = (
-                (
-                    f"<p><b>{escape(ui_text('profile_compare_change_layer_label', text_lang, default='Change layer'))}</b>: "
-                    f"{escape(change_layer_name)}</p>"
-                )
-                if change_layer_name
-                else ""
-            )
-            report_note = (
-                f"<p><b>{escape(ui_text('profile_compare_json_label', text_lang, default='Compare JSON'))}</b>: {escape(json_path)}<br/>"
-                f"<b>{escape(ui_text('profile_compare_markdown_label', text_lang, default='Compare Markdown'))}</b>: {escape(md_path)}</p>"
-            )
-            top_change_html = (
-                f"<h4>{escape(title)}</h4>"
-                f"{selection_note}"
-                f"{zoom_note}"
-                f"{export_note}"
-                f"{report_note}"
-                "<table border='1' cellspacing='0' cellpadding='4'>"
-                f"<thead><tr>{header_cells}</tr></thead>"
-                f"<tbody>{''.join(row_html)}</tbody>"
-                "</table>"
-            )
-        html = (
-            f"<h3>{escape(ui_text('profile_compare_heading_template', text_lang, default='{base} vs {calibrated}').format(base=base_profile_key, calibrated=compare_profile_key))}</h3>"
-            f"<p><b>{escape(ui_text('profile_compare_base_layer_label', text_lang, default='Base layer'))}</b>: {escape(base_layer_name)}<br/>"
-            f"<b>{escape(ui_text('profile_compare_calibrated_layer_label', text_lang, default='Calibrated layer'))}</b>: {escape(compare_layer_name)}</p>"
-            f"<table border='1' cellspacing='0' cellpadding='4'>"
-            f"<thead><tr>"
-            f"<th>{escape(ui_text('profile_compare_profile_label', text_lang, default='Profile'))}</th>"
-            f"<th>{escape(ui_text('profile_compare_count_label', text_lang, default='Count'))}</th>"
-            f"<th>{escape(ui_text('profile_compare_mean_label', text_lang, default='Mean'))}</th>"
-            f"<th>{escape(ui_text('profile_compare_min_label', text_lang, default='Min'))}</th>"
-            f"<th>{escape(ui_text('profile_compare_max_label', text_lang, default='Max'))}</th>"
-            f"</tr></thead><tbody>"
-            f"<tr><td>{escape(str(base_profile_key))}</td><td>{base_stats.get('count', 0)}</td>"
-            f"<td>{base_stats.get('mean', 0.0):.4f}</td><td>{base_stats.get('min', 0.0):.4f}</td>"
-            f"<td>{base_stats.get('max', 0.0):.4f}</td></tr>"
-            f"<tr><td>{escape(str(compare_profile_key))}</td><td>{compare_stats.get('count', 0)}</td>"
-            f"<td>{compare_stats.get('mean', 0.0):.4f}</td><td>{compare_stats.get('min', 0.0):.4f}</td>"
-            f"<td>{compare_stats.get('max', 0.0):.4f}</td></tr>"
-            f"</tbody></table>"
-            f"{delta_html}"
-            f"{top_change_html}"
+        html = CompareReportWriter.build_popup_html(
+            text_lang=text_lang,
+            base_profile_key=base_profile_key,
+            compare_profile_key=compare_profile_key,
+            base_stats=base_stats,
+            compare_stats=compare_stats,
+            delta_stats=delta_stats,
+            top_changes=top_changes,
+            selected_change_count=selected_change_count,
+            zoom_applied=zoom_applied,
+            change_layer_name=change_layer_name,
+            json_path=json_path,
+            md_path=md_path,
+            base_layer_name=base_layer_name,
+            compare_layer_name=compare_layer_name,
+            reason_excerpt_limit=88,
+            trust_metadata=self._current_trust_metadata(profile_key=compare_profile_key),
         )
         self._compare_browser.setHtml(html)
         self._compare_dialog.show()
@@ -1046,40 +1535,54 @@ class FengShuiGisPlugin:
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
 
-        try:
-            context = QgsProcessingContext()
-            context.setProject(QgsProject.instance())
-            feedback = QgsProcessingFeedback()
-            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
-            prepared_water = water_layer
-            if prepared_water is None and auto_hydro:
-                auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
-                if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
-                    analyzer.style_hydro_network(auto_hydro_layer)
-                    auto_hydro_layer.setName(
-                        self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
-                    )
-                    QgsProject.instance().addMapLayer(auto_hydro_layer)
-                    prepared_water = auto_hydro_layer
+        def _execute():
+            request = CompareRequest(
+                site_layer=site_layer,
+                dem_layer=dem_layer,
+                water_layer=water_layer,
+                hemisphere=hemisphere,
+                base_profile_key=base_profile_key,
+                compare_profile_key=compare_profile_key,
+                culture_key=culture_key,
+                period_key=period_key,
+                auto_hydro=auto_hydro,
+            )
+            return self._analysis_service.run_profile_compare(request)
 
-            base_layer = analyzer.run(
-                site_layer,
-                dem_layer,
-                water_layer=prepared_water,
-                hemisphere=hemisphere,
-                profile_key=base_profile_key,
-                culture_key=culture_key,
-                period_key=period_key,
+        def _on_success(result, task):
+            base_layer = result.base_layer
+            compare_layer = result.compare_layer
+            auto_hydro_layer = result.auto_hydro_layer
+            contract = self._validate_compare_feature_contract(
+                base_layer,
+                compare_layer,
             )
-            compare_layer = analyzer.run(
-                site_layer,
-                dem_layer,
-                water_layer=prepared_water,
-                hemisphere=hemisphere,
-                profile_key=compare_profile_key,
-                culture_key=culture_key,
-                period_key=period_key,
+            if not contract.get("ok"):
+                raise self._contract_error(
+                    FengShuiErrorCode.COMPARISON_UID_MISMATCH,
+                    "Compare profile layers failed feature UID contract validation.",
+                    contract.get("message"),
+                    "compare_feature_contract_failed",
+                )
+            top_changes = self._top_score_changes(base_layer, compare_layer)
+            change_contract = self._validate_compare_top_change_contract(
+                base_layer,
+                compare_layer,
+                top_changes,
             )
+            if not change_contract.get("ok"):
+                raise self._contract_error(
+                    FengShuiErrorCode.COMPARISON_TOP_CHANGE_MISMATCH,
+                    "Compare top-change rows failed UID contract validation.",
+                    change_contract.get("message"),
+                    "compare_top_change_contract_failed",
+                )
+            if auto_hydro_layer is not None:
+                auto_hydro_layer.setName(
+                    self._output_layer_name(dem_layer.name(), "hydro_auto", label_lang)
+                )
+                QgsProject.instance().addMapLayer(auto_hydro_layer)
+
             base_layer.setName(
                 f"{self._output_layer_name(site_layer.name(), 'analysis', label_lang)}_{base_profile_key}"
             )
@@ -1101,12 +1604,18 @@ class FengShuiGisPlugin:
             base_stats = self._score_stats(base_layer)
             compare_stats = self._score_stats(compare_layer)
             delta_stats = self._pairwise_score_delta(base_layer, compare_layer)
-            top_changes = self._top_score_changes(base_layer, compare_layer)
             selected_change_count = self._select_top_changed_features(
                 base_layer,
                 compare_layer,
                 top_changes,
             )
+            if selected_change_count < change_contract.get("count", 0):
+                raise self._contract_error(
+                    FengShuiErrorCode.COMPARISON_TOP_CHANGE_EXPORT_MISMATCH,
+                    "Top-change UID selection contract failed.",
+                    "Failed to select all top-change features by UID; selection and analysis layers are out of sync.",
+                    "compare_top_change_selection_failed",
+                )
             zoom_applied = self._zoom_to_selected_features(compare_layer)
             change_layer = self._export_top_changed_features_layer(
                 compare_layer,
@@ -1114,6 +1623,30 @@ class FengShuiGisPlugin:
                 compare_profile_key,
                 label_lang,
             )
+            if change_layer is not None and change_layer.featureCount() < change_contract.get(
+                "count", 0
+            ):
+                raise self._contract_error(
+                    FengShuiErrorCode.COMPARISON_TOP_CHANGE_EXPORT_MISMATCH,
+                    "Top-change UID export contract failed.",
+                    "Top-change export dropped features by UID; comparison mapping is not stable.",
+                    "compare_top_change_export_failed",
+                )
+            if change_layer is not None:
+                if change_layer.featureCount() == 0:
+                    raise self._contract_error(
+                        FengShuiErrorCode.COMPARISON_TOP_CHANGE_EXPORT_MISMATCH,
+                        "Top-change UID export contract failed.",
+                        "No top-change features were exported for comparison output.",
+                        "compare_top_change_export_failed",
+                    )
+            elif top_changes:
+                raise self._contract_error(
+                    FengShuiErrorCode.COMPARISON_TOP_CHANGE_EXPORT_MISMATCH,
+                    "Top-change UID export contract failed.",
+                    "Failed to export top-change features despite detected UID set.",
+                    "compare_top_change_export_failed",
+                )
             if change_layer is not None:
                 self._style_compare_change_layer(change_layer, label_lang)
                 QgsProject.instance().addMapLayer(change_layer)
@@ -1127,6 +1660,19 @@ class FengShuiGisPlugin:
                 delta_stats=delta_stats,
                 top_changes=top_changes,
                 change_layer_name=change_layer.name() if change_layer is not None else "",
+            )
+            run_manifest_path = self._write_run_manifest_snapshot(
+                "compare",
+                result.run_manifest,
+            )
+            self._write_benchmark_manifest(
+                service_name="compare",
+                run_manifest=result.run_manifest,
+                runtime_seconds=getattr(task, "_runtime_seconds", 0.0),
+                run_manifest_path=run_manifest_path,
+                report_json_path=json_path,
+                report_md_path=md_path,
+                notes="Auto-saved from QGIS UI profile comparison run.",
             )
             self._show_profile_compare_popup(
                 base_profile_key=base_profile_key,
@@ -1143,27 +1689,26 @@ class FengShuiGisPlugin:
                 base_layer_name=base_layer.name(),
                 compare_layer_name=compare_layer.name(),
             )
-        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
-            message = self._runtime_error_message("Profile comparison failed", exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
-        except Exception as exc:  # pylint: disable=broad-except
-            message = self._runtime_error_message(tr("warn_failed"), exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
 
-        success_message = ui_text(
-            "profile_compare_status_done",
-            label_lang,
-            default="Created base/calibrated comparison layers.",
+            success_message = ui_text(
+                "profile_compare_status_done",
+                self._label_language(),
+                default="Created base/calibrated comparison layers.",
+            )
+            self.iface.messageBar().pushSuccess(
+                tr("plugin_title"),
+                success_message,
+            )
+            if self.dock:
+                self.dock.set_status(success_message)
+
+        self._run_background_task(
+            "Run feng shui profile comparison",
+            _execute,
+            _on_success,
+            failure_code=FengShuiErrorCode.COMPARISON_FAILURE,
+            failure_context="Profile comparison failed",
         )
-        self.iface.messageBar().pushSuccess(tr("plugin_title"), success_message)
-        if self.dock:
-            self.dock.set_status(success_message)
 
     def run_calibration(
         self,
@@ -1209,37 +1754,43 @@ class FengShuiGisPlugin:
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
 
-        try:
-            context = QgsProcessingContext()
-            context.setProject(QgsProject.instance())
-            feedback = QgsProcessingFeedback()
-            analyzer = FengShuiAnalyzer(context=context, feedback=feedback)
-            prepared_water = water_layer
-            if prepared_water is None and auto_hydro:
-                auto_hydro_layer = analyzer.build_hydro_network(dem_layer)
-                if auto_hydro_layer and auto_hydro_layer.featureCount() > 0:
-                    analyzer.style_hydro_network(auto_hydro_layer)
-                    auto_hydro_layer.setName(
-                        self._output_layer_name(
-                            dem_layer.name(),
-                            "hydro_auto_calibration",
-                            label_lang,
-                        )
-                    )
-                    QgsProject.instance().addMapLayer(auto_hydro_layer)
-                    prepared_water = auto_hydro_layer
-
-            scored_layer, report = analyzer.calibrate(
+        def _execute():
+            request = CalibrationRequest(
                 site_layer=site_layer,
                 dem_layer=dem_layer,
-                water_layer=prepared_water,
+                water_layer=water_layer,
                 hemisphere=hemisphere,
                 profile_key=profile_key,
                 culture_key=calibration_culture,
                 period_key=calibration_period,
                 negative_ratio=negative_ratio,
                 random_seed=random_seed,
+                auto_hydro=auto_hydro,
             )
+            return self._analysis_service.run_calibration(request)
+
+        def _on_success(result, task):
+            scored_layer = result.calibrated_layer
+            report = result.report
+            auto_hydro_layer = result.auto_hydro_layer
+            reported_metrics = self._calibration_report_metrics(report)
+            calibration_contract = self._validate_calibration_feature_contract(scored_layer, report)
+            if not calibration_contract.get("ok"):
+                raise self._contract_error(
+                    FengShuiErrorCode.CALIBRATION_UID_MISMATCH,
+                    "Calibrated output failed UID contract validation.",
+                    calibration_contract.get("message"),
+                    "calibration_feature_contract_failed",
+                )
+            if auto_hydro_layer is not None:
+                auto_hydro_layer.setName(
+                    self._output_layer_name(
+                        dem_layer.name(),
+                        "hydro_auto_calibration",
+                        label_lang,
+                    )
+                )
+                QgsProject.instance().addMapLayer(auto_hydro_layer)
             scored_layer.setName(
                 self._output_layer_name(site_layer.name(), "calibration", label_lang)
             )
@@ -1255,40 +1806,56 @@ class FengShuiGisPlugin:
             self._configure_layer_click_info(scored_layer, label_lang)
 
             json_path, md_path = self._write_calibration_report(report)
+            run_manifest_path = self._write_run_manifest_snapshot(
+                "calibration",
+                result.run_manifest,
+            )
+            self._write_benchmark_manifest(
+                service_name="calibration",
+                run_manifest=result.run_manifest,
+                runtime_seconds=getattr(task, "_runtime_seconds", 0.0),
+                run_manifest_path=run_manifest_path,
+                report_json_path=json_path,
+                report_md_path=md_path,
+                notes="Auto-saved from QGIS UI calibration run.",
+            )
             self._show_report_popup(report, json_path, md_path)
 
-        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
-            message = self._runtime_error_message("Calibration failed", exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
-        except Exception as exc:  # pylint: disable=broad-except
-            message = self._runtime_error_message(tr("warn_failed"), exc)
-            self.iface.messageBar().pushCritical(tr("warn_failed"), message)
-            if self.dock:
-                self.dock.set_status(message)
-            return
-
-        self.iface.messageBar().pushSuccess(
-            tr("plugin_title"),
-            ui_text(
-                "calibration_success_template",
-                default="Calibration done: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}",
-            ).format(
-                roc_auc=report.get("roc_auc", 0),
-                pr_auc=report.get("pr_auc", 0),
-            ),
-        )
-        if mountain_enabled and mountain_updated > 0:
-            self.iface.messageBar().pushInfo(
+            if int(reported_metrics.get("count", 0) or 0) > 0:
+                success_message = ui_text(
+                    "calibration_success_template",
+                    default="Calibration done: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}",
+                ).format(
+                    roc_auc=reported_metrics.get("roc_auc", 0),
+                    pr_auc=reported_metrics.get("pr_auc", 0),
+                )
+            else:
+                success_message = ui_text(
+                    "calibration_success_no_holdout_template",
+                    self._label_language(),
+                    default="Calibration done: tuning diagnostics prepared, but no held-out evaluation rows were available.",
+                )
+            self.iface.messageBar().pushSuccess(
                 tr("plugin_title"),
-                self._mountain_attached_message(mountain_updated),
+                success_message,
             )
-        if self.dock:
-            self.dock.set_status(
-                ui_text("calibration_status_done", default="Calibration completed.")
-            )
+            if mountain_enabled and mountain_updated > 0:
+                self.iface.messageBar().pushInfo(
+                    tr("plugin_title"),
+                    self._mountain_attached_message(mountain_updated),
+                )
+            if self.dock:
+                self.dock.set_status(
+                    ui_text("calibration_status_done", default="Calibration completed.")
+                )
+
+        self._run_background_task(
+            "Run feng shui calibration",
+            _execute,
+            _on_success,
+            failure_code=FengShuiErrorCode.CALIBRATION_FAILURE,
+            failure_context="Calibration failed",
+        )
 
     def _warn_if_geographic(self, layer):
         if layer and layer.crs().isGeographic():
@@ -1303,22 +1870,6 @@ class FengShuiGisPlugin:
         clean_base = str(base_name).strip() if base_name is not None else ""
         clean_base = clean_base or "layer"
         return f"{clean_base}_{suffix}"
-
-    @staticmethod
-    def _is_line_layer(layer):
-        if layer is None:
-            return False
-        return QgsWkbTypes.geometryType(layer.wkbType()) == QgsWkbTypes.LineGeometry
-
-    @staticmethod
-    def _copy_vector_layer(source_layer, layer_name):
-        if source_layer is None:
-            return None
-        copied = source_layer.materialize(QgsFeatureRequest())
-        if not isinstance(copied, QgsVectorLayer):
-            return None
-        copied.setName(layer_name)
-        return copied
 
     def _require_projected_dem_crs(self, layer):
         if layer is None:
@@ -1534,6 +2085,7 @@ class FengShuiGisPlugin:
             group["layers"].append(layer)
 
         total_updated = 0
+        lookup_warning_emitted = False
         for group in layers_by_crs.values():
             group_layers = group["layers"]
             combined_extent = None
@@ -1552,6 +2104,16 @@ class FengShuiGisPlugin:
                     combined_extent,
                     group["crs"],
                 )
+                if (
+                    not group_candidates
+                    and getattr(service, "last_query_error", None)
+                    and not lookup_warning_emitted
+                ):
+                    self.iface.messageBar().pushWarning(
+                        tr("plugin_title"),
+                        str(service.last_query_error),
+                    )
+                    lookup_warning_emitted = True
             shared_candidates = group_candidates if group_candidates else None
 
             for layer in group_layers:
@@ -2262,6 +2824,10 @@ class FengShuiGisPlugin:
         json_path = os.path.join(report_dir, f"{base_name}.json")
         md_path = os.path.join(report_dir, f"{base_name}.md")
         report.update(self._export_calibrated_profile(report, stamp, report_dir))
+        report["trust_metadata"] = self._current_trust_metadata(
+            profile_key=report.get("exported_profile_key") or report.get("profile_key"),
+            reported_metric_phase=report.get("reported_metric_phase"),
+        )
 
         with open(json_path, "w", encoding="utf-8") as handle:
             json.dump(report, handle, ensure_ascii=False, indent=2)
@@ -2274,164 +2840,21 @@ class FengShuiGisPlugin:
             language=text_lang,
             limit=10,
         ).strip()
-        md_title = ui_text(
-            "calibration_md_title_template",
-            text_lang,
-            default="Feng Shui Calibration Report ({stamp})",
-        ).format(stamp=stamp)
-        md_positive = ui_text("calibration_md_positive_label", text_lang, default="Positive samples")
-        md_negative = ui_text("calibration_md_negative_label", text_lang, default="Negative samples")
-        md_valid = ui_text("calibration_md_valid_label", text_lang, default="Valid scored samples")
-        md_roc_auc = ui_text("calibration_md_roc_auc_label", text_lang, default="ROC AUC")
-        md_pr_auc = ui_text("calibration_md_pr_auc_label", text_lang, default="PR AUC")
-        md_best_f1 = ui_text("calibration_md_best_f1_label", text_lang, default="Best F1")
-        md_best_youden = ui_text(
-            "calibration_md_best_youden_label",
-            text_lang,
-            default="Best Youden J",
-        )
-        md_threshold = ui_text("calibration_md_threshold_label", text_lang, default="threshold")
-        md_context_title = ui_text("calibration_md_context_title", text_lang, default="Context")
-        md_culture = ui_text("calibration_md_context_culture_label", text_lang, default="culture")
-        md_period = ui_text("calibration_md_context_period_label", text_lang, default="period")
-        md_profile = ui_text("calibration_md_context_profile_label", text_lang, default="profile")
-        md_hemisphere = ui_text(
-            "calibration_md_context_hemisphere_label",
-            text_lang,
-            default="hemisphere",
-        )
-        md_negative_ratio = ui_text(
-            "calibration_md_context_negative_ratio_label",
-            text_lang,
-            default="negative_ratio",
-        )
-        md_random_seed = ui_text(
-            "calibration_md_context_random_seed_label",
-            text_lang,
-            default="random_seed",
-        )
-        md_scope = ui_text(
-            "calibration_md_scope_label",
-            text_lang,
-            default="calibration_scope",
-        )
-        md_weight_summary = ui_text(
-            "calibration_md_weight_summary_label",
-            text_lang,
-            default="weight_update",
-        )
-        md_parameter_summary = ui_text(
-            "calibration_md_parameter_summary_label",
-            text_lang,
-            default="parameter_update",
-        )
-        md_base_roc_auc = ui_text(
-            "calibration_md_base_roc_auc_label",
-            text_lang,
-            default="Base ROC AUC",
-        )
-        md_base_pr_auc = ui_text(
-            "calibration_md_base_pr_auc_label",
-            text_lang,
-            default="Base PR AUC",
-        )
-        md_export_title = ui_text(
-            "calibration_md_export_title",
-            text_lang,
-            default="Calibrated profile export",
-        )
-        md_export_key = ui_text(
-            "calibration_md_export_key_label",
-            text_lang,
-            default="profile_key",
-        )
-        md_export_snapshot = ui_text(
-            "calibration_md_export_snapshot_label",
-            text_lang,
-            default="snapshot_path",
-        )
-        md_export_registry = ui_text(
-            "calibration_md_export_registry_label",
-            text_lang,
-            default="local_profile_registry",
-        )
-        md_export_status = ui_text(
-            "calibration_md_export_status_label",
-            text_lang,
-            default="export_status",
-        )
-        md_metric_compare_title = ui_text(
-            "calibration_md_metric_compare_title",
-            text_lang,
-            default="Metric comparison",
-        )
-        md_metadata_title = ui_text(
-            "calibration_md_metadata_title",
-            text_lang,
-            default="Site group / country / period mix",
-        )
-        md_history_title = ui_text(
-            "calibration_md_history_title",
-            text_lang,
-            default="Calibration history comparison",
-        )
-        md_paper_title = ui_text(
-            "calibration_md_paper_evidence_title",
-            text_lang,
-            default="Paper evidence",
-        )
-        md_paper_summary_label = ui_text(
-            "calibration_md_paper_evidence_summary_label",
-            text_lang,
-            default="Paper evidence summary",
-        )
-        md_paper_references_label = ui_text(
-            "calibration_md_paper_evidence_references_label",
-            text_lang,
-            default="Paper references",
-        )
-        md_paper_evidence_missing = ui_text(
-            "calibration_md_paper_evidence_missing",
-            text_lang,
-            default="No profile-level paper evidence was applied.",
-        )
-
-        markdown = (
-            f"# {md_title}\n\n"
-            f"- {md_positive}: {report.get('positive_count')}\n"
-            f"- {md_negative}: {report.get('negative_count')}\n"
-            f"- {md_valid}: {report.get('valid_count')}\n"
-            f"- {md_roc_auc}: {report.get('roc_auc', 0):.6f}\n"
-            f"- {md_pr_auc}: {report.get('pr_auc', 0):.6f}\n"
-            f"- {md_best_f1}: {report.get('best_f1', 0):.6f} @ {md_threshold} {report.get('best_f1_threshold', 0):.6f}\n"
-            f"- {md_best_youden}: {report.get('best_youden_j', 0):.6f} @ {md_threshold} {report.get('best_youden_threshold', 0):.6f}\n\n"
-            f"## {md_context_title}\n\n"
-            f"- {md_culture}: {report.get('culture_key')}\n"
-            f"- {md_period}: {report.get('period_key')}\n"
-            f"- {md_profile}: {report.get('profile_key')}\n"
-            f"- {md_hemisphere}: {report.get('hemisphere')}\n"
-            f"- {md_negative_ratio}: {report.get('negative_ratio')}\n"
-            f"- {md_random_seed}: {report.get('random_seed')}\n"
-            f"- {md_scope}: {report.get('calibration_scope', 'threshold_only')}\n"
-            f"- {md_weight_summary}: {report.get('tuned_weight_summary', 'n/a')}\n"
-            f"- {md_parameter_summary}: {report.get('tuned_parameter_summary', 'n/a')}\n"
-            f"- {md_base_roc_auc}: {report.get('base_roc_auc', 0):.6f}\n"
-            f"- {md_base_pr_auc}: {report.get('base_pr_auc', 0):.6f}\n"
-            f"\n## {md_export_title}\n\n"
-            f"- {md_export_status}: {report.get('profile_export_status', 'n/a')}\n"
-            f"- {md_export_key}: {report.get('exported_profile_key', 'n/a')}\n"
-            f"- {md_export_snapshot}: {report.get('profile_export_path', 'n/a')}\n"
-            f"- {md_export_registry}: {report.get('local_profile_registry_path', 'n/a')}\n"
-            f"\n## {md_metric_compare_title}\n\n"
-            f"{self._calibration_metric_comparison_markdown(report, text_lang)}\n"
-            f"\n## {md_metadata_title}\n\n"
-            f"{self._calibration_metadata_markdown(report, text_lang)}\n"
-            f"\n## {md_history_title}\n\n"
-            f"{self._calibration_history_markdown(history_records, text_lang)}\n"
-            f"\n## {md_paper_title}\n\n"
-            f"- {md_paper_summary_label}: {paper_evidence_summary or md_paper_evidence_missing}\n"
-            f"- {md_paper_references_label}: "
-            f"{paper_evidence_references or md_paper_evidence_missing}\n"
+        markdown = CalibrationReportWriter.build_markdown(
+            report=report,
+            stamp=stamp,
+            text_lang=text_lang,
+            metric_compare_markdown=self._calibration_metric_comparison_markdown(
+                report,
+                text_lang,
+            ),
+            metadata_markdown=self._calibration_metadata_markdown(report, text_lang),
+            history_markdown=self._calibration_history_markdown(
+                history_records,
+                text_lang,
+            ),
+            paper_evidence_summary=paper_evidence_summary,
+            paper_evidence_references=paper_evidence_references,
         )
         with open(md_path, "w", encoding="utf-8") as handle:
             handle.write(markdown)
@@ -2466,6 +2889,8 @@ class FengShuiGisPlugin:
             "profile_export_path": "",
             "local_profile_registry_path": "",
         }
+        reported_baseline_metrics = self._calibration_report_baseline_metrics(report)
+        reported_metrics = self._calibration_report_metrics(report)
         tuned_weights = report.get("tuned_weights") or {}
         tuned_parameters = report.get("tuned_profile_parameters") or {}
         if not report.get("calibration_applied") or not tuned_weights or not tuned_parameters:
@@ -2499,10 +2924,12 @@ class FengShuiGisPlugin:
                 "hemisphere": report.get("hemisphere"),
                 "negative_ratio": report.get("negative_ratio"),
                 "random_seed": report.get("random_seed"),
-                "base_roc_auc": report.get("base_roc_auc"),
-                "roc_auc": report.get("roc_auc"),
-                "base_pr_auc": report.get("base_pr_auc"),
-                "pr_auc": report.get("pr_auc"),
+                "reported_metric_phase": report.get("reported_metric_phase"),
+                "reported_metric_notice": report.get("reported_metric_notice"),
+                "base_roc_auc": reported_baseline_metrics.get("roc_auc"),
+                "roc_auc": reported_metrics.get("roc_auc"),
+                "base_pr_auc": reported_baseline_metrics.get("pr_auc"),
+                "pr_auc": reported_metrics.get("pr_auc"),
                 "tuned_weight_summary": report.get("tuned_weight_summary"),
                 "tuned_parameter_summary": report.get("tuned_parameter_summary"),
             },
@@ -2517,19 +2944,23 @@ class FengShuiGisPlugin:
                 indent=2,
             )
 
-        local_profile_path = os.path.join(self.plugin_dir, "config", "local_profiles.json")
         try:
-            with open(local_profile_path, "r", encoding="utf-8") as handle:
-                local_profiles = json.load(handle)
-        except FileNotFoundError:
-            local_profiles = {}
-        except json.JSONDecodeError:
-            local_profiles = {}
+            local_profiles = local_profiles_payload()
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "Local profile registry contract load failed"
+            ) from exc
         if not isinstance(local_profiles, dict):
-            local_profiles = {}
+            raise RuntimeError(
+                "Local profile registry payload is invalid; expected JSON object."
+            )
         local_profiles[exported_profile_key] = profile_spec
-        with open(local_profile_path, "w", encoding="utf-8") as handle:
-            json.dump(local_profiles, handle, ensure_ascii=False, indent=2)
+        try:
+            write_local_profiles_payload(local_profiles)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "Local profile registry contract write failed"
+            ) from exc
         clear_cache()
 
         export_info.update(
@@ -2537,7 +2968,11 @@ class FengShuiGisPlugin:
                 "profile_export_status": "saved",
                 "exported_profile_key": exported_profile_key,
                 "profile_export_path": snapshot_path,
-                "local_profile_registry_path": local_profile_path,
+                "local_profile_registry_path": os.path.join(
+                    self.plugin_dir,
+                    "config",
+                    "local_profiles.json",
+                ),
             }
         )
         return export_info
@@ -2569,23 +3004,49 @@ class FengShuiGisPlugin:
             "</table>"
         )
 
+    @staticmethod
+    def _calibration_report_metric_bundle(report, bundle_key, fallback_prefix=""):
+        return CalibrationReportWriter.metric_bundle(
+            report,
+            bundle_key,
+            fallback_prefix=fallback_prefix,
+        )
+
+    def _calibration_report_metrics(self, report):
+        return self._calibration_report_metric_bundle(report, "reported_metrics")
+
+    def _calibration_report_baseline_metrics(self, report):
+        return self._calibration_report_metric_bundle(
+            report,
+            "reported_baseline_metrics",
+            fallback_prefix="base_",
+        )
+
+    def _calibration_goal_text(self, text_lang):
+        return CalibrationReportWriter.goal_text(text_lang)
+
+    def _calibration_report_phase_parts(self, report, text_lang):
+        return CalibrationReportWriter.phase_parts(report, text_lang)
+
     def _calibration_metric_rows(self, report):
+        baseline_metrics = self._calibration_report_baseline_metrics(report)
+        reported_metrics = self._calibration_report_metrics(report)
         return [
-            ("ROC AUC", report.get("base_roc_auc", 0.0), report.get("roc_auc", 0.0)),
-            ("PR AUC", report.get("base_pr_auc", 0.0), report.get("pr_auc", 0.0)),
-            ("Best F1", report.get("base_best_f1", 0.0), report.get("best_f1", 0.0)),
+            ("ROC AUC", baseline_metrics.get("roc_auc", 0.0), reported_metrics.get("roc_auc", 0.0)),
+            ("PR AUC", baseline_metrics.get("pr_auc", 0.0), reported_metrics.get("pr_auc", 0.0)),
+            ("Best F1", baseline_metrics.get("best_f1", 0.0), reported_metrics.get("best_f1", 0.0)),
             (
                 "Best Youden J",
-                report.get("base_best_youden_j", 0.0),
-                report.get("best_youden_j", 0.0),
+                baseline_metrics.get("best_youden_j", 0.0),
+                reported_metrics.get("best_youden_j", 0.0),
             ),
         ]
 
     def _calibration_metric_comparison_markdown(self, report, text_lang):
         headers = [
             ui_text("calibration_metric_header_metric", text_lang, default="Metric"),
-            ui_text("calibration_metric_header_base", text_lang, default="Base"),
-            ui_text("calibration_metric_header_tuned", text_lang, default="Tuned"),
+            ui_text("calibration_metric_header_base", text_lang, default="Baseline"),
+            ui_text("calibration_metric_header_tuned", text_lang, default="Reported"),
             ui_text("calibration_metric_header_delta", text_lang, default="Delta"),
         ]
         rows = []
@@ -2604,8 +3065,8 @@ class FengShuiGisPlugin:
     def _calibration_metric_comparison_html(self, report, text_lang):
         headers = [
             ui_text("calibration_metric_header_metric", text_lang, default="Metric"),
-            ui_text("calibration_metric_header_base", text_lang, default="Base"),
-            ui_text("calibration_metric_header_tuned", text_lang, default="Tuned"),
+            ui_text("calibration_metric_header_base", text_lang, default="Baseline"),
+            ui_text("calibration_metric_header_tuned", text_lang, default="Reported"),
             ui_text("calibration_metric_header_delta", text_lang, default="Delta"),
         ]
         rows = []
@@ -3046,126 +3507,18 @@ class FengShuiGisPlugin:
         text_lang = self._label_language()
         if self._report_dialog is None:
             self._report_dialog = QDialog(self.iface.mainWindow())
-            self._report_dialog.setWindowTitle(
-                ui_text(
-                    "calibration_report_title",
-                    text_lang,
-                    default="Calibration Report",
-                )
-            )
             self._report_dialog.resize(760, 520)
             layout = QVBoxLayout(self._report_dialog)
             self._report_browser = QTextBrowser(self._report_dialog)
             self._report_browser.setOpenExternalLinks(True)
             self._report_browser.setReadOnly(True)
             layout.addWidget(self._report_browser)
-
-        roc_auc_label = ui_text("calibration_html_roc_auc_label", text_lang, default="ROC AUC")
-        pr_auc_label = ui_text("calibration_html_pr_auc_label", text_lang, default="PR AUC")
-        positive_label = ui_text("calibration_html_positive_label", text_lang, default="Positive")
-        negative_label = ui_text("calibration_html_negative_label", text_lang, default="Negative")
-        valid_label = ui_text("calibration_html_valid_label", text_lang, default="Valid")
-        best_f1_label = ui_text("calibration_html_best_f1_label", text_lang, default="Best F1")
-        best_youden_label = ui_text(
-            "calibration_html_best_youden_label",
-            text_lang,
-            default="Best Youden J",
-        )
-        threshold_label = ui_text(
-            "calibration_html_threshold_label",
-            text_lang,
-            default="threshold",
-        )
-        scope_label = ui_text(
-            "calibration_html_scope_label",
-            text_lang,
-            default="Calibration scope",
-        )
-        weight_summary_label = ui_text(
-            "calibration_html_weight_summary_label",
-            text_lang,
-            default="Weight update",
-        )
-        parameter_summary_label = ui_text(
-            "calibration_html_parameter_summary_label",
-            text_lang,
-            default="Parameter update",
-        )
-        export_title = ui_text(
-            "calibration_html_export_title",
-            text_lang,
-            default="Calibrated profile export",
-        )
-        export_status_label = ui_text(
-            "calibration_html_export_status_label",
-            text_lang,
-            default="Export status",
-        )
-        export_key_label = ui_text(
-            "calibration_html_export_key_label",
-            text_lang,
-            default="Profile key",
-        )
-        export_snapshot_label = ui_text(
-            "calibration_html_export_snapshot_label",
-            text_lang,
-            default="Snapshot path",
-        )
-        export_registry_label = ui_text(
-            "calibration_html_export_registry_label",
-            text_lang,
-            default="Local profile registry",
-        )
-        metric_compare_title = ui_text(
-            "calibration_html_metric_compare_title",
-            text_lang,
-            default="Metric comparison",
-        )
-        metadata_title = ui_text(
-            "calibration_html_metadata_title",
-            text_lang,
-            default="Site group / country / period mix",
-        )
-        history_title = ui_text(
-            "calibration_html_history_title",
-            text_lang,
-            default="Calibration history comparison",
-        )
-        base_roc_auc_label = ui_text(
-            "calibration_html_base_roc_auc_label",
-            text_lang,
-            default="Base ROC AUC",
-        )
-        base_pr_auc_label = ui_text(
-            "calibration_html_base_pr_auc_label",
-            text_lang,
-            default="Base PR AUC",
-        )
-        json_label = ui_text("calibration_html_json_label", text_lang, default="JSON")
-        markdown_label = ui_text(
-            "calibration_html_markdown_label",
-            text_lang,
-            default="Markdown",
-        )
-        paper_title = ui_text(
-            "calibration_html_paper_evidence_title",
-            text_lang,
-            default="Paper evidence",
-        )
-        paper_summary_label = ui_text(
-            "calibration_html_paper_evidence_summary_label",
-            text_lang,
-            default="Paper evidence summary",
-        )
-        paper_references_label = ui_text(
-            "calibration_html_paper_evidence_references_label",
-            text_lang,
-            default="Paper references",
-        )
-        paper_missing = ui_text(
-            "calibration_html_paper_evidence_missing",
-            text_lang,
-            default="No profile-level paper evidence was applied.",
+        self._report_dialog.setWindowTitle(
+            ui_text(
+                "calibration_report_title",
+                text_lang,
+                default="Calibration Report",
+            )
         )
         paper_summary = str(report.get("paper_evidence_summary", "") or "").strip()
         paper_references = reference_display_text(
@@ -3173,43 +3526,22 @@ class FengShuiGisPlugin:
             language=text_lang,
             limit=10,
         ).strip()
-        paper_summary_text = escape(paper_summary or paper_missing)
-        paper_references_text = escape(paper_references or paper_missing)
 
-        html = (
-            f"<h3>{ui_text('calibration_report_heading', text_lang, default='Calibration Result')}</h3>"
-            f"<p><b>{roc_auc_label}</b>: {report.get('roc_auc', 0):.4f}<br/>"
-            f"<b>{pr_auc_label}</b>: {report.get('pr_auc', 0):.4f}<br/>"
-            f"<b>{positive_label}</b>: {report.get('positive_count')} / "
-            f"<b>{negative_label}</b>: {report.get('negative_count')} / "
-            f"<b>{valid_label}</b>: {report.get('valid_count')}</p>"
-            f"<p><b>{best_f1_label}</b>: {report.get('best_f1', 0):.4f} "
-            f"({threshold_label}={report.get('best_f1_threshold', 0):.4f})<br/>"
-            f"<b>{best_youden_label}</b>: {report.get('best_youden_j', 0):.4f} "
-            f"({threshold_label}={report.get('best_youden_threshold', 0):.4f})<br/>"
-            f"<b>{scope_label}</b>: {escape(str(report.get('calibration_scope', 'threshold_only')))}<br/>"
-            f"<b>{weight_summary_label}</b>: {escape(str(report.get('tuned_weight_summary', 'n/a')))}<br/>"
-            f"<b>{parameter_summary_label}</b>: {escape(str(report.get('tuned_parameter_summary', 'n/a')))}<br/>"
-            f"<b>{base_roc_auc_label}</b>: {report.get('base_roc_auc', 0):.4f}<br/>"
-            f"<b>{base_pr_auc_label}</b>: {report.get('base_pr_auc', 0):.4f}</p>"
-            f"<p><b>{export_title}</b><br/>"
-            f"{export_status_label}: {escape(str(report.get('profile_export_status', 'n/a')))}<br/>"
-            f"{export_key_label}: {escape(str(report.get('exported_profile_key', 'n/a')))}<br/>"
-            f"{export_snapshot_label}: {escape(str(report.get('profile_export_path', 'n/a')))}<br/>"
-            f"{export_registry_label}: {escape(str(report.get('local_profile_registry_path', 'n/a')))}</p>"
-            f"<h4>{metric_compare_title}</h4>"
-            f"{self._calibration_metric_comparison_html(report, text_lang)}"
-            f"<h4>{metadata_title}</h4>"
-            f"{self._calibration_metadata_html(report, text_lang)}"
-            f"<h4>{history_title}</h4>"
-            f"{self._calibration_history_html(self._collect_calibration_history(os.path.dirname(json_path)), text_lang)}"
-            f"<p><b>{paper_title}</b><br/>"
-            f"{paper_summary_label}: {paper_summary_text}<br/>"
-            f"{paper_references_label}: {paper_references_text}</p>"
-            f"<p><b>{json_label}</b>: {json_path}<br/><b>{markdown_label}</b>: {md_path}</p>"
+        html = CalibrationReportWriter.build_popup_html(
+            report=report,
+            text_lang=text_lang,
+            json_path=json_path,
+            md_path=md_path,
+            metric_compare_html=self._calibration_metric_comparison_html(report, text_lang),
+            metadata_html=self._calibration_metadata_html(report, text_lang),
+            history_html=self._calibration_history_html(
+                self._collect_calibration_history(os.path.dirname(json_path)),
+                text_lang,
+            ),
+            paper_evidence_summary=paper_summary,
+            paper_evidence_references=paper_references,
         )
         self._report_browser.setHtml(html)
         self._report_dialog.show()
         self._report_dialog.raise_()
         self._report_dialog.activateWindow()
-

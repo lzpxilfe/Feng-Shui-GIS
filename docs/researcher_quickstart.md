@@ -4,6 +4,12 @@ Updated: 2026-03-20
 
 This guide is the shortest path to a reproducible run that another lab can inspect and rerun.
 
+If this is your first time with the plugin, start with:
+
+- `examples/sample_project/README.md`
+- `docs/first_run_guide.md`
+- `docs/support_bundle_guide.md`
+
 ## 1. Preconditions
 
 - QGIS `3.28+`
@@ -50,12 +56,44 @@ Archive the generated JSON with the study outputs.
 
 - Input DEM and any supplied water/site layers, or stable references to them
 - `reports/repro_manifest.json`
+- `reports/benchmark_manifest.json` if you are tracking runtime or cancellation behavior
 - A copy of `feng_shui_gis/config/*.json` used for the run
 - Output layers (`*_fengshui_ridges`, `*_fengshui_hydro`, optional term/link/score layers)
 - Calibration reports if calibration was run
 - A short notes file describing any manual preprocessing outside the plugin
 
-## 5. Interpretation Boundaries
+## 5. Optional Benchmark / Headless Record
+
+Successful QGIS UI runs now auto-save `run` and `benchmark` manifests into `reports/`.
+Use the CLI below when you need to reconstruct, compare, or archive the same benchmark flow outside the plugin UI.
+
+For repeatable operations tracking, build a benchmark manifest after a run:
+
+```bash
+python3 tools/build_benchmark_manifest.py \
+  --dataset-id my-study-001 \
+  --service analysis \
+  --benchmark-tier medium \
+  --qgis-version 3.40.5 \
+  --runtime-seconds 21.4 \
+  --peak-memory-mb 640 \
+  --cancel-latency-ms 900 \
+  --manifest reports/repro_manifest.json \
+  --report reports/feng_shui_compare_20260401_120000.json \
+  --markdown reports/feng_shui_compare_20260401_120000.md \
+  --output reports/benchmark_manifest.json
+```
+
+This gives you a machine-readable record for:
+
+- runtime and memory envelopes
+- cancellation responsiveness
+- the exact artifacts archived for that run
+- the budget tier used for review
+
+Use `examples/performance_budget.template.json` as the starting point for local or lab-specific budget thresholds.
+
+## 6. Interpretation Boundaries
 
 Use the output as a transparent spatial aid, not as a final historical conclusion.
 

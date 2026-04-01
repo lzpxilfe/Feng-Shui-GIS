@@ -1,0 +1,4 @@
+{
+  "service": "analysis",
+  "benchmark_tier": "small"
+}

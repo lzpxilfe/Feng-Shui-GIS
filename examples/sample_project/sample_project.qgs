@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<qgis projectname="sample_project" version="3.28.0">
+  <homePath path="."/>
+  <title>Feng Shui GIS Sample Project</title>
+  <layer-tree-group>
+    <layer-tree-layer id="sample_sites_id" name="sample_sites" source="./sample_sites.geojson" providerKey="ogr"/>
+    <layer-tree-layer id="sample_water_id" name="sample_water" source="./sample_water.geojson" providerKey="ogr"/>
+    <layer-tree-layer id="sample_dem_id" name="sample_dem" source="./sample_dem.asc" providerKey="gdal"/>
+  </layer-tree-group>
+  <projectlayers>
+    <maplayer type="vector" geometry="Point" simplifyDrawingHints="1">
+      <id>sample_sites_id</id>
+      <layername>sample_sites</layername>
+      <datasource>./sample_sites.geojson</datasource>
+      <provider encoding="UTF-8">ogr</provider>
+    </maplayer>
+    <maplayer type="vector" geometry="Line" simplifyDrawingHints="1">
+      <id>sample_water_id</id>
+      <layername>sample_water</layername>
+      <datasource>./sample_water.geojson</datasource>
+      <provider encoding="UTF-8">ogr</provider>
+    </maplayer>
+    <maplayer type="raster">
+      <id>sample_dem_id</id>
+      <layername>sample_dem</layername>
+      <datasource>./sample_dem.asc</datasource>
+      <provider>gdal</provider>
+    </maplayer>
+  </projectlayers>
+</qgis>

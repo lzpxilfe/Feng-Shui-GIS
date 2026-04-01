@@ -1,0 +1,5 @@
+{
+  "service": "compare",
+  "required_sections": ["interpretation", "analytical", "audit", "trust_metadata"],
+  "expected_badge": "exploratory_context"
+}

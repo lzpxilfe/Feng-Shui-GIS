@@ -4,11 +4,12 @@
 from copy import deepcopy
 from html import escape
 
-from .config_loader import load_json
+from .config_loader import load_config_json
 from .reference_catalog import reference_display_text
 from .ui_catalog import ui_text
 
 _CONFIG_FILE = "contexts.json"
+_SCHEMA_VERSION = 1
 _LEVEL_ORDER = {"A": 0, "B": 1, "C": 2, "U": 3}
 _NEUTRAL_CONTEXT_KEY = "__neutral__"
 _CONTEXT_TIERS = {"stable", "experimental", "deprecated"}
@@ -128,8 +129,11 @@ def _merge_dicts(first, second):
 
 
 def _config():
-    config = load_json(_CONFIG_FILE)
-    return _require_dict(config, _CONFIG_FILE)
+    config = load_config_json(_CONFIG_FILE, schema_version=_SCHEMA_VERSION)
+    return _require_dict(
+        {key: value for key, value in config.items() if key != "schema_version"},
+        _CONFIG_FILE,
+    )
 
 
 def _cultures():

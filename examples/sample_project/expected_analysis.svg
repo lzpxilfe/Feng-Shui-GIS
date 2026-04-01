@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="320" viewBox="0 0 720 320">
+  <rect width="720" height="320" fill="#f4efe3"/>
+  <rect x="32" y="28" width="656" height="264" rx="18" fill="#fffaf1" stroke="#c9b998"/>
+  <text x="56" y="66" font-size="24" fill="#5b4630">Expected Analysis View</text>
+  <text x="56" y="104" font-size="16" fill="#3f4039">Ridges + hydro extracted, candidate scores visible.</text>
+  <circle cx="240" cy="180" r="12" fill="#8f6c2b"/>
+  <circle cx="360" cy="160" r="12" fill="#8f6c2b"/>
+  <circle cx="500" cy="124" r="12" fill="#8f6c2b"/>
+  <path d="M90 230 C180 160, 250 150, 340 178 C420 200, 520 170, 620 92" fill="none" stroke="#5d7f73" stroke-width="10"/>
+</svg>

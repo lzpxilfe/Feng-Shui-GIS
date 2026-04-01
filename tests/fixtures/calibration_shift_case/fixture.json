@@ -1,0 +1,6 @@
+{
+  "case_id": "calibration_shift_case",
+  "description": "Case where local calibration should create a measurable but bounded shift.",
+  "expected_calibration_badge": "Local Calibration Applied",
+  "score_drift_tolerance": 0.1
+}

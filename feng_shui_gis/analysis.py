@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from collections import defaultdict, deque
+import hashlib
 import math
+import json
 import random
 
 from qgis import processing
@@ -26,6 +28,29 @@ from qgis.core import (
     edit,
 )
 
+from .calibration_math import (
+    distribution_stats,
+    metrics_better,
+    split_calibration_rows,
+    split_calibration_rows_once,
+    unique_float_candidates,
+)
+from .calibration_parameter_search import (
+    parameter_candidate_profiles,
+    parameter_candidates,
+    raw_calibration_stats,
+)
+from .calibration_fit_payloads import (
+    calibration_fallback_payload,
+    calibration_fit_payload,
+    calibration_scope,
+    calibration_split_manifest,
+    parameter_change_summary,
+)
+from .calibration_weight_search import (
+    candidate_weight_sets,
+    weight_change_summary,
+)
 from .cultural_context import build_context
 from .profile_catalog import (
     analysis_rules,
@@ -52,6 +77,7 @@ HYDRO_CLASS_LABELS_KO = {
     "minor": "미소 수로",
 }
 
+_FEATURE_UID_FIELD = "fs_uid"
 
 class FengShuiAnalyzer:
     """Compute archaeology-oriented Feng Shui scores from DEM and optional water."""
@@ -60,6 +86,11 @@ class FengShuiAnalyzer:
         "north": {"front": 180.0, "back": 0.0, "left": 90.0, "right": 270.0},
         "south": {"front": 0.0, "back": 180.0, "left": 270.0, "right": 90.0},
     }
+    CALIBRATION_VALIDATION_RATIO = 0.20
+    CALIBRATION_EVALUATION_RATIO = 0.20
+    CALIBRATION_TRAIN_ROLE = "fit"
+    CALIBRATION_VALIDATION_ROLE = "selection"
+    CALIBRATION_EVALUATION_ROLE = "reported_metrics"
 
     def __init__(self, context=None, feedback=None):
         self.context = context or QgsProcessingContext()
@@ -269,13 +300,21 @@ class FengShuiAnalyzer:
             profile,
             random_seed=random_seed,
         )
-        metrics = calibration_fit["metrics"]
+        reported_metrics = calibration_fit["reported_metrics"]
+        reported_baseline_metrics = calibration_fit["reported_baseline_metrics"]
+        annotation_metrics = calibration_fit["annotation_metrics"]
         self._annotate_calibration_layer(
             scored_layer,
             score_by_id=calibration_fit.get("scores_by_id"),
-            best_f1_threshold=metrics["best_f1_threshold"] if metrics["count"] > 0 else None,
+            best_f1_threshold=(
+                annotation_metrics["best_f1_threshold"]
+                if annotation_metrics["count"] > 0
+                else None
+            ),
             best_youden_threshold=(
-                metrics["best_youden_threshold"] if metrics["count"] > 0 else None
+                annotation_metrics["best_youden_threshold"]
+                if annotation_metrics["count"] > 0
+                else None
             ),
         )
         report = {
@@ -283,26 +322,34 @@ class FengShuiAnalyzer:
             "period_key": context["period_key"],
             "profile_key": profile_key,
             "hemisphere": hemisphere,
+            "calibration_goal": "local_profile_tuning",
+            "reported_metric_phase": calibration_fit["reported_metric_phase"],
+            "reported_metric_notice": calibration_fit["reported_metric_notice"],
             "site_layer_name": site_layer.name() if site_layer is not None else "",
             "site_metadata_summary": self._summarize_site_metadata(site_layer),
             "negative_ratio": negative_ratio,
             "random_seed": random_seed,
             "positive_count": len(positive_points),
             "negative_count": len(negative_points),
-            "valid_count": metrics["count"],
-            "base_valid_count": calibration_fit["base_metrics"]["count"],
-            "roc_auc": metrics["roc_auc"],
-            "pr_auc": metrics["pr_auc"],
-            "best_f1": metrics["best_f1"],
-            "best_f1_threshold": metrics["best_f1_threshold"],
-            "best_youden_j": metrics["best_youden_j"],
-            "best_youden_threshold": metrics["best_youden_threshold"],
-            "base_roc_auc": calibration_fit["base_metrics"]["roc_auc"],
-            "base_pr_auc": calibration_fit["base_metrics"]["pr_auc"],
-            "base_best_f1": calibration_fit["base_metrics"]["best_f1"],
-            "base_best_f1_threshold": calibration_fit["base_metrics"]["best_f1_threshold"],
-            "base_best_youden_j": calibration_fit["base_metrics"]["best_youden_j"],
-            "base_best_youden_threshold": calibration_fit["base_metrics"]["best_youden_threshold"],
+            "valid_count": reported_metrics["count"],
+            "base_valid_count": reported_baseline_metrics["count"],
+            "calibration_split": calibration_fit["calibration_split"],
+            "training_diagnostics": calibration_fit["training_diagnostics"],
+            "selection_diagnostics": calibration_fit["selection_diagnostics"],
+            "reported_baseline_metrics": reported_baseline_metrics,
+            "reported_metrics": reported_metrics,
+            "roc_auc": reported_metrics["roc_auc"],
+            "pr_auc": reported_metrics["pr_auc"],
+            "best_f1": reported_metrics["best_f1"],
+            "best_f1_threshold": reported_metrics["best_f1_threshold"],
+            "best_youden_j": reported_metrics["best_youden_j"],
+            "best_youden_threshold": reported_metrics["best_youden_threshold"],
+            "base_roc_auc": reported_baseline_metrics["roc_auc"],
+            "base_pr_auc": reported_baseline_metrics["pr_auc"],
+            "base_best_f1": reported_baseline_metrics["best_f1"],
+            "base_best_f1_threshold": reported_baseline_metrics["best_f1_threshold"],
+            "base_best_youden_j": reported_baseline_metrics["best_youden_j"],
+            "base_best_youden_threshold": reported_baseline_metrics["best_youden_threshold"],
             "calibration_scope": calibration_fit["scope"],
             "calibration_applied": calibration_fit["applied"],
             "tuned_weights": calibration_fit["weights"],
@@ -444,6 +491,8 @@ class FengShuiAnalyzer:
 
     def _ensure_fields(self, layer):
         to_add = []
+        if layer.fields().indexFromName(_FEATURE_UID_FIELD) < 0:
+            to_add.append(QgsField(_FEATURE_UID_FIELD, QVariant.String, "string", 64))
         if layer.fields().indexFromName("fs_culture") < 0:
             to_add.append(QgsField("fs_culture", QVariant.String, "string", 20))
         if layer.fields().indexFromName("fs_period") < 0:
@@ -541,6 +590,56 @@ class FengShuiAnalyzer:
                 layer.updateFeature(feature)
 
     @staticmethod
+    def _normalize_signature_value(value):
+        if value is None:
+            return ""
+        if isinstance(value, float):
+            return round(value, 12)
+        if isinstance(value, (list, tuple, dict)):
+            return json.dumps(value, sort_keys=True, ensure_ascii=False)
+        return str(value)
+
+    @classmethod
+    def _signature_from_inputs(cls, geometry, attributes, sequence=None, extra=None):
+        payload = {
+            "sequence": int(sequence) if sequence is not None else None,
+            "extra": extra or {},
+        }
+        if geometry is not None:
+            payload["geometry"] = (geometry.asWkb() or b"").hex()
+        else:
+            payload["geometry"] = ""
+        payload["attributes"] = {}
+        if attributes:
+            for key in sorted(attributes):
+                payload["attributes"][str(key)] = cls._normalize_signature_value(
+                    attributes[key]
+                )
+        return hashlib.sha1(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+
+    @classmethod
+    def _feature_uid(cls, feature, sequence=None):
+        field_names = feature.fields().names()
+        candidate_fields = [name for name in field_names if name == _FEATURE_UID_FIELD]
+        for name in candidate_fields:
+            raw_uid = feature[name]
+            if str(raw_uid).strip():
+                return str(raw_uid).strip()
+
+        filtered = {}
+        for name in field_names:
+            lowered = str(name).lower()
+            if lowered.startswith("fs_") or lowered in {"cal_id", "cal_uid"}:
+                continue
+            try:
+                filtered[name] = feature[name]
+            except (TypeError, ValueError, KeyError):
+                continue
+        return cls._signature_from_inputs(feature.geometry(), filtered, sequence=sequence)
+
+    @staticmethod
     def _normalized_weight_map(weights):
         if not isinstance(weights, dict):
             return {}
@@ -562,12 +661,20 @@ class FengShuiAnalyzer:
     @staticmethod
     def _calibration_row_id(feature, field_names=None):
         names = field_names or feature.fields().names()
+        if _FEATURE_UID_FIELD in names:
+            uid_value = feature[_FEATURE_UID_FIELD]
+            if str(uid_value).strip():
+                return str(uid_value).strip()
+        if "cal_uid" in names:
+            uid_value = feature["cal_uid"]
+            if str(uid_value).strip():
+                return str(uid_value).strip()
         if "cal_id" in names:
             try:
-                return int(feature["cal_id"])
+                return f"legacy-cal:{int(feature['cal_id'])}"
             except (TypeError, ValueError):
                 pass
-        return int(feature.id())
+        return f"fid:{int(feature.id())}"
 
     @staticmethod
     def _calibration_profile_parameters(profile):
@@ -665,6 +772,28 @@ class FengShuiAnalyzer:
             )
         return rows
 
+    @staticmethod
+    def _split_calibration_rows_once(rows, random_seed=42, validation_ratio=0.20):
+        return split_calibration_rows_once(
+            rows,
+            random_seed=random_seed,
+            validation_ratio=validation_ratio,
+        )
+
+    @staticmethod
+    def _split_calibration_rows(
+        rows,
+        random_seed=42,
+        validation_ratio=0.20,
+        evaluation_ratio=0.10,
+    ):
+        return split_calibration_rows(
+            rows,
+            random_seed=random_seed,
+            validation_ratio=validation_ratio,
+            evaluation_ratio=evaluation_ratio,
+        )
+
     def _evaluate_calibration_rows(self, rows, profile):
         labels = []
         scores = []
@@ -727,75 +856,22 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _metrics_better(candidate, baseline, tolerance=1e-6):
-        candidate_values = (
-            float(candidate.get("roc_auc", 0.0)),
-            float(candidate.get("pr_auc", 0.0)),
-            float(candidate.get("best_f1", 0.0)),
-            float(candidate.get("best_youden_j", 0.0)),
-        )
-        baseline_values = (
-            float(baseline.get("roc_auc", 0.0)),
-            float(baseline.get("pr_auc", 0.0)),
-            float(baseline.get("best_f1", 0.0)),
-            float(baseline.get("best_youden_j", 0.0)),
-        )
-        for cand_value, base_value in zip(candidate_values, baseline_values):
-            if cand_value > (base_value + tolerance):
-                return True
-            if cand_value < (base_value - tolerance):
-                return False
-        return False
+        return metrics_better(candidate, baseline, tolerance=tolerance)
 
     @staticmethod
     def _distribution_stats(values):
-        if not values:
-            return None, None
-        mean = sum(values) / len(values)
-        variance = sum((value - mean) ** 2 for value in values) / len(values)
-        return mean, math.sqrt(max(0.0, variance))
+        return distribution_stats(values)
 
     @staticmethod
     def _unique_float_candidates(values, min_value=None, max_value=None):
-        unique = []
-        seen = set()
-        for value in values:
-            try:
-                clean = float(value)
-            except (TypeError, ValueError):
-                continue
-            if min_value is not None:
-                clean = max(float(min_value), clean)
-            if max_value is not None:
-                clean = min(float(max_value), clean)
-            marker = round(clean, 6)
-            if marker in seen:
-                continue
-            seen.add(marker)
-            unique.append(clean)
-        return unique
+        return unique_float_candidates(
+            values,
+            min_value=min_value,
+            max_value=max_value,
+        )
 
     def _raw_calibration_stats(self, rows, key):
-        positives = []
-        negatives = []
-        for row in rows:
-            raw_value = row.get("raw", {}).get(key)
-            if raw_value is None:
-                continue
-            value = float(raw_value)
-            if int(row["label"]) == 1:
-                positives.append(value)
-            else:
-                negatives.append(value)
-        positive_mean, positive_stddev = self._distribution_stats(positives)
-        negative_mean, negative_stddev = self._distribution_stats(negatives)
-        return {
-            "positive_count": len(positives),
-            "negative_count": len(negatives),
-            "positive_mean": positive_mean,
-            "positive_stddev": positive_stddev,
-            "negative_mean": negative_mean,
-            "negative_stddev": negative_stddev,
-        }
+        return raw_calibration_stats(rows, key)
 
     def _parameter_candidates(
         self,
@@ -805,36 +881,13 @@ class FengShuiAnalyzer:
         base_sigma,
         sigma_floor,
     ):
-        stats = self._raw_calibration_stats(rows, key)
-        positive_mean = stats.get("positive_mean")
-        positive_stddev = stats.get("positive_stddev")
-        negative_mean = stats.get("negative_mean")
-        targets = [base_target]
-        sigmas = [base_sigma]
-
-        if positive_mean is not None:
-            targets.extend([positive_mean, (base_target + positive_mean) * 0.5])
-        if positive_mean is not None and negative_mean is not None:
-            targets.append(((2.0 * positive_mean) + negative_mean) / 3.0)
-        if positive_stddev is not None and positive_stddev > 0:
-            sigmas.extend([positive_stddev, max(positive_stddev * 1.25, sigma_floor)])
-
-        sigmas.extend(
-            [
-                max(base_sigma * 0.75, sigma_floor),
-                max(base_sigma * 1.25, sigma_floor),
-            ]
+        return parameter_candidates(
+            rows,
+            key,
+            base_target,
+            base_sigma,
+            sigma_floor,
         )
-        if positive_mean is not None and negative_mean is not None:
-            separation = abs(positive_mean - negative_mean)
-            if separation > 0:
-                sigmas.append(max(separation * 0.5, sigma_floor))
-
-        return {
-            "targets": self._unique_float_candidates(targets)[:4],
-            "sigmas": self._unique_float_candidates(sigmas, min_value=sigma_floor)[:4],
-            "stats": stats,
-        }
 
     def _parameter_candidate_profiles(self, rows, profile):
         base_profile = dict(profile)
@@ -853,32 +906,12 @@ class FengShuiAnalyzer:
             max(0.02, float(base_profile.get("tpi_sigma", 0.1))),
             0.02,
         )
-
-        candidates = []
-        seen = set()
-        for slope_target in slope_candidates["targets"]:
-            for slope_sigma in slope_candidates["sigmas"]:
-                for tpi_target in tpi_candidates["targets"]:
-                    for tpi_sigma in tpi_candidates["sigmas"]:
-                        marker = (
-                            round(slope_target, 6),
-                            round(slope_sigma, 6),
-                            round(tpi_target, 6),
-                            round(tpi_sigma, 6),
-                        )
-                        if marker in seen:
-                            continue
-                        seen.add(marker)
-                        candidate = dict(base_profile)
-                        candidate["weights"] = dict(base_profile["weights"])
-                        candidate["slope_target"] = slope_target
-                        candidate["slope_sigma"] = slope_sigma
-                        candidate["tpi_target"] = tpi_target
-                        candidate["tpi_sigma"] = tpi_sigma
-                        candidates.append(candidate)
-                        if len(candidates) >= 24:
-                            return candidates
-        return candidates or [base_profile]
+        return parameter_candidate_profiles(
+            base_profile,
+            slope_candidates,
+            tpi_candidates,
+            max_candidates=24,
+        )
 
     def _fit_profile_weight_candidates(self, rows, profile, random_seed=42):
         base_weights = self._normalized_weight_map(profile.get("weights", {}))
@@ -915,41 +948,18 @@ class FengShuiAnalyzer:
             key: self._indicator_discrimination(rows, key, working_profile)
             for key in available_keys
         }
-        heuristic_weights = {}
-        for key in available_keys:
-            quality = indicator_discrimination[key]["quality"]
-            heuristic_weights[key] = base_weights.get(key, 0.0) * (0.20 + quality)
-        heuristic_weights = self._normalized_weight_map(heuristic_weights) or dict(base_weights)
-
-        candidates = [dict(base_weights), dict(heuristic_weights)]
-        ranked_keys = sorted(
-            available_keys,
-            key=lambda item: indicator_discrimination[item]["quality"],
-            reverse=True,
+        raw_candidates = candidate_weight_sets(
+            base_weights,
+            indicator_discrimination,
+            random_seed=random_seed,
+            trial_count=max(48, len(available_keys) * 20),
+            focus_limit=3,
         )
-        for focus_key in ranked_keys[: min(3, len(ranked_keys))]:
-            focused = {}
-            for key in available_keys:
-                focus_scale = 1.8 if key == focus_key else 0.55
-                quality_scale = 0.35 + indicator_discrimination[key]["quality"]
-                focused[key] = base_weights.get(key, 0.0) * focus_scale * quality_scale
-            normalized_focused = self._normalized_weight_map(focused)
-            if normalized_focused:
-                candidates.append(normalized_focused)
-
-        rng = random.Random(int(random_seed))
-        trial_count = max(48, len(available_keys) * 20)
-        for _ in range(trial_count):
-            trial_weights = {}
-            for key in available_keys:
-                quality = indicator_discrimination[key]["quality"]
-                jitter = 0.40 + (rng.random() * 1.80)
-                trial_weights[key] = (
-                    base_weights.get(key, 0.0) * jitter * (0.25 + quality)
-                )
-            normalized_trial = self._normalized_weight_map(trial_weights)
-            if normalized_trial:
-                candidates.append(normalized_trial)
+        candidates = []
+        for raw_candidate in raw_candidates:
+            normalized_candidate = self._normalized_weight_map(raw_candidate)
+            if normalized_candidate:
+                candidates.append(normalized_candidate)
 
         best_weights = dict(base_weights)
         best_metrics = dict(base_metrics)
@@ -971,24 +981,12 @@ class FengShuiAnalyzer:
         final_metrics = dict(best_metrics if weight_applied else base_metrics)
         final_scores_by_id = dict(best_scores_by_id if weight_applied else base_scores_by_id)
 
-        weight_deltas = {
-            key: final_weights.get(key, 0.0) - base_weights.get(key, 0.0)
-            for key in available_keys
-        }
-        changed = sorted(
-            (
-                (abs(delta), key, delta)
-                for key, delta in weight_deltas.items()
-                if abs(delta) >= 0.01
-            ),
-            reverse=True,
+        weight_deltas, weight_summary = weight_change_summary(
+            {key: base_weights.get(key, 0.0) for key in available_keys},
+            final_weights,
+            threshold=0.01,
+            max_items=3,
         )
-        if changed:
-            weight_summary = ", ".join(
-                f"{key}:{delta:+.3f}" for _abs_delta, key, delta in changed[:3]
-            )
-        else:
-            weight_summary = "no-material-weight-change"
 
         return {
             "profile": dict(working_profile, weights=final_weights),
@@ -1007,25 +1005,99 @@ class FengShuiAnalyzer:
             self._normalized_weight_map(base_profile.get("weights", {}))
         )
         rows = self._calibration_rows(layer, base_profile)
-        base_metrics, base_scores_by_id = self._evaluate_calibration_rows(rows, base_profile)
+        split = self._split_calibration_rows(
+            rows,
+            random_seed=random_seed,
+            validation_ratio=self.CALIBRATION_VALIDATION_RATIO,
+            evaluation_ratio=self.CALIBRATION_EVALUATION_RATIO,
+        )
+        model_rows = split.get("train", [])
+        validation_rows = split.get("validation", [])
+        evaluation_rows = split.get("evaluation", [])
+        use_validation_split = bool(validation_rows)
+        use_evaluation_split = bool(evaluation_rows)
+        has_selection_split = bool(model_rows) and use_validation_split
+        selection_phase = "validation" if use_validation_split else "none"
+        if use_evaluation_split:
+            reported_metric_phase = "held_out_evaluation"
+            reported_metric_notice = (
+                "Reported metrics come from held-out evaluation rows that were not used for candidate selection."
+            )
+        else:
+            reported_metric_phase = "no_held_out_evaluation"
+            reported_metric_notice = (
+                "No held-out evaluation rows were available, so this run exposes tuning diagnostics but no reportable evaluation metrics."
+            )
+
+        base_model_metrics, base_model_scores_by_id = self._evaluate_calibration_rows(
+            model_rows,
+            base_profile,
+        )
+        base_validation_metrics, base_validation_scores_by_id = (
+            self._evaluate_calibration_rows(
+                validation_rows,
+                base_profile,
+            )
+            if use_validation_split
+            else ({}, {})
+        )
+        base_report_metrics, base_report_scores_by_id = self._evaluate_calibration_rows(
+            evaluation_rows,
+            base_profile,
+        )
         base_profile_parameters = self._calibration_profile_parameters(base_profile)
-        if not rows or not base_profile["weights"]:
-            return {
-                "scope": "threshold_only",
-                "applied": False,
-                "base_weights": dict(base_profile.get("weights", {})),
-                "weights": dict(base_profile.get("weights", {})),
-                "weight_deltas": {},
-                "weight_summary": "no-weight-fit",
-                "base_profile_parameters": base_profile_parameters,
-                "profile_parameters": base_profile_parameters,
-                "parameter_deltas": {},
-                "parameter_summary": "no-parameter-fit",
-                "indicator_discrimination": {},
-                "base_metrics": base_metrics,
-                "metrics": base_metrics,
-                "scores_by_id": base_scores_by_id,
-            }
+        full_layer_baseline_metrics, full_layer_baseline_scores_by_id = (
+            self._evaluate_calibration_rows(rows, base_profile)
+        )
+        selection_baseline_metrics = dict(base_validation_metrics)
+        if (
+            not rows
+            or not base_profile["weights"]
+            or not model_rows
+            or not has_selection_split
+        ):
+            return calibration_fallback_payload(
+                scope="threshold_only",
+                applied=False,
+                base_weights=dict(base_profile.get("weights", {})),
+                weights=dict(base_profile.get("weights", {})),
+                weight_deltas={},
+                weight_summary="no-weight-fit",
+                base_profile_parameters=base_profile_parameters,
+                profile_parameters=base_profile_parameters,
+                parameter_deltas={},
+                parameter_summary="no-parameter-fit",
+                indicator_discrimination={},
+                base_metrics=base_report_metrics,
+                metrics=base_report_metrics,
+                scores_by_id=full_layer_baseline_scores_by_id,
+                annotation_metrics=full_layer_baseline_metrics,
+                reported_baseline_metrics=base_report_metrics,
+                reported_metrics=base_report_metrics,
+                reported_scores_by_id=base_report_scores_by_id,
+                reported_metric_phase=reported_metric_phase,
+                reported_metric_notice=reported_metric_notice,
+                calibration_split=calibration_split_manifest(
+                    total_count=len(rows),
+                    train_count=len(model_rows),
+                    validation_count=len(validation_rows),
+                    evaluation_count=len(evaluation_rows),
+                    used_validation=use_validation_split,
+                    used_evaluation=use_evaluation_split,
+                    train_role=self.CALIBRATION_TRAIN_ROLE,
+                    validation_role=self.CALIBRATION_VALIDATION_ROLE,
+                    evaluation_role=self.CALIBRATION_EVALUATION_ROLE,
+                    selection_phase=selection_phase,
+                    reported_metric_phase=reported_metric_phase,
+                ),
+                base_train_metrics=base_model_metrics,
+                base_validation_metrics=base_validation_metrics,
+                training_baseline_metrics=base_model_metrics,
+                training_candidate_metrics=base_model_metrics,
+                selection_phase=selection_phase,
+                selection_baseline_metrics=selection_baseline_metrics,
+                selection_candidate_metrics=selection_baseline_metrics,
+            )
 
         best_fit = {
             "profile": dict(base_profile),
@@ -1035,34 +1107,45 @@ class FengShuiAnalyzer:
             },
             "weight_summary": "no-material-weight-change",
             "indicator_discrimination": {
-                key: self._indicator_discrimination(rows, key, base_profile)
+                key: self._indicator_discrimination(model_rows, key, base_profile)
                 for key in base_profile["weights"].keys()
                 if any(
                     self._calibration_row_indicator(row, key, base_profile) is not None
-                    for row in rows
+                    for row in model_rows
                 )
             },
-            "metrics": dict(base_metrics),
-            "scores_by_id": dict(base_scores_by_id),
+            "metrics": dict(base_model_metrics),
+            "scores_by_id": dict(base_model_scores_by_id),
             "weight_applied": False,
+            "selection_metrics": dict(selection_baseline_metrics),
         }
+        best_selection_metrics = dict(selection_baseline_metrics)
         for index, candidate_profile in enumerate(
-            self._parameter_candidate_profiles(rows, base_profile)
+            self._parameter_candidate_profiles(model_rows, base_profile)
         ):
             candidate_fit = self._fit_profile_weight_candidates(
-                rows,
+                model_rows,
                 candidate_profile,
                 random_seed=random_seed + index,
             )
-            if self._metrics_better(candidate_fit["metrics"], best_fit["metrics"]):
+            candidate_selection_metrics = dict(candidate_fit["metrics"])
+            if validation_rows:
+                candidate_selection_metrics, _ = self._evaluate_calibration_rows(
+                    validation_rows,
+                    candidate_fit["profile"],
+                )
+            if self._metrics_better(candidate_selection_metrics, best_selection_metrics):
                 best_fit = candidate_fit
+                best_selection_metrics = dict(candidate_selection_metrics)
+                best_fit["selection_metrics"] = dict(candidate_selection_metrics)
 
-        applied = self._metrics_better(best_fit["metrics"], base_metrics)
+        applied = self._metrics_better(
+            best_fit.get("selection_metrics", best_fit["metrics"]),
+            base_validation_metrics,
+        )
         if applied:
             final_profile = dict(best_fit["profile"])
             final_weights = dict(best_fit["weights"])
-            final_metrics = dict(best_fit["metrics"])
-            final_scores_by_id = dict(best_fit["scores_by_id"])
             final_weight_deltas = dict(best_fit["weight_deltas"])
             final_weight_summary = best_fit["weight_summary"]
             indicator_discrimination = dict(best_fit["indicator_discrimination"])
@@ -1070,8 +1153,6 @@ class FengShuiAnalyzer:
         else:
             final_profile = dict(base_profile)
             final_weights = dict(base_profile["weights"])
-            final_metrics = dict(base_metrics)
-            final_scores_by_id = dict(base_scores_by_id)
             final_weight_deltas = {
                 key: 0.0 for key in final_weights.keys()
             }
@@ -1079,54 +1160,71 @@ class FengShuiAnalyzer:
             indicator_discrimination = dict(best_fit["indicator_discrimination"])
             weight_applied = False
         final_profile["weights"] = dict(final_weights)
+        full_layer_metrics, full_layer_scores_by_id = self._evaluate_calibration_rows(
+            rows,
+            final_profile,
+        )
+        final_report_metrics, final_report_scores_by_id = self._evaluate_calibration_rows(
+            evaluation_rows,
+            final_profile,
+        )
 
         final_profile_parameters = self._calibration_profile_parameters(final_profile)
-        parameter_deltas = {
-            key: final_profile_parameters.get(key, 0.0) - base_profile_parameters.get(key, 0.0)
-            for key in base_profile_parameters.keys()
-        }
-        changed_parameters = sorted(
-            (
-                (abs(delta), key, delta)
-                for key, delta in parameter_deltas.items()
-                if abs(delta) >= 0.01
-            ),
-            reverse=True,
+        parameter_deltas, parameter_summary, parameter_applied = parameter_change_summary(
+            base_profile_parameters,
+            final_profile_parameters,
+            threshold=0.01,
+            max_items=4,
         )
-        if changed_parameters:
-            parameter_summary = ", ".join(
-                f"{key}:{delta:+.3f}"
-                for _abs_delta, key, delta in changed_parameters[:4]
-            )
-        else:
-            parameter_summary = "no-material-parameter-change"
+        scope = calibration_scope(applied, parameter_applied, weight_applied)
 
-        parameter_applied = any(abs(delta) > 1e-6 for delta in parameter_deltas.values())
-        if applied and parameter_applied and weight_applied:
-            scope = "local_profile_tuning+reweighting"
-        elif applied and parameter_applied:
-            scope = "local_profile_tuning"
-        elif applied and weight_applied:
-            scope = "local_weight_reweighting"
-        else:
-            scope = "threshold_only"
-
-        return {
-            "scope": scope,
-            "applied": applied,
-            "base_weights": dict(base_profile["weights"]),
-            "weights": final_weights,
-            "weight_deltas": final_weight_deltas,
-            "weight_summary": final_weight_summary,
-            "base_profile_parameters": base_profile_parameters,
-            "profile_parameters": final_profile_parameters,
-            "parameter_deltas": parameter_deltas,
-            "parameter_summary": parameter_summary,
-            "indicator_discrimination": indicator_discrimination,
-            "base_metrics": base_metrics,
-            "metrics": final_metrics,
-            "scores_by_id": final_scores_by_id,
-        }
+        return calibration_fit_payload(
+            scope=scope,
+            applied=applied,
+            base_weights=dict(base_profile["weights"]),
+            weights=final_weights,
+            weight_deltas=final_weight_deltas,
+            weight_summary=final_weight_summary,
+            base_profile_parameters=base_profile_parameters,
+            profile_parameters=final_profile_parameters,
+            parameter_deltas=parameter_deltas,
+            parameter_summary=parameter_summary,
+            indicator_discrimination=indicator_discrimination,
+            base_metrics=base_report_metrics,
+            metrics=final_report_metrics,
+            scores_by_id=full_layer_scores_by_id,
+            annotation_metrics=full_layer_metrics,
+            reported_baseline_metrics=base_report_metrics,
+            reported_metrics=final_report_metrics,
+            reported_scores_by_id=final_report_scores_by_id,
+            reported_metric_phase=reported_metric_phase,
+            reported_metric_notice=reported_metric_notice,
+            calibration_split=calibration_split_manifest(
+                total_count=len(rows),
+                train_count=len(model_rows),
+                validation_count=len(validation_rows),
+                evaluation_count=len(evaluation_rows),
+                used_validation=use_validation_split,
+                used_evaluation=use_evaluation_split,
+                train_role=self.CALIBRATION_TRAIN_ROLE,
+                validation_role=self.CALIBRATION_VALIDATION_ROLE,
+                evaluation_role=self.CALIBRATION_EVALUATION_ROLE,
+                selection_phase=selection_phase,
+                reported_metric_phase=reported_metric_phase,
+            ),
+            base_train_metrics=base_model_metrics,
+            base_validation_metrics=base_validation_metrics,
+            base_train_scores_by_id=base_model_scores_by_id,
+            base_validation_scores_by_id=base_validation_scores_by_id,
+            training_baseline_metrics=base_model_metrics,
+            training_candidate_metrics=best_fit["metrics"],
+            selection_phase=selection_phase,
+            selection_baseline_metrics=selection_baseline_metrics,
+            selection_candidate_metrics=best_fit.get(
+                "selection_metrics",
+                best_selection_metrics,
+            ),
+        )
 
     def _score_points(
         self,
@@ -1157,7 +1255,7 @@ class FengShuiAnalyzer:
             )
 
         with edit(site_layer):
-            for feature in site_layer.getFeatures():
+            for feature_index, feature in enumerate(site_layer.getFeatures(), start=1):
                 slope_value = self._to_float(feature[slope_field]) if slope_field else None
                 aspect_value = self._to_float(feature[aspect_field]) if aspect_field else None
                 feature_geom = feature.geometry() if feature.hasGeometry() else None
@@ -1238,6 +1336,7 @@ class FengShuiAnalyzer:
                 feature["fs_tpi_lg"]    = dem_metrics.get("large_tpi_norm")
                 feature["fs_roughness"] = dem_metrics.get("roughness")
                 feature["fs_cut_depth"] = dem_metrics.get("cut_depth")
+                feature[_FEATURE_UID_FIELD] = self._feature_uid(feature, sequence=feature_index)
                 site_layer.updateFeature(feature)
 
     @classmethod
@@ -1726,6 +1825,7 @@ class FengShuiAnalyzer:
         data = layer.dataProvider()
         fields = QgsFields()
         fields.append(QgsField("cal_id", QVariant.Int))
+        fields.append(QgsField("fs_uid", QVariant.String, "string", 64))
         fields.append(QgsField("fs_label", QVariant.Int))
         fields.append(QgsField("fs_group", QVariant.String, "string", 8))
         data.addAttributes(fields)
@@ -1737,6 +1837,12 @@ class FengShuiAnalyzer:
             feature = QgsFeature(layer.fields())
             feature.setGeometry(QgsGeometry.fromPointXY(point))
             feature["cal_id"] = running
+            feature["fs_uid"] = cls._signature_from_inputs(
+                feature.geometry(),
+                {"cal_group": "positive"},
+                sequence=running,
+                extra={"point_type": "positive"},
+            )
             feature["fs_label"] = 1
             feature["fs_group"] = "positive"
             features.append(feature)
@@ -1745,6 +1851,12 @@ class FengShuiAnalyzer:
             feature = QgsFeature(layer.fields())
             feature.setGeometry(QgsGeometry.fromPointXY(point))
             feature["cal_id"] = running
+            feature["fs_uid"] = cls._signature_from_inputs(
+                feature.geometry(),
+                {"cal_group": "negative"},
+                sequence=running,
+                extra={"point_type": "negative"},
+            )
             feature["fs_label"] = 0
             feature["fs_group"] = "negative"
             features.append(feature)

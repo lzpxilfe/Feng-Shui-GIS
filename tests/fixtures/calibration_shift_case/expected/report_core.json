@@ -1,0 +1,5 @@
+{
+  "service": "calibration",
+  "required_sections": ["reported_metrics", "reported_metric_phase", "trust_metadata"],
+  "expected_badge": "local_calibration_applied"
+}

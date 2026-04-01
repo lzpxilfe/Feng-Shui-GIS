@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "name": "sample_sites",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "site_a",
+        "label": "Site A"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [28, 76]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "site_b",
+        "label": "Site B"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [47, 58]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "site_c",
+        "label": "Site C"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [66, 36]
+      }
+    }
+  ]
+}

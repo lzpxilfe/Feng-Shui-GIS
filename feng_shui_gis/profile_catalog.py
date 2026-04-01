@@ -2,9 +2,12 @@
 """Profile, term, and rules catalogs loaded from validated JSON configs."""
 
 import json
+import math
 import os
 
-from .config_loader import load_json
+from .config_loader import load_config_json
+
+_SCHEMA_VERSION = 1
 
 _PROFILE_FILE = "profiles.json"
 _LOCAL_PROFILE_FILE = "local_profiles.json"
@@ -66,39 +69,144 @@ def _require_string(container, key, context):
     return value
 
 
+def _require_finite_number(container, key, context):
+    value = _require_number(container, key, context)
+    if not math.isfinite(value):
+        raise RuntimeError(f"Invalid numeric value for '{key}' in {context}.")
+    return value
+
+
+def _validate_label_map(label_map, context):
+    labels = _require_dict(label_map, context)
+    has_text = False
+    for language_key, raw_value in labels.items():
+        text = str(raw_value or "").strip()
+        if not text:
+            raise RuntimeError(f"Missing text value for '{language_key}' in {context}.")
+        has_text = True
+    if not has_text:
+        raise RuntimeError(f"{context} must include at least one localized label.")
+    return labels
+
+
+def _validate_weights(weights, context):
+    normalized = _require_dict(weights, context)
+    if not normalized:
+        raise RuntimeError(f"{context} must not be empty.")
+    total = 0.0
+    for weight_key, raw_value in normalized.items():
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Invalid weight '{weight_key}' in {context}."
+            ) from exc
+        if not math.isfinite(value):
+            raise RuntimeError(f"Invalid weight '{weight_key}' in {context}.")
+        if value < 0.0:
+            raise RuntimeError(
+                f"Weight '{weight_key}' in {context} must be zero or greater."
+            )
+        total += value
+    if total <= 0.0:
+        raise RuntimeError(f"{context} must sum to a positive value.")
+    return normalized
+
+
+def _validate_profile_spec(profile_key, spec, context_name):
+    context = f"{context_name}:{profile_key}"
+    spec = _require_dict(spec, context)
+    _validate_label_map(spec.get("label"), f"{context}.label")
+    _validate_weights(spec.get("weights"), f"{context}.weights")
+    slope_target = _require_finite_number(spec, "slope_target", context)
+    slope_sigma = _require_finite_number(spec, "slope_sigma", context)
+    tpi_target = _require_finite_number(spec, "tpi_target", context)
+    tpi_sigma = _require_finite_number(spec, "tpi_sigma", context)
+    if slope_sigma <= 0.0:
+        raise RuntimeError(f"{context}.slope_sigma must be greater than 0.")
+    if tpi_sigma <= 0.0:
+        raise RuntimeError(f"{context}.tpi_sigma must be greater than 0.")
+    if abs(slope_target) > 90.0:
+        raise RuntimeError(f"{context}.slope_target must stay within [-90, 90].")
+    if abs(tpi_target) > 1000000.0:
+        raise RuntimeError(f"{context}.tpi_target is outside the supported range.")
+    return spec
+
+
 def _validate_profiles(data, context_name=_PROFILE_FILE, allow_empty=False):
-    profiles = _require_dict(data, context_name, allow_empty=allow_empty)
+    payload = _payload_without_schema_version(data, context_name, allow_empty=allow_empty)
+    profiles = _require_dict(payload, context_name, allow_empty=allow_empty)
     for profile_key, spec in profiles.items():
-        context = f"{context_name}:{profile_key}"
-        spec = _require_dict(spec, context)
-        _require_dict(spec.get("label"), f"{context}.label")
-        weights = _require_dict(spec.get("weights"), f"{context}.weights")
-        for weight_key, value in weights.items():
-            try:
-                float(value)
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError(
-                    f"Invalid weight '{weight_key}' in {context}.weights."
-                ) from exc
-        for field_name in ("slope_target", "slope_sigma", "tpi_target", "tpi_sigma"):
-            _require_number(spec, field_name, context)
+        profile_name = str(profile_key or "").strip()
+        if not profile_name:
+            raise RuntimeError(f"{context_name}: profile key must not be empty.")
+        _validate_profile_spec(profile_name, spec, context_name)
     return profiles
+
+
+def _payload_without_schema_version(data, context_name, allow_empty=False):
+    payload = _require_dict(data, context_name, allow_empty=allow_empty)
+    if "schema_version" not in payload:
+        return payload
+    return {
+        profile_key: profile_value
+        for profile_key, profile_value in payload.items()
+        if profile_key != "schema_version"
+    }
 
 
 def _load_local_profiles():
     path = os.path.join(os.path.dirname(__file__), "config", _LOCAL_PROFILE_FILE)
     if not os.path.exists(path):
         return {}
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Invalid JSON config: {path}") from exc
-    return _validate_profiles(data, _LOCAL_PROFILE_FILE, allow_empty=True)
+    return _validate_profiles(
+        load_config_json(
+            _LOCAL_PROFILE_FILE,
+            schema_version=_SCHEMA_VERSION,
+        ),
+        _LOCAL_PROFILE_FILE,
+        allow_empty=True,
+    )
+
+
+def _local_profiles_payload_path():
+    return os.path.join(os.path.dirname(__file__), "config", _LOCAL_PROFILE_FILE)
+
+
+def local_profiles_payload():
+    path = _local_profiles_payload_path()
+    if not os.path.exists(path):
+        return {"schema_version": _SCHEMA_VERSION}
+    return load_config_json(
+        _LOCAL_PROFILE_FILE,
+        schema_version=_SCHEMA_VERSION,
+    )
+
+
+def write_local_profiles_payload(payload):
+    if not isinstance(payload, dict):
+        raise RuntimeError("Local profile payload must be a JSON object.")
+    payload_without_schema = _payload_without_schema_version(
+        payload,
+        _LOCAL_PROFILE_FILE,
+        allow_empty=True,
+    )
+    _validate_profiles(
+        payload_without_schema,
+        _LOCAL_PROFILE_FILE,
+        allow_empty=True,
+    )
+    payload_with_schema = {"schema_version": _SCHEMA_VERSION}
+    payload_with_schema.update(payload_without_schema)
+    path = _local_profiles_payload_path()
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload_with_schema, handle, ensure_ascii=False, indent=2)
+    return payload_with_schema
 
 
 def _validate_term_catalog(data):
-    catalog = _require_dict(data, _TERM_FILE)
+    catalog = _payload_without_schema_version(data, _TERM_FILE)
+    catalog = _require_dict(catalog, _TERM_FILE)
     term_labels = _require_dict(catalog.get("term_labels"), f"{_TERM_FILE}.term_labels")
     for term_id, labels in term_labels.items():
         _require_dict(labels, f"{_TERM_FILE}.term_labels.{term_id}")
@@ -155,7 +263,8 @@ def _validate_term_catalog(data):
 
 
 def _validate_analysis_rules(data):
-    rules = _require_dict(data, _RULE_FILE)
+    rules = _payload_without_schema_version(data, _RULE_FILE)
+    rules = _require_dict(rules, _RULE_FILE)
     for key, expected_type in _REQUIRED_RULE_TYPES.items():
         if key not in rules:
             raise RuntimeError(f"Missing required section '{key}' in {_RULE_FILE}.")
@@ -166,7 +275,11 @@ def _validate_analysis_rules(data):
 
 
 def profile_specs():
-    profiles = dict(_validate_profiles(load_json(_PROFILE_FILE)))
+    profiles = dict(
+        _validate_profiles(
+            load_config_json(_PROFILE_FILE, schema_version=_SCHEMA_VERSION),
+        )
+    )
     profiles.update(_load_local_profiles())
     return profiles
 
@@ -191,7 +304,9 @@ def profile_label(profile_key, language):
 
 
 def term_catalog():
-    return _validate_term_catalog(load_json(_TERM_FILE))
+    return _validate_term_catalog(
+        load_config_json(_TERM_FILE, schema_version=_SCHEMA_VERSION)
+    )
 
 
 def term_labels():
@@ -229,4 +344,6 @@ def line_styles():
 
 
 def analysis_rules():
-    return _validate_analysis_rules(load_json(_RULE_FILE))
+    return _validate_analysis_rules(
+        load_config_json(_RULE_FILE, schema_version=_SCHEMA_VERSION)
+    )

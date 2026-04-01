@@ -23,7 +23,6 @@ from qgis.PyQt.QtWidgets import (
 from qgis.core import QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
 
-from .analysis import FengShuiAnalyzer
 from .cultural_context import (
     available_cultures,
     available_cultures_filtered_by_tier,
@@ -38,6 +37,8 @@ from .cultural_context import (
 from .locale import language_code, tr
 from .locale import set_language_code
 from .mountain_options import mountain_options
+from .dock_widget_viewmodel import DockWidgetProfileViewModel
+from .service_contracts import DemDiagnosticsRequest
 from .profile_catalog import (
     analysis_rules,
     available_profiles,
@@ -55,6 +56,7 @@ from .ui_catalog import (
     ui_term_meanings,
     ui_text,
 )
+from .services.diagnostics_service import FengShuiDiagnosticService
 
 
 class FengShuiHelpDialog(QDialog):
@@ -243,6 +245,8 @@ class FengShuiDockWidget(QWidget):
     run_requested = pyqtSignal(object, object, object, str, str, str, str, bool)
     compare_requested = pyqtSignal(object, object, object, str, str, str, str, str, bool)
     terms_requested = pyqtSignal(object, object, str, str, str, str, bool, bool)
+    cancel_requested = pyqtSignal()
+    support_bundle_requested = pyqtSignal()
     calibration_requested = pyqtSignal(
         object,
         object,
@@ -283,6 +287,8 @@ class FengShuiDockWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._diagnostic_service = FengShuiDiagnosticService()
+        self._profile_view_model = DockWidgetProfileViewModel()
         saved_ui_language = str(
             QSettings().value("feng_shui_gis/ui_language", "") or ""
         ).strip()
@@ -297,6 +303,8 @@ class FengShuiDockWidget(QWidget):
         self._context_records = []
         self._syncing_goal_controls = False
         self._rebuilding_ui = False
+        self._running_task_key = None
+        self._running_task_label = ""
         self.setStyleSheet(self._main_stylesheet())
         self._build_ui()
 
@@ -369,7 +377,7 @@ class FengShuiDockWidget(QWidget):
             ),
             "workflow_mode": self.workflow_mode_combo.currentData()
             if hasattr(self, "workflow_mode_combo")
-            else "basic",
+            else "quick",
             "show_experimental_contexts": (
                 bool(self.show_experimental_context_checkbox.isChecked())
                 if hasattr(self, "show_experimental_context_checkbox")
@@ -474,10 +482,14 @@ class FengShuiDockWidget(QWidget):
                     bool(state.get("advanced_context_enabled"))
                 )
             if hasattr(self, "workflow_mode_combo"):
-                workflow_mode = state.get("workflow_mode", "basic")
+                workflow_mode = self._normalize_workflow_mode(
+                    state.get("workflow_mode", "quick")
+                )
                 self._set_combo_data(
                     self.workflow_mode_combo,
-                    workflow_mode if workflow_mode in {"basic", "expert"} else "basic",
+                    workflow_mode
+                    if workflow_mode in {"quick", "research", "developer"}
+                    else "quick",
                 )
             if hasattr(self, "show_experimental_context_checkbox"):
                 self.show_experimental_context_checkbox.setChecked(
@@ -587,26 +599,8 @@ class FengShuiDockWidget(QWidget):
         )
 
     def _comparison_profile_keys(self):
-        current_profile_key = self.profile_combo.currentData() if hasattr(self, "profile_combo") else None
-        recommended_key = self._recommended_local_profile_key()
-        if not current_profile_key:
-            return None, None
-        current_text = str(current_profile_key)
-        if recommended_key and recommended_key != current_profile_key:
-            return current_profile_key, recommended_key
-        if "_cal_" not in current_text:
-            return None, None
-        culture_key, period_key = self._effective_context_keys()
-        suffix = f"_{culture_key}_{period_key}_cal_"
-        lower_text = current_text.lower()
-        lower_suffix = suffix.lower()
-        index = lower_text.find(lower_suffix)
-        if index <= 0:
-            return None, None
-        base_profile_key = current_text[:index]
-        if base_profile_key not in available_profiles():
-            return None, None
-        return base_profile_key, current_profile_key
+        state = self._profile_recommendation_state()
+        return state.comparison_base_key, state.comparison_profile_key
 
     def _emit_compare_requested(self):
         base_profile_key, compare_profile_key = self._comparison_profile_keys()
@@ -626,72 +620,58 @@ class FengShuiDockWidget(QWidget):
         )
 
     def _recommended_local_profile_key(self):
-        if not hasattr(self, "profile_combo"):
-            return None
-        current_profile_key = self.profile_combo.currentData()
-        if not current_profile_key:
-            return None
-        current_profile_text = str(current_profile_key)
-        if "_cal_" in current_profile_text:
-            return current_profile_key
-        culture_key, period_key = self._effective_context_keys()
-        prefix = f"{current_profile_text}_{culture_key}_{period_key}_cal_".lower()
-        matches = [
-            profile_key
-            for profile_key in available_profiles()
-            if str(profile_key).lower().startswith(prefix)
-        ]
-        if not matches:
-            return None
-        return sorted(matches)[-1]
+        return self._profile_recommendation_state().recommended_profile_key
+
+    def _profile_recommendation_state(self):
+        return self._profile_view_model.recommendation_state(
+            current_profile_key=self.profile_combo.currentData()
+            if hasattr(self, "profile_combo")
+            else None,
+            advanced_context_enabled=bool(self._advanced_context_enabled()),
+            culture_key=self.culture_combo.currentData()
+            if hasattr(self, "culture_combo")
+            else None,
+            period_key=self.period_combo.currentData()
+            if hasattr(self, "period_combo")
+            else None,
+            available_profile_keys=available_profiles(),
+        )
 
     def _update_profile_recommendation_hint(self, *_args):
         if not hasattr(self, "profile_recommendation_hint"):
             return
-        if hasattr(self, "apply_recommended_profile_button"):
-            self.apply_recommended_profile_button.setEnabled(False)
-        if hasattr(self, "compare_profiles_button"):
-            self.compare_profiles_button.setEnabled(False)
-        recommended_key = self._recommended_local_profile_key()
-        current_profile_key = self.profile_combo.currentData() if hasattr(self, "profile_combo") else None
-        if not recommended_key:
-            comparison_base_key, comparison_profile_key = self._comparison_profile_keys()
-            if comparison_base_key and comparison_profile_key:
-                if hasattr(self, "compare_profiles_button"):
-                    self.compare_profiles_button.setEnabled(True)
-                self.profile_recommendation_hint.setText(
-                    ui_text(
-                        "recommended_profile_compare_only",
-                        default="You can run a quick comparison between the calibrated profile and its base preset.",
-                    )
-                )
-                return
-            self.profile_recommendation_hint.setText(
-                ui_text(
-                    "recommended_profile_none",
-                    default="No saved local calibrated profile exists for this context yet.",
-                )
-            )
-            return
-        recommended_label = profile_label(recommended_key, language_code())
-        if recommended_key == current_profile_key:
-            self.profile_recommendation_hint.setText(
-                ui_text(
-                    "recommended_profile_active_template",
-                    default="Using the recommended calibrated profile: {profile}",
-                ).format(profile=recommended_label)
-            )
-            return
-        if hasattr(self, "apply_recommended_profile_button"):
-            self.apply_recommended_profile_button.setEnabled(True)
-        if hasattr(self, "compare_profiles_button"):
-            self.compare_profiles_button.setEnabled(True)
-        self.profile_recommendation_hint.setText(
-            ui_text(
-                "recommended_profile_hint_template",
-                default="Recommended calibrated profile: {profile} ({key})",
-            ).format(profile=recommended_label, key=recommended_key)
+        state_payload = self._profile_view_model.recommendation_state_payload(
+            current_profile_key=self.profile_combo.currentData()
+            if hasattr(self, "profile_combo")
+            else None,
+            advanced_context_enabled=self._advanced_context_enabled(),
+            culture_key=self.culture_combo.currentData()
+            if hasattr(self, "culture_combo")
+            else None,
+            period_key=self.period_combo.currentData()
+            if hasattr(self, "period_combo")
+            else None,
+            available_profile_keys=available_profiles(),
+            ui_language=language_code(),
         )
+        state = state_payload["state"]
+        if hasattr(self, "apply_recommended_profile_button"):
+            self.apply_recommended_profile_button.setEnabled(
+                bool(state_payload.get("can_apply_recommended"))
+            )
+        if hasattr(self, "compare_profiles_button"):
+            self.compare_profiles_button.setEnabled(
+                bool(state_payload.get("can_compare_recommended"))
+            )
+        if not state.current_profile_key:
+            self.profile_recommendation_hint.setText("")
+            return
+
+        guidance_text = str(state_payload.get("guidance_text") or "")
+        if not state.guidance_key or not guidance_text:
+            self.profile_recommendation_hint.setText("")
+            return
+        self.profile_recommendation_hint.setText(guidance_text)
 
     def _build_ui(self):
         root_layout = self.layout()
@@ -822,15 +802,25 @@ class FengShuiDockWidget(QWidget):
 
         self.workflow_mode_combo = QComboBox(self)
         self.workflow_mode_combo.addItem(
-            ui_text("workflow_mode_basic", default="Basic"),
-            "basic",
+            ui_text("workflow_mode_quick", default="Quick"),
+            "quick",
         )
         self.workflow_mode_combo.addItem(
-            ui_text("workflow_mode_expert", default="Expert"),
-            "expert",
+            ui_text("workflow_mode_research", default="Research"),
+            "research",
+        )
+        self.workflow_mode_combo.addItem(
+            ui_text("workflow_mode_developer", default="Developer"),
+            "developer",
         )
         self.workflow_mode_combo.setCurrentIndex(0)
         form.addRow(ui_text("workflow_mode_label", default="Workflow"), self.workflow_mode_combo)
+
+        self.workflow_mode_hint_label = QLabel("", self)
+        self.workflow_mode_hint_label.setObjectName("goalHint")
+        self.workflow_mode_hint_label.setWordWrap(True)
+        self.workflow_mode_hint_label.setTextFormat(Qt.RichText)
+        controls_layout.addWidget(self.workflow_mode_hint_label)
 
         self.web_mountain_checkbox = QCheckBox(
             ui_text(
@@ -900,6 +890,12 @@ class FengShuiDockWidget(QWidget):
         self.goal_hint_label.setWordWrap(True)
         self.goal_hint_label.setTextFormat(Qt.RichText)
         controls_layout.addWidget(self.goal_hint_label)
+
+        self.trust_badge_label = QLabel("", self)
+        self.trust_badge_label.setObjectName("contextHint")
+        self.trust_badge_label.setWordWrap(True)
+        self.trust_badge_label.setTextFormat(Qt.RichText)
+        controls_layout.addWidget(self.trust_badge_label)
 
         self.advanced_options_button = QToolButton(self)
         self.advanced_options_button.setObjectName("advancedToggle")
@@ -1157,6 +1153,17 @@ class FengShuiDockWidget(QWidget):
         self.progress_summary_label.setWordWrap(True)
         card_layout.addWidget(self.progress_summary_label)
 
+        self.interpretation_section_label = QLabel(
+            ui_text(
+                "guide_section_interpretation",
+                default="<b>Interpretation</b>",
+            ),
+            card,
+        )
+        self.interpretation_section_label.setObjectName("guideSection")
+        self.interpretation_section_label.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.interpretation_section_label)
+
         self.guide_intro_widget = QLabel("", card)
         self.guide_intro_widget.setObjectName("guideWidget")
         self.guide_intro_widget.setWordWrap(True)
@@ -1169,6 +1176,22 @@ class FengShuiDockWidget(QWidget):
         self.guide_steps_widget.setTextFormat(Qt.RichText)
         card_layout.addWidget(self.guide_steps_widget)
 
+        self.next_step_label = QLabel("", card)
+        self.next_step_label.setObjectName("guideNext")
+        self.next_step_label.setWordWrap(True)
+        card_layout.addWidget(self.next_step_label)
+
+        self.analytical_section_label = QLabel(
+            ui_text(
+                "guide_section_analytical",
+                default="<b>Analytical</b>",
+            ),
+            card,
+        )
+        self.analytical_section_label.setObjectName("guideSection")
+        self.analytical_section_label.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.analytical_section_label)
+
         self.workflow_progress = QProgressBar(card)
         self.workflow_progress.setObjectName("workflowProgress")
         self.workflow_progress.setRange(0, 100)
@@ -1178,43 +1201,31 @@ class FengShuiDockWidget(QWidget):
         )
         card_layout.addWidget(self.workflow_progress)
 
-        self.next_step_label = QLabel("", card)
-        self.next_step_label.setObjectName("guideNext")
-        self.next_step_label.setWordWrap(True)
-        card_layout.addWidget(self.next_step_label)
-
-        self.checklist_label = QLabel("", card)
-        self.checklist_label.setObjectName("guideChecklist")
-        self.checklist_label.setWordWrap(True)
-        self.checklist_label.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.checklist_label)
-
-        metric_row = QHBoxLayout()
-        metric_label = QLabel(ui_text("guide_metric_label", default="Metric Help"), card)
-        self.metric_help_combo = QComboBox(card)
-        for label, description in ui_metric_help_items():
-            self.metric_help_combo.addItem(label, description)
-        self.metric_help_combo.currentIndexChanged.connect(self._update_metric_help_hint)
-        metric_row.addWidget(metric_label)
-        metric_row.addWidget(self.metric_help_combo, 1)
-        card_layout.addLayout(metric_row)
-
-        self.metric_help_hint = QLabel("", card)
-        self.metric_help_hint.setObjectName("metricHint")
-        self.metric_help_hint.setWordWrap(True)
-        card_layout.addWidget(self.metric_help_hint)
-
         self.quick_number_widget = QLabel("", card)
         self.quick_number_widget.setObjectName("guideWidget")
         self.quick_number_widget.setWordWrap(True)
         self.quick_number_widget.setTextFormat(Qt.RichText)
         card_layout.addWidget(self.quick_number_widget)
 
-        self.dem_diag_widget = QLabel("", card)
-        self.dem_diag_widget.setObjectName("guideWidget")
-        self.dem_diag_widget.setWordWrap(True)
-        self.dem_diag_widget.setTextFormat(Qt.RichText)
-        card_layout.addWidget(self.dem_diag_widget)
+        self.metric_help_widget = QWidget(card)
+        metric_row = QHBoxLayout(self.metric_help_widget)
+        metric_row.setContentsMargins(0, 0, 0, 0)
+        metric_label = QLabel(
+            ui_text("guide_metric_label", default="Metric Help"),
+            self.metric_help_widget,
+        )
+        self.metric_help_combo = QComboBox(self.metric_help_widget)
+        for label, description in ui_metric_help_items():
+            self.metric_help_combo.addItem(label, description)
+        self.metric_help_combo.currentIndexChanged.connect(self._update_metric_help_hint)
+        metric_row.addWidget(metric_label)
+        metric_row.addWidget(self.metric_help_combo, 1)
+        card_layout.addWidget(self.metric_help_widget)
+
+        self.metric_help_hint = QLabel("", card)
+        self.metric_help_hint.setObjectName("metricHint")
+        self.metric_help_hint.setWordWrap(True)
+        card_layout.addWidget(self.metric_help_hint)
 
         self.evidence_widget = QLabel("", card)
         self.evidence_widget.setObjectName("guideWidget")
@@ -1222,10 +1233,58 @@ class FengShuiDockWidget(QWidget):
         self.evidence_widget.setTextFormat(Qt.RichText)
         card_layout.addWidget(self.evidence_widget)
 
+        self.audit_section_label = QLabel(
+            ui_text(
+                "guide_section_audit",
+                default="<b>Audit</b>",
+            ),
+            card,
+        )
+        self.audit_section_label.setObjectName("guideSection")
+        self.audit_section_label.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.audit_section_label)
+
+        self.checklist_label = QLabel("", card)
+        self.checklist_label.setObjectName("guideChecklist")
+        self.checklist_label.setWordWrap(True)
+        self.checklist_label.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.checklist_label)
+
+        self.dem_diag_widget = QLabel("", card)
+        self.dem_diag_widget.setObjectName("guideWidget")
+        self.dem_diag_widget.setWordWrap(True)
+        self.dem_diag_widget.setTextFormat(Qt.RichText)
+        card_layout.addWidget(self.dem_diag_widget)
+
         self.workflow_status_label = QLabel("", card)
         self.workflow_status_label.setObjectName("guideStatus")
         self.workflow_status_label.setWordWrap(True)
         card_layout.addWidget(self.workflow_status_label)
+
+        self.export_support_bundle_button = QPushButton(
+            ui_text(
+                "support_bundle_button",
+                default="Export Support Bundle",
+            ),
+            card,
+        )
+        self.export_support_bundle_button.setObjectName("helpButton")
+        self.export_support_bundle_button.clicked.connect(
+            self._emit_support_bundle_requested
+        )
+        card_layout.addWidget(self.export_support_bundle_button)
+
+        self.cancel_button = QPushButton(
+            ui_text("cancel_workflow_button", default="Cancel running workflow"),
+            card,
+        )
+        self.cancel_button.setObjectName("cancelAction")
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self._emit_cancel_requested)
+        self.cancel_row = QHBoxLayout()
+        self.cancel_row.addStretch(1)
+        self.cancel_row.addWidget(self.cancel_button)
+        card_layout.addLayout(self.cancel_row)
         return card
 
     def _build_landscape_tab(self):
@@ -1283,9 +1342,17 @@ class FengShuiDockWidget(QWidget):
         self.analysis_auto_hydro_checkbox.setChecked(True)
         card_layout.addWidget(self.analysis_auto_hydro_checkbox)
 
+        self.analysis_research_controls_widget = QWidget(card)
+        research_controls_layout = QVBoxLayout(self.analysis_research_controls_widget)
+        research_controls_layout.setContentsMargins(0, 0, 0, 0)
+        research_controls_layout.setSpacing(8)
+
         ratio_row = QHBoxLayout()
-        ratio_label = QLabel(ui_text("negative_ratio_label", default="Negative Ratio"), card)
-        self.negative_ratio_combo = QComboBox(card)
+        ratio_label = QLabel(
+            ui_text("negative_ratio_label", default="Negative Ratio"),
+            self.analysis_research_controls_widget,
+        )
+        self.negative_ratio_combo = QComboBox(self.analysis_research_controls_widget)
         ratio_options = calibration_rules.get("negative_ratio_options", [1, 2, 3, 4])
         clean_options = []
         for value in ratio_options:
@@ -1314,11 +1381,14 @@ class FengShuiDockWidget(QWidget):
             self.negative_ratio_combo.setCurrentIndex(0)
         ratio_row.addWidget(ratio_label)
         ratio_row.addWidget(self.negative_ratio_combo, 1)
-        card_layout.addLayout(ratio_row)
+        research_controls_layout.addLayout(ratio_row)
 
         seed_row = QHBoxLayout()
-        seed_label = QLabel(ui_text("seed_label", default="Random Seed"), card)
-        self.calibration_seed_spin = QSpinBox(card)
+        seed_label = QLabel(
+            ui_text("seed_label", default="Random Seed"),
+            self.analysis_research_controls_widget,
+        )
+        self.calibration_seed_spin = QSpinBox(self.analysis_research_controls_widget)
         seed_min = calibration_rules.get("seed_min", 1)
         seed_max = calibration_rules.get("seed_max", 999999)
         seed_default = calibration_rules.get("seed_default", 42)
@@ -1341,7 +1411,8 @@ class FengShuiDockWidget(QWidget):
         self.calibration_seed_spin.setValue(seed_default)
         seed_row.addWidget(seed_label)
         seed_row.addWidget(self.calibration_seed_spin, 1)
-        card_layout.addLayout(seed_row)
+        research_controls_layout.addLayout(seed_row)
+        card_layout.addWidget(self.analysis_research_controls_widget)
 
         self.run_button = QPushButton(tr("run_button"), card)
         self.run_button.setObjectName("primaryAction")
@@ -1378,22 +1449,78 @@ class FengShuiDockWidget(QWidget):
 
     def _workflow_mode(self):
         if not hasattr(self, "workflow_mode_combo"):
-            return "basic"
-        mode = self.workflow_mode_combo.currentData()
-        return mode if mode in {"basic", "expert"} else "basic"
+            return "quick"
+        mode = self._normalize_workflow_mode(self.workflow_mode_combo.currentData())
+        return mode if mode in {"quick", "research", "developer"} else "quick"
 
-    def _expert_mode_enabled(self):
-        return self._workflow_mode() == "expert"
+    @staticmethod
+    def _normalize_workflow_mode(mode):
+        mode_text = str(mode or "").strip().lower()
+        if mode_text == "basic":
+            return "quick"
+        if mode_text == "expert":
+            return "research"
+        return mode_text or "quick"
+
+    def _research_mode_enabled(self):
+        return self._workflow_mode() in {"research", "developer"}
+
+    def _developer_mode_enabled(self):
+        return self._workflow_mode() == "developer"
+
+    def _workflow_mode_hint_html(self, workflow_mode=None):
+        mode_key = self._normalize_workflow_mode(workflow_mode or self._workflow_mode())
+        default_map = {
+            "quick": (
+                "<b>Quick</b> shows only the shortest path: choose the goal, DEM, and layers, then run."
+            ),
+            "research": (
+                "<b>Research</b> opens evidence, compare, and calibration controls for archaeology-oriented reading."
+            ),
+            "developer": (
+                "<b>Developer</b> keeps research controls visible and exposes more workflow state for inspection."
+            ),
+        }
+        return ui_text(
+            f"workflow_mode_hint_{mode_key}",
+            default=default_map.get(mode_key, default_map["quick"]),
+        )
 
     def _apply_workflow_mode(self, *_args):
-        expert_mode = self._expert_mode_enabled()
+        workflow_mode = self._workflow_mode()
+        research_mode = self._research_mode_enabled()
+        developer_mode = self._developer_mode_enabled()
 
         if hasattr(self, "advanced_options_button"):
-            self.advanced_options_button.setVisible(expert_mode)
-            if not expert_mode:
+            self.advanced_options_button.setVisible(research_mode)
+            self.advanced_options_button.setText(
+                ui_text(
+                    "advanced_options_button_developer"
+                    if developer_mode
+                    else "advanced_options_button_research",
+                    default=(
+                        "Developer Controls"
+                        if developer_mode
+                        else "Research Controls"
+                    ),
+                )
+            )
+            if developer_mode:
+                self.advanced_options_button.setChecked(True)
+            elif not research_mode:
                 self.advanced_options_button.setChecked(False)
         if hasattr(self, "advanced_options_panel"):
-            self.advanced_options_panel.setVisible(expert_mode and self.advanced_options_button.isChecked())
+            self.advanced_options_panel.setVisible(
+                research_mode
+                and (
+                    developer_mode
+                    or self.advanced_options_button.isChecked()
+                )
+            )
+        if hasattr(self, "workflow_mode_hint_label"):
+            self.workflow_mode_hint_label.setText(
+                self._workflow_mode_hint_html(workflow_mode)
+            )
 
         advanced_controls = (
             getattr(self, "profile_combo", None),
@@ -1412,9 +1539,37 @@ class FengShuiDockWidget(QWidget):
         )
         for widget in advanced_controls:
             if widget is not None:
-                widget.setEnabled(expert_mode)
+                widget.setEnabled(research_mode)
 
-        if not expert_mode:
+        quick_hidden_controls = (
+            getattr(self, "calibration_button", None),
+            getattr(self, "analysis_research_controls_widget", None),
+            getattr(self, "metric_help_widget", None),
+            getattr(self, "metric_help_hint", None),
+            getattr(self, "evidence_widget", None),
+        )
+        for widget in quick_hidden_controls:
+            if widget is not None:
+                widget.setVisible(research_mode)
+
+        research_hidden_controls = (
+            getattr(self, "audit_section_label", None),
+            getattr(self, "checklist_label", None),
+        )
+        for widget in research_hidden_controls:
+            if widget is not None:
+                widget.setVisible(workflow_mode != "quick")
+
+        developer_hidden_controls = (
+            getattr(self, "export_support_bundle_button", None),
+            getattr(self, "workflow_status_label", None),
+            getattr(self, "dem_diag_widget", None),
+        )
+        for widget in developer_hidden_controls:
+            if widget is not None:
+                widget.setVisible(developer_mode)
+
+        if not research_mode:
             if hasattr(self, "advanced_context_checkbox"):
                 self.advanced_context_checkbox.setChecked(False)
             if hasattr(self, "profile_combo"):
@@ -1599,8 +1754,8 @@ class FengShuiDockWidget(QWidget):
                 if hasattr(self, "mode_tabs") and self.mode_tabs.currentIndex() != 0:
                     self.mode_tabs.setCurrentIndex(0)
 
-            if goal_key == "custom" and not self._expert_mode_enabled():
-                self._set_combo_data(self.workflow_mode_combo, "expert")
+            if goal_key == "custom" and not self._research_mode_enabled():
+                self._set_combo_data(self.workflow_mode_combo, "research")
             elif goal_key == "custom" and hasattr(self, "advanced_options_button"):
                 self.advanced_options_button.setChecked(True)
         finally:
@@ -1873,6 +2028,29 @@ class FengShuiDockWidget(QWidget):
             )
         )
 
+    def _update_trust_boundary_hint(self):
+        if not hasattr(self, "trust_badge_label"):
+            return
+        from .trust_metadata import badges_html, build_trust_metadata
+
+        culture_key = ""
+        if hasattr(self, "culture_combo"):
+            culture_key = str(self.culture_combo.currentData() or "")
+        profile_key = ""
+        if hasattr(self, "profile_combo"):
+            profile_key = str(self.profile_combo.currentData() or "")
+        trust_metadata = build_trust_metadata(
+            self.label_language(),
+            advanced_context_enabled=self._advanced_context_enabled(),
+            culture_key=culture_key,
+            profile_key=profile_key,
+        )
+        badge_html = badges_html(trust_metadata)
+        score_note = str((trust_metadata or {}).get("score_notice") or "")
+        self.trust_badge_label.setText(
+            f"{badge_html}<br/>{score_note}" if badge_html else score_note
+        )
+
     def _update_dem_diagnostics_hint(self, *_args):
         if not hasattr(self, "dem_diag_widget"):
             return
@@ -1891,7 +2069,9 @@ class FengShuiDockWidget(QWidget):
             return
 
         try:
-            diagnostics = FengShuiAnalyzer.adaptive_spacing_diagnostics(dem_layer)
+            diagnostics = self._diagnostic_service.run_dem_diagnostics(
+                DemDiagnosticsRequest(dem_layer=dem_layer)
+            )
         except RuntimeError as exc:
             self.dem_diag_widget.setText(
                 ui_text(
@@ -2012,145 +2192,66 @@ class FengShuiDockWidget(QWidget):
             )
         )
 
-    def _workflow_checks(self):
+    def _workflow_presentation_state(self):
         dem_ready = self.dem_combo.currentLayer() is not None
         sites_ready = self.sites_combo.currentLayer() is not None
         water_ready = self.water_combo.currentLayer() is not None
         goal_key = self._usage_goal_key()
-        terms_ready = (
+        include_terms_checked = (
             self.include_terms_checkbox.isChecked()
             if goal_key in ("tomb", "house", "settlement")
             else True
         )
 
-        if self.mode_tabs.currentIndex() == 1:
-            hydro_ready = water_ready or self.analysis_auto_hydro_checkbox.isChecked()
-            checks = [
-                (ui_text("workflow_check_dem", default="Select DEM layer"), dem_ready),
-                (ui_text("workflow_check_sites", default="Select candidate point layer"), sites_ready),
-                (ui_text("workflow_check_hydro", default="Confirm hydro source"), hydro_ready),
-                (
-                    ui_text("workflow_check_analysis_ready", default="Ready to run analysis"),
-                    dem_ready and sites_ready and hydro_ready,
-                ),
-            ]
-            mode_name = tr("tab_analysis")
-            action_name = tr("run_button")
-        else:
-            hydro_ready = water_ready or self.landscape_auto_hydro_checkbox.isChecked()
-            checks = [
-                (ui_text("workflow_check_dem", default="Select DEM layer"), dem_ready),
-                (ui_text("workflow_check_hydro", default="Confirm hydro source"), hydro_ready),
-                (
-                    ui_text(
-                        "workflow_check_terms_recommended",
-                        default="Turn on term points for site-shape reading",
-                    )
-                    if goal_key in ("tomb", "house", "settlement")
-                    else ui_text(
-                        "workflow_check_terms_option",
-                        default="Check term point/link options",
-                    ),
-                    terms_ready,
-                ),
-                (
-                    ui_text("workflow_check_extract_ready", default="Ready to run extraction"),
-                    dem_ready and hydro_ready and terms_ready,
-                ),
-            ]
-            mode_name = tr("tab_landscape")
-            action_name = tr("extract_landscape_button")
-        return mode_name, action_name, checks
+        return self._profile_view_model.workflow_presentation_state(
+            mode_tab_index=self.mode_tabs.currentIndex(),
+            goal_key=goal_key,
+            dem_ready=dem_ready,
+            sites_ready=sites_ready,
+            water_ready=water_ready,
+            include_terms_enabled=include_terms_checked,
+            analysis_auto_hydro=self.analysis_auto_hydro_checkbox.isChecked(),
+            landscape_auto_hydro=self.landscape_auto_hydro_checkbox.isChecked(),
+            ui_language=self.ui_language(),
+            label_language=self.label_language(),
+            workflow_mode=self._workflow_mode(),
+            advanced_context_enabled=self._advanced_context_enabled(),
+            mountain_name_enrichment_enabled=self.mountain_name_enrichment_enabled(),
+            mountain_language_preference=self.mountain_name_language_preference(),
+            goal_name=self._usage_goal_label(goal_key),
+            profile_name=(
+                self.profile_combo.currentText()
+                or str(self.profile_combo.currentData())
+            ),
+            recent_status=self.status_label.text(),
+            is_running=bool(self._running_task_key),
+            running_task_label=self._running_task_label,
+        )
 
     def _refresh_progress_guide(self, *_args):
         if not hasattr(self, "workflow_progress"):
             return
 
-        mode_name, action_name, checks = self._workflow_checks()
-        completed = sum(1 for _, done in checks if done)
-        total = max(1, len(checks))
-        percent = int(round((completed / total) * 100.0))
-        self.workflow_progress.setValue(percent)
+        workflow_state = self._workflow_presentation_state()
+        self._update_trust_boundary_hint()
+        self.workflow_progress.setValue(workflow_state.percent)
         self._update_usage_goal_guidance()
-        lang_name = (
-            ui_text("workflow_lang_ko", default="Korean")
-            if self.label_language() == "ko"
-            else ui_text("workflow_lang_en", default="English")
-        )
-        workflow_mode = (
-            ui_text("workflow_mode_basic_short", default="Basic")
-            if not self._expert_mode_enabled()
-            else ui_text("workflow_mode_expert_short", default="Expert")
-        )
-        context_mode = (
-            ui_text("context_mode_general_short", default="General")
-            if not self._advanced_context_enabled()
-            else ui_text("context_mode_advanced_short", default="Advanced")
-        )
-        mountain_mode = (
-            ui_text("web_mountain_mode_on", default="On")
-            if self.mountain_name_enrichment_enabled()
-            else ui_text("web_mountain_mode_off", default="Off")
-        )
-        mountain_lang = self.mountain_name_language_preference()
-        goal_name = self._usage_goal_label()
-        profile_name = self.profile_combo.currentText() or str(self.profile_combo.currentData())
-        self.progress_summary_label.setText(
-            ui_text(
-                "workflow_summary_template",
-                default=(
-                    "Goal: {goal} | Mode: {mode} | Model: {profile} | "
-                    "Workflow: {workflow_mode} | Label language: {lang} | "
-                    "Context: {context_mode} | "
-                    "Mountain names(web): {mountain_mode}/{mountain_lang} | "
-                    "Readiness {percent}%"
-                ),
-            ).format(
-                goal=goal_name,
-                mode=mode_name,
-                profile=profile_name,
-                workflow_mode=workflow_mode,
-                lang=lang_name,
-                context_mode=context_mode,
-                mountain_mode=mountain_mode,
-                mountain_lang=mountain_lang,
-                percent=percent,
-            )
-        )
-
-        pending = next((label for label, done in checks if not done), None)
-        if pending:
-            self.next_step_label.setText(
-                ui_text("workflow_next_template", default="Next step: {pending}").format(
-                    pending=pending
-                )
-            )
-        else:
-            self.next_step_label.setText(
-                ui_text(
-                    "workflow_next_action_template",
-                    default="Next step: run with '{action}' button.",
-                ).format(action=action_name)
-            )
+        self.progress_summary_label.setText(workflow_state.summary_text)
+        self.next_step_label.setText(workflow_state.next_step_text)
 
         rows = []
-        for label, done in checks:
-            state = (
+        for item in workflow_state.checks:
+            item_state = (
                 ui_text("workflow_state_done", default="Done")
-                if done
+                if item.done
                 else ui_text("workflow_state_pending", default="Pending")
             )
-            color = "#1f6255" if done else "#8a6d3b"
+            color = "#1f6255" if item.done else "#8a6d3b"
             rows.append(
-                f"<span style='color:{color};'><b>{state}</b></span> · {escape(label)}"
+                f"<span style='color:{color};'><b>{item_state}</b></span> · {escape(item.label)}"
             )
         self.checklist_label.setText("<br/>".join(rows))
-        self.workflow_status_label.setText(
-            ui_text(
-                "workflow_recent_status_template",
-                default="Recent status: {text}",
-            ).format(text=self.status_label.text())
-        )
+        self.workflow_status_label.setText(workflow_state.status_text)
 
     def set_status(self, text):
         self.status_label.setText(text)
@@ -2163,11 +2264,146 @@ class FengShuiDockWidget(QWidget):
             )
         self._refresh_progress_guide()
 
+    def set_running_state(self, is_running, task_key=None, task_label=None):
+        if self._running_task_key and not is_running and task_key and self._running_task_key != task_key:
+            return
+        self._running_task_key = task_key if is_running else None
+        self._running_task_label = str(task_label or "").strip() if is_running else ""
+        action_buttons = (
+            "run_button",
+            "calibration_button",
+            "extract_terms_button",
+            "compare_profiles_button",
+        )
+        for button_name in action_buttons:
+            button = getattr(self, button_name, None)
+            if button is not None:
+                button.setEnabled(not is_running)
+
+        if hasattr(self, "cancel_button"):
+            self.cancel_button.setEnabled(bool(is_running))
+
+        if hasattr(self, "workflow_progress"):
+            if is_running:
+                self.workflow_progress.setFormat(
+                    ui_text("workflow_progress_running_format", default="%p% running")
+                )
+            else:
+                self.workflow_progress.setFormat(
+                    ui_text("workflow_progress_format", default="%p% ready")
+                )
+
+        if hasattr(self, "advanced_options_button"):
+            self.advanced_options_button.setEnabled(not is_running)
+        if hasattr(self, "mode_tabs"):
+            self.mode_tabs.setEnabled(not is_running)
+
+        self._refresh_progress_guide()
+
     def label_language(self):
         if not hasattr(self, "label_language_combo"):
             return "ko"
         code = self.label_language_combo.currentData()
         return code if code in ("ko", "en") else "ko"
+
+    def support_bundle_snapshot(self):
+        from .trust_metadata import build_trust_metadata
+
+        current_goal = self._usage_goal_key() if hasattr(self, "purpose_combo") else "general"
+        culture_key = (
+            str(self.culture_combo.currentData() or "")
+            if hasattr(self, "culture_combo")
+            else ""
+        )
+        profile_key = (
+            str(self.profile_combo.currentData() or "")
+            if hasattr(self, "profile_combo")
+            else ""
+        )
+        trust_metadata = build_trust_metadata(
+            self.label_language(),
+            advanced_context_enabled=self._advanced_context_enabled(),
+            culture_key=culture_key,
+            profile_key=profile_key,
+        )
+        return {
+            "ui_language": self.ui_language(),
+            "label_language": self.label_language(),
+            "workflow_mode": self._workflow_mode() if hasattr(self, "workflow_mode_combo") else "quick",
+            "goal_key": current_goal,
+            "goal_label": self._usage_goal_label(current_goal),
+            "profile_key": (
+                str(self.profile_combo.currentData() or "")
+                if hasattr(self, "profile_combo")
+                else ""
+            ),
+            "profile_label": self.profile_combo.currentText() if hasattr(self, "profile_combo") else "",
+            "culture_key": (
+                str(self.culture_combo.currentData() or "")
+                if hasattr(self, "culture_combo")
+                else ""
+            ),
+            "period_key": (
+                str(self.period_combo.currentData() or "")
+                if hasattr(self, "period_combo")
+                else ""
+            ),
+            "hemisphere": (
+                str(self.hemisphere_combo.currentData() or "")
+                if hasattr(self, "hemisphere_combo")
+                else "north"
+            ),
+            "advanced_context_enabled": self._advanced_context_enabled(),
+            "show_experimental_contexts": self._show_experimental_contexts(),
+            "analysis_auto_hydro": (
+                bool(self.analysis_auto_hydro_checkbox.isChecked())
+                if hasattr(self, "analysis_auto_hydro_checkbox")
+                else False
+            ),
+            "landscape_auto_hydro": (
+                bool(self.landscape_auto_hydro_checkbox.isChecked())
+                if hasattr(self, "landscape_auto_hydro_checkbox")
+                else False
+            ),
+            "include_terms": (
+                bool(self.include_terms_checkbox.isChecked())
+                if hasattr(self, "include_terms_checkbox")
+                else False
+            ),
+            "mountain_name_enrichment_enabled": self.mountain_name_enrichment_enabled(),
+            "mountain_name_radius_m": self.mountain_name_radius_m(),
+            "mountain_name_max_features": self.mountain_name_max_features(),
+            "mountain_name_language_preference": self.mountain_name_language_preference(),
+            "selected_layers": {
+                "sites": (
+                    self.sites_combo.currentLayer().name()
+                    if hasattr(self, "sites_combo") and self.sites_combo.currentLayer()
+                    else ""
+                ),
+                "dem": (
+                    self.dem_combo.currentLayer().name()
+                    if hasattr(self, "dem_combo") and self.dem_combo.currentLayer()
+                    else ""
+                ),
+                "water": (
+                    self.water_combo.currentLayer().name()
+                    if hasattr(self, "water_combo") and self.water_combo.currentLayer()
+                    else ""
+                ),
+            },
+            "trust_metadata": trust_metadata,
+            "latest_task_summary": {
+                "progress_summary": self.progress_summary_label.text()
+                if hasattr(self, "progress_summary_label")
+                else "",
+                "next_step": self.next_step_label.text()
+                if hasattr(self, "next_step_label")
+                else "",
+                "workflow_status": self.workflow_status_label.text()
+                if hasattr(self, "workflow_status_label")
+                else "",
+            },
+        }
 
     def _emit_run_requested(self):
         culture_key, period_key = self._effective_context_keys()
@@ -2181,6 +2417,12 @@ class FengShuiDockWidget(QWidget):
             period_key,
             self.analysis_auto_hydro_checkbox.isChecked(),
         )
+
+    def _emit_cancel_requested(self):
+        self.cancel_requested.emit()
+
+    def _emit_support_bundle_requested(self):
+        self.support_bundle_requested.emit()
 
     def _emit_terms_requested(self):
         culture_key, period_key = self._effective_context_keys()
