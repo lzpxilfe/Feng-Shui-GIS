@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "texts": {
     "help_tab_quick_terms": {
       "ko": "숫자 해석",
@@ -40,6 +41,18 @@
       "ko": "분석 모드",
       "en": "Workflow mode"
     },
+    "workflow_mode_quick": {
+      "ko": "빠른 시작",
+      "en": "Quick"
+    },
+    "workflow_mode_research": {
+      "ko": "연구",
+      "en": "Research"
+    },
+    "workflow_mode_developer": {
+      "ko": "개발자",
+      "en": "Developer"
+    },
     "workflow_mode_basic": {
       "ko": "기본",
       "en": "Basic"
@@ -55,6 +68,38 @@
     "workflow_mode_expert_short": {
       "ko": "전문",
       "en": "Expert"
+    },
+    "workflow_mode_quick_short": {
+      "ko": "빠른 시작",
+      "en": "Quick"
+    },
+    "workflow_mode_research_short": {
+      "ko": "연구",
+      "en": "Research"
+    },
+    "workflow_mode_developer_short": {
+      "ko": "개발자",
+      "en": "Developer"
+    },
+    "workflow_mode_hint_quick": {
+      "ko": "<b>빠른 시작</b>은 목표와 DEM, 기본 레이어만 고르고 바로 실행하는 가장 짧은 흐름입니다.",
+      "en": "<b>Quick</b> keeps only the shortest path: choose the goal, DEM, and layers, then run."
+    },
+    "workflow_mode_hint_research": {
+      "ko": "<b>연구</b>는 근거 보기, 프로파일 비교, 보정 기능을 열어 연구용 탐색 흐름을 제공합니다.",
+      "en": "<b>Research</b> opens evidence, compare, and calibration controls for archaeology-oriented reading."
+    },
+    "workflow_mode_hint_developer": {
+      "ko": "<b>개발자</b>는 연구 제어를 항상 보이게 하고 진행 상태를 더 자세히 드러냅니다.",
+      "en": "<b>Developer</b> keeps research controls visible and exposes more workflow state for inspection."
+    },
+    "advanced_options_button_research": {
+      "ko": "연구 제어 열기",
+      "en": "Research Controls"
+    },
+    "advanced_options_button_developer": {
+      "ko": "개발자 제어",
+      "en": "Developer Controls"
     },
     "goal_hint_tomb": {
       "ko": "<b>의식/무덤</b> 모드입니다. 의례·묘지·제사 공간의 형세를 읽기 위해 <b>{profile}</b> 프리셋을 자동 적용합니다.",
@@ -160,9 +205,137 @@
       "ko": "지표 빠른 설명",
       "en": "Metric Help"
     },
+    "guide_section_interpretation": {
+      "ko": "<b>해석</b>",
+      "en": "<b>Interpretation</b>"
+    },
+    "guide_section_analytical": {
+      "ko": "<b>분석 수치</b>",
+      "en": "<b>Analytical</b>"
+    },
+    "guide_section_audit": {
+      "ko": "<b>감사 메타</b>",
+      "en": "<b>Audit</b>"
+    },
+    "report_section_interpretation_title": {
+      "ko": "해석",
+      "en": "Interpretation"
+    },
+    "report_section_analytical_title": {
+      "ko": "분석 수치",
+      "en": "Analytical"
+    },
+    "report_section_audit_title": {
+      "ko": "감사 메타",
+      "en": "Audit"
+    },
+    "compare_report_interpretation_note": {
+      "ko": "이 비교는 보정 프로파일이 기본 프로파일에 비해 점수를 어떻게 바꾸는지 설명할 뿐이며, 독립적인 검증 결과는 아닙니다.",
+      "en": "This comparison explains how the calibrated profile shifts scores relative to the base profile; it is not a standalone validation result."
+    },
+    "compare_report_top_change_count_label": {
+      "ko": "상위 변화 피처 수",
+      "en": "Top changed features"
+    },
+    "compare_report_reading_note_label": {
+      "ko": "해석 메모",
+      "en": "Reading note"
+    },
+    "compare_report_reason_excerpt_limit_label": {
+      "ko": "이유 문장 길이 제한",
+      "en": "Reason excerpt limit"
+    },
+    "compare_report_timestamp_label": {
+      "ko": "생성 시각",
+      "en": "Timestamp"
+    },
+    "compare_report_top_change_uids_label": {
+      "ko": "상위 변화 feature_uid",
+      "en": "Top change feature_uids"
+    },
+    "calibration_md_split_deterministic_label": {
+      "ko": "결정적 분할",
+      "en": "deterministic_split"
+    },
+    "calibration_md_split_fit_count_label": {
+      "ko": "학습 행 수",
+      "en": "fit_count"
+    },
+    "calibration_md_split_selection_count_label": {
+      "ko": "선정 행 수",
+      "en": "selection_count"
+    },
+    "calibration_md_split_report_count_label": {
+      "ko": "보고 행 수",
+      "en": "report_count"
+    },
+    "calibration_md_split_fit_role_label": {
+      "ko": "학습 역할",
+      "en": "fit_role"
+    },
+    "calibration_md_split_selection_role_label": {
+      "ko": "선정 역할",
+      "en": "selection_role"
+    },
+    "calibration_md_split_report_role_label": {
+      "ko": "보고 역할",
+      "en": "report_role"
+    },
+    "calibration_md_request_signature_label": {
+      "ko": "요청 시그니처",
+      "en": "request_signature"
+    },
+    "calibration_md_report_signature_label": {
+      "ko": "리포트 시그니처",
+      "en": "report_signature"
+    },
+    "calibration_md_manifest_seed_label": {
+      "ko": "실행 시드",
+      "en": "manifest_seed"
+    },
+    "calibration_md_qgis_version_label": {
+      "ko": "QGIS 버전",
+      "en": "qgis_version"
+    },
     "workflow_progress_format": {
       "ko": "%p% 준비",
       "en": "%p% ready"
+    },
+    "workflow_progress_running_format": {
+      "ko": "%p% 실행 중",
+      "en": "%p% running"
+    },
+    "workflow_running_next_template": {
+      "ko": "현재 실행 중: {action}. 필요하면 이 패널에서 취소할 수 있습니다.",
+      "en": "Running now: {action}. You can cancel from this panel if needed."
+    },
+    "workflow_running_summary_suffix": {
+      "ko": "상태: 실행 중",
+      "en": "Status: running"
+    },
+    "workflow_status_running_default_label": {
+      "ko": "작업",
+      "en": "workflow"
+    },
+    "workflow_status_running_template": {
+      "ko": "실행 중: {action}.",
+      "en": "Running: {action}."
+    },
+    "analysis_task_running": {
+      "ko": "이미 작업이 진행 중입니다. 취소한 뒤 다시 시작해주세요.",
+      "en": "A task is already running. Please wait or cancel it before starting another."
+    },
+    "analysis_task_cancelled": {
+      "ko": "작업이 취소되었습니다.",
+      "en": "Operation was canceled."
+    },
+    "analysis_task_cancel_requested": {
+      "ko": "취소 요청을 보냈습니다. 작업 종료를 기다리는 중입니다.",
+      "en": "Cancel request sent. Waiting for workflow to stop."
+    },
+    "analysis_no_task_to_cancel": {
+      "ko": "현재 실행 중인 작업이 없습니다.",
+      "en": "No running workflow to cancel."
     },
     "negative_ratio_label": {
       "ko": "음성 샘플 배수",
@@ -313,8 +486,52 @@
       "en": "Calibration Report"
     },
     "calibration_report_heading": {
-      "ko": "로컬 캘리브레이션 결과",
-      "en": "Local Calibration Result"
+      "ko": "로컬 튜닝 요약",
+      "en": "Local Tuning Summary"
+    },
+    "calibration_goal_local_tuning": {
+      "ko": "입지 규칙의 로컬 가중치와 파라미터를 탐색적으로 조정하는 단계입니다. 단독 검증 결론으로 해석하면 안 됩니다.",
+      "en": "This step tunes local weights and profile parameters for exploratory calibration. It should not be treated as a standalone validation claim."
+    },
+    "calibration_phase_held_out_evaluation": {
+      "ko": "홀드아웃 평가",
+      "en": "Held-out evaluation"
+    },
+    "calibration_phase_held_out_evaluation_note": {
+      "ko": "보고 지표는 후보 선택에 쓰이지 않은 홀드아웃 행에서 계산되었습니다.",
+      "en": "Reported metrics were computed on held-out rows that were not used for candidate selection."
+    },
+    "calibration_phase_no_holdout_evaluation": {
+      "ko": "홀드아웃 평가 없음",
+      "en": "No held-out evaluation available"
+    },
+    "calibration_phase_no_holdout_evaluation_note": {
+      "ko": "홀드아웃 평가 행이 없어, 이번 실행은 튜닝 진단만 제공하고 보고 가능한 평가 지표는 비워둡니다.",
+      "en": "No held-out evaluation rows were available, so this run exposes tuning diagnostics but leaves reportable evaluation metrics empty."
+    },
+    "calibration_phase_validation_reused": {
+      "ko": "선정 재사용 검증",
+      "en": "Validation reused for model selection"
+    },
+    "calibration_phase_validation_reused_note": {
+      "ko": "보고 지표는 후보 선택에도 사용된 validation 행을 다시 사용합니다.",
+      "en": "Reported metrics reuse the same validation rows that were used for candidate selection."
+    },
+    "calibration_phase_evaluation_reused": {
+      "ko": "선정 재사용 평가",
+      "en": "Evaluation rows reused for model selection"
+    },
+    "calibration_phase_evaluation_reused_note": {
+      "ko": "evaluation 행이 후보 선택에도 다시 사용되어, 순수 홀드아웃 평가로 볼 수 없습니다.",
+      "en": "Evaluation rows were also reused for candidate selection, so this is not a pure held-out estimate."
+    },
+    "calibration_phase_in_sample_diagnostic": {
+      "ko": "표본내 튜닝 진단",
+      "en": "In-sample tuning diagnostic"
+    },
+    "calibration_phase_in_sample_diagnostic_note": {
+      "ko": "보고 지표는 표본내 튜닝 진단값이므로 일반화 성능처럼 해석하면 안 됩니다.",
+      "en": "Reported metrics are in-sample tuning diagnostics and should not be interpreted as held-out performance."
     },
     "link_arrow": {
       "ko": "→",
@@ -335,6 +552,10 @@
     "calibration_success_template": {
       "ko": "캘리브레이션 완료: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}",
       "en": "Calibration done: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}"
+    },
+    "calibration_success_no_holdout_template": {
+      "ko": "캘리브레이션 완료: 튜닝 진단은 생성했지만 홀드아웃 평가 행이 부족해 보고 지표는 만들지 않았습니다.",
+      "en": "Calibration done: tuning diagnostics were prepared, but there were not enough held-out evaluation rows to report metrics."
     },
     "projected_crs_required": {
       "ko": "DEM 좌표계가 경위도(도 단위)입니다. 이 플러그인의 거리·반경 계산은 투영 좌표계가 필요합니다. 미터 기반 CRS로 재투영한 뒤 다시 실행하세요.",
@@ -504,6 +725,26 @@
       "ko": "프로파일 비교 완료.",
       "en": "Profile comparison completed."
     },
+    "compare_feature_contract_failed": {
+      "ko": "프로파일 비교 결과 레이어의 식별자 매칭이 맞지 않아 작업을 중단했습니다.",
+      "en": "Profile comparison contract check failed because feature identity sets are inconsistent."
+    },
+    "compare_top_change_contract_failed": {
+      "ko": "변화도 분석 결과와 기반 레이어의 식별자가 일치하지 않아 비교를 안전하게 중단했습니다.",
+      "en": "Top-change contract check failed because top-change identities are inconsistent with source layers."
+    },
+    "compare_top_change_selection_failed": {
+      "ko": "변화도 선택 단계에서 식별자 매핑이 맞지 않아 지도 선택을 완료하지 못했습니다.",
+      "en": "Feature selection by UID failed during top-change inspection."
+    },
+    "compare_top_change_export_failed": {
+      "ko": "변화도 레이어 생성 시 식별자 매핑이 깨져 결과를 내보낼 수 없습니다.",
+      "en": "Top-change export failed because UID mapping became unstable."
+    },
+    "calibration_feature_contract_failed": {
+      "ko": "캘리브레이션 결과 레이어의 식별자 계약을 만족하지 못해 작업이 중단되었습니다.",
+      "en": "Calibration output failed UID contract validation; stopping to avoid mismatched identifiers."
+    },
     "compare_report_reason_compare_template": {
       "ko": "기준: {base} / 보정: {calibrated}",
       "en": "Base: {base} / Calibrated: {calibrated}"
@@ -621,12 +862,12 @@
       "en": "Metric"
     },
     "calibration_metric_header_base": {
-      "ko": "기준",
-      "en": "Base"
+      "ko": "기준선",
+      "en": "Baseline"
     },
     "calibration_metric_header_tuned": {
-      "ko": "보정",
-      "en": "Tuned"
+      "ko": "보고값",
+      "en": "Reported"
     },
     "calibration_metric_header_delta": {
       "ko": "차이",
@@ -1024,6 +1265,18 @@
     "calibration_md_context_random_seed_label": {
       "en": "random_seed"
     },
+    "calibration_md_goal_label": {
+      "ko": "목표",
+      "en": "goal"
+    },
+    "calibration_md_report_phase_label": {
+      "ko": "보고 지표 단계",
+      "en": "reported_metric_phase"
+    },
+    "calibration_md_report_note_label": {
+      "ko": "해석 주의",
+      "en": "reported_metric_note"
+    },
     "calibration_md_paper_evidence_title": {
       "ko": "논문 근거",
       "en": "Paper Evidence"
@@ -1054,6 +1307,18 @@
     },
     "calibration_html_valid_label": {
       "en": "Valid"
+    },
+    "calibration_html_goal_label": {
+      "ko": "목표",
+      "en": "Goal"
+    },
+    "calibration_html_report_phase_label": {
+      "ko": "보고 지표 단계",
+      "en": "Reported metric phase"
+    },
+    "calibration_html_report_note_label": {
+      "ko": "해석 주의",
+      "en": "Interpretation note"
     },
     "calibration_html_best_f1_label": {
       "en": "Best F1"

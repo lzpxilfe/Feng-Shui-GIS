@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "base_culture_key": "east_asia",
   "base_period_key": "early_modern",
   "neutral_defaults": {

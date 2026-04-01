@@ -3,6 +3,7 @@
 
 import json
 import math
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -11,6 +12,8 @@ from qgis.core import (
     QgsCoordinateTransform,
     QgsPointXY,
     QgsProject,
+    QgsMessageLog,
+    Qgis,
 )
 
 from .mountain_options import mountain_options
@@ -18,10 +21,12 @@ from .mountain_options import mountain_options
 
 class MountainNameService:
     OVERPASS_URL_DEFAULT = "https://overpass-api.de/api/interpreter"
+    _LOG_TAG = "Feng Shui MountainLookup"
 
     def __init__(self, project=None, timeout_sec=None):
         options = mountain_options()
         self.project = project or QgsProject.instance()
+        self.last_query_error = None
         configured_timeout = options.get("request_timeout_sec", 18)
         if timeout_sec is None:
             timeout_sec = configured_timeout
@@ -37,6 +42,10 @@ class MountainNameService:
         self.source_label = str(options.get("source_label", "OSM/Overpass")).strip() or "OSM/Overpass"
         self.default_radius_m = max(100.0, float(options.get("radius_default_m", 3500.0)))
         self._wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+
+    @staticmethod
+    def _log_query_warning(message):
+        QgsMessageLog.logMessage(message, MountainNameService._LOG_TAG, Qgis.Warning)
 
     @staticmethod
     def _haversine_m(lat1, lon1, lat2, lon2):
@@ -60,7 +69,15 @@ class MountainNameService:
             transformer = QgsCoordinateTransform(source_crs, self._wgs84, self.project)
             transformed = transformer.transform(point)
             return QgsPointXY(transformed.x(), transformed.y())
-        except Exception:
+        except (TypeError, ValueError) as exc:
+            self._log_query_warning(
+                f"Mountain lookup skipped: failed to transform coordinate point ({type(exc).__name__}: {exc})."
+            )
+            return None
+        except Exception as exc:
+            self._log_query_warning(
+                f"Mountain lookup skipped: unexpected coordinate transform error ({type(exc).__name__}: {exc})."
+            )
             return None
 
     def fetch_candidates_for_extent(self, extent, source_crs, max_bbox_deg=None):
@@ -109,13 +126,34 @@ class MountainNameService:
             },
             method="POST",
         )
+        self.last_query_error = None
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_sec) as response:
                 raw = response.read().decode("utf-8")
             data = json.loads(raw)
-        except Exception:
+        except urllib.error.HTTPError as exc:
+            self.last_query_error = f"Overpass API HTTP error ({exc.code}): {exc.reason}"
+            self._log_query_warning(self.last_query_error)
             return []
-
+        except urllib.error.URLError as exc:
+            reason = getattr(exc, "reason", str(exc))
+            self.last_query_error = f"Overpass API request failed: {reason}"
+            self._log_query_warning(self.last_query_error)
+            return []
+        except json.JSONDecodeError as exc:
+            self.last_query_error = f"Overpass API returned invalid JSON: {exc}"
+            self._log_query_warning(self.last_query_error)
+            return []
+        except UnicodeDecodeError as exc:
+            self.last_query_error = f"Overpass API response decoding failed: {exc}"
+            self._log_query_warning(self.last_query_error)
+            return []
+        except Exception as exc:
+            self.last_query_error = (
+                f"Mountain lookup failed while requesting OSM service: {type(exc).__name__}: {exc}"
+            )
+            self._log_query_warning(self.last_query_error)
+            return []
         candidates = []
         for item in data.get("elements", []):
             if not isinstance(item, dict):

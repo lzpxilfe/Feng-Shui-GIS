@@ -35,3 +35,5 @@ my-study/
 ```
 
 Start from `reproducibility_manifest.template.json` and replace placeholders before the first run.
+
+`performance_budget.template.json` is a companion template for defining small/medium/large runtime budgets before you start comparing benchmark records.
