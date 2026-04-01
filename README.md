@@ -1,9 +1,27 @@
 # 🧭 Feng-Shui GIS
 
-> **Terrain-first, evidence-aware QGIS plugin for reading historical landscapes through geomorphology, cultural context, and reproducible interpretation.**
+> **Heuristic, terrain-first QGIS plugin for comparative landscape reading inspired by Feng Shui. Not a predictive truth model.**
 
 풍수 해석을 “자동 정답기”가 아니라  
 **지형 구조 추출 → 해석 레이어 생성 → 비교/보정 → 재현 가능한 보고**로 이어지는 연구용 GIS 워크플로로 재구성한 QGIS 플러그인입니다.
+
+![QGIS](https://img.shields.io/badge/QGIS-3.28%2B-589632?style=flat-square)
+![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?style=flat-square)
+![Mode](https://img.shields.io/badge/Mode-Quick%20%7C%20Research%20%7C%20Developer-7A5C3E?style=flat-square)
+![Output](https://img.shields.io/badge/Outputs-Reports%20%7C%20Manifest%20%7C%20Support%20Bundle-1F6F78?style=flat-square)
+
+---
+
+## 🚪 Start here
+
+| What you need | Where to go |
+| --- | --- |
+| Safe first run with sample data | 📦 [Sample Project](examples/sample_project/README.md) |
+| Fast setup path after install | 🛫 [First Run Guide](docs/first_run_guide.md) |
+| Tested baseline and known limits | 🧪 [Tested Versions & Known Limitations](docs/tested_versions.md) |
+| When something looks wrong | 🧯 [Troubleshooting](docs/troubleshooting.md) |
+| Repro package for maintainers | 🆘 [Support Bundle Guide](docs/support_bundle_guide.md) |
+| Issue filing template | 🐞 [Bug Report Template](docs/bug_report_template.md) |
 
 ---
 
@@ -18,6 +36,13 @@
 - 📍 후보지 점수와 이유 설명
 - 🔁 프로파일 비교와 로컬 보정
 - 🧾 리포트, manifest, support bundle을 통한 재현성 확보
+
+### 🔎 At a glance
+
+- 입력: `DEM + water(optional) + candidate sites(optional)`
+- 핵심 산출물: `ridges`, `hydro`, `site scoring`, `terms`, `links`
+- 비교 기능: `profile compare`, `local calibration`
+- 운영 산출물: `JSON/Markdown report`, `run manifest`, `benchmark manifest`, `support bundle`
 
 ---
 
@@ -56,16 +81,6 @@
 4. `캘리브레이션`으로 로컬 튜닝 진단을 확인합니다.
 5. `프로파일 비교`로 selected profile 대비 gain/drop을 읽습니다.
 
-### 🗂️ Start here
-
-- 📦 [Sample Project](examples/sample_project/README.md)
-- 🛫 [First Run Guide](docs/first_run_guide.md)
-- 🧯 [Troubleshooting](docs/troubleshooting.md)
-- 🆘 [Support Bundle Guide](docs/support_bundle_guide.md)
-- 🐞 [Bug Report Template](docs/bug_report_template.md)
-
----
-
 ## 🗺️ Core workflow
 
 ```text
@@ -96,6 +111,17 @@ Compare / Calibration / Reports / Manifests
 - 🛠️ `Developer`
   - diagnostics / support bundle / 상태 정보
   - 운영 점검과 공유용 산출물 확인
+
+### 🧭 Representative use cases
+
+- ⚡ `Quick terrain reading`
+  - DEM과 water만으로 빠르게 능선/수계/기초 입지 해석층을 확인합니다.
+
+- 🔬 `Research compare / calibration`
+  - candidate points와 context를 함께 넣고 compare와 local calibration을 읽습니다.
+
+- 🆘 `Support bundle repro sharing`
+  - 이상한 결과가 나오면 bundle을 내보내고 report/manifest와 함께 유지보수 맥락을 공유합니다.
 
 ---
 
@@ -148,9 +174,13 @@ Compare / Calibration / Reports / Manifests
 ### ❗ Read results carefully
 
 - `fs_score`는 **유적 존재 확률**이 아닙니다.
+- 이 플러그인은 **heuristic terrain interpretation tool**입니다.
+- 이 플러그인은 **predictive truth model이 아닙니다.**
 - calibration은 **독립 검증을 대체하지 않습니다.**
 - compare는 **선택한 프로파일 대비 상대 변화**입니다.
 - 결과는 문헌, 현장 조사, 추가 GIS 해석과 함께 읽어야 합니다.
+
+더 짧은 운영 기준은 [Tested Versions & Known Limitations](docs/tested_versions.md)에서 바로 확인할 수 있습니다.
 
 ---
 
@@ -167,6 +197,13 @@ Compare / Calibration / Reports / Manifests
 - [examples/sample_project/sample_project.qgz](examples/sample_project/sample_project.qgz)
 - [examples/sample_project/sample_project.qgs](examples/sample_project/sample_project.qgs)
 - [examples/sample_project/README.md](examples/sample_project/README.md)
+
+### ✅ Normal first run should give you
+
+- `fengshui_ridges` or `풍수_산줄기`
+- `fengshui_hydro` or `풍수_수계`
+- `fengshui` or `풍수_입지평가`
+- report example comparison targets from the sample project folder
 
 ### 🚦 Smoke & guard scripts
 
@@ -224,6 +261,7 @@ Compare / Calibration / Reports / Manifests
 - 경위도 CRS보다 projected CRS 사용
 - DEM 품질이 낮으면 ridge / hydro / 거리 기반 결과 해석에 주의
 - auto-hydro는 보조 수단으로 사용
+- 결과는 comparative interpretation frame으로 읽고, predictive result처럼 읽지 않기
 
 ---
 
@@ -233,6 +271,7 @@ Compare / Calibration / Reports / Manifests
 
 - [First Run Guide](docs/first_run_guide.md)
 - [Researcher Quickstart](docs/researcher_quickstart.md)
+- [Tested Versions & Known Limitations](docs/tested_versions.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 ### 🔬 Research & validation
@@ -296,4 +335,3 @@ Compare / Calibration / Reports / Manifests
 ## 🔗 Repository
 
 - GitHub: [lzpxilfe/Feng-Shui-GIS](https://github.com/lzpxilfe/Feng-Shui-GIS)
-

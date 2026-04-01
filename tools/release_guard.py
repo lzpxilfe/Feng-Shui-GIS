@@ -18,6 +18,7 @@ def required_paths():
     return [
         ROOT / "README.md",
         ROOT / "docs" / "first_run_guide.md",
+        ROOT / "docs" / "tested_versions.md",
         ROOT / "docs" / "troubleshooting.md",
         ROOT / "docs" / "support_bundle_guide.md",
         ROOT / "docs" / "release_checklist.md",
@@ -35,6 +36,22 @@ def validate_metadata():
     missing = [key for key in required if not str(general.get(key, "")).strip()]
     if missing:
         raise SystemExit("Missing metadata keys: " + ", ".join(missing))
+    description = str(general.get("description", "")).lower()
+    about = str(general.get("about", "")).lower()
+    metadata_checks = {
+        "heuristic": (description + " " + about),
+        "predictive truth model": (description + " " + about),
+        "standalone validation": about,
+        "projected crs": about,
+    }
+    missing_phrases = [
+        phrase for phrase, text in metadata_checks.items() if phrase not in text
+    ]
+    if missing_phrases:
+        raise SystemExit(
+            "Metadata is missing store-facing limitation phrases: "
+            + ", ".join(missing_phrases)
+        )
 
 
 def validate_readme_links():
@@ -42,6 +59,8 @@ def validate_readme_links():
     required = (
         "sample project",
         "first run",
+        "tested versions",
+        "known limitations",
         "troubleshooting",
         "support bundle",
         "what this tool is not",
@@ -49,6 +68,71 @@ def validate_readme_links():
     missing = [label for label in required if label.lower() not in text.lower()]
     if missing:
         raise SystemExit("README is missing productization sections: " + ", ".join(missing))
+
+
+def validate_tested_versions_doc():
+    text = (ROOT / "docs" / "tested_versions.md").read_text(encoding="utf-8").lower()
+    required = (
+        "qgis",
+        "ubuntu",
+        "known limitations",
+        "projected crs",
+        "predictive truth model",
+        "standalone validation",
+    )
+    missing = [label for label in required if label not in text]
+    if missing:
+        raise SystemExit(
+            "Tested versions / known limitations doc is incomplete: " + ", ".join(missing)
+        )
+
+
+def validate_sample_project_readme():
+    text = (ROOT / "examples" / "sample_project" / "README.md").read_text(
+        encoding="utf-8"
+    ).lower()
+    required = (
+        "expected layers",
+        "expected report examples",
+        "fengshui_ridges",
+        "fengshui_hydro",
+        "fengshui",
+    )
+    missing = [label for label in required if label not in text]
+    if missing:
+        raise SystemExit("Sample project README is missing expected-output guidance: " + ", ".join(missing))
+
+
+def validate_bug_report_template():
+    text = (ROOT / "docs" / "bug_report_template.md").read_text(encoding="utf-8").lower()
+    required = (
+        "support bundle",
+        "qgis version",
+        "plugin version",
+        "operating system",
+    )
+    missing = [label for label in required if label not in text]
+    if missing:
+        raise SystemExit("Bug report template is missing support fields: " + ", ".join(missing))
+
+
+def validate_no_local_absolute_links():
+    targets = [
+        ROOT / "README.md",
+        ROOT / "docs",
+        ROOT / "examples" / "sample_project" / "README.md",
+    ]
+    offending = []
+    for target in targets:
+        files = [target] if target.is_file() else sorted(target.rglob("*.md"))
+        for file_path in files:
+            text = file_path.read_text(encoding="utf-8")
+            if "/Users/" in text:
+                offending.append(str(file_path.relative_to(ROOT)))
+    if offending:
+        raise SystemExit(
+            "Markdown contains local absolute paths: " + ", ".join(offending)
+        )
 
 
 def validate_fixture_layout():
@@ -98,6 +182,10 @@ def main():
         raise SystemExit("Missing required release assets: " + ", ".join(missing))
     validate_metadata()
     validate_readme_links()
+    validate_tested_versions_doc()
+    validate_sample_project_readme()
+    validate_bug_report_template()
+    validate_no_local_absolute_links()
     validate_fixture_layout()
     validate_support_bundle_writer()
     print(
@@ -107,7 +195,10 @@ def main():
                 "checked": [
                     "metadata",
                     "readme",
+                    "tested_versions",
                     "sample_project",
+                    "bug_report_template",
+                    "markdown_link_integrity",
                     "fixture_layout",
                     "support_bundle",
                 ],

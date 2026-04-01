@@ -21,7 +21,7 @@ Use the same tier language across notes, reports, and review:
 - `medium`: one normal research case with scoring or compare enabled
 - `large`: dense site inventory, calibration or repeated compare/export workflow
 
-Start from [performance_budget.template.json](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/examples/performance_budget.template.json) and adapt the thresholds to your machine or lab standard.
+Start from [performance_budget.template.json](../examples/performance_budget.template.json) and adapt the thresholds to your machine or lab standard.
 
 ## 3. Required Artifacts
 

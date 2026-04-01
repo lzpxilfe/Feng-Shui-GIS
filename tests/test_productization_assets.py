@@ -10,6 +10,7 @@ class ProductizationAssetTests(unittest.TestCase):
     def test_docs_and_sample_project_assets_exist(self):
         required = [
             ROOT / "docs" / "first_run_guide.md",
+            ROOT / "docs" / "tested_versions.md",
             ROOT / "docs" / "troubleshooting.md",
             ROOT / "docs" / "bug_report_template.md",
             ROOT / "docs" / "support_bundle_guide.md",

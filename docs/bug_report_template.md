@@ -1,16 +1,29 @@
 # Bug Report Template
 
-## Summary
+## Before you write the report
 
-- What did you try to do?
-- What did you expect?
-- What actually happened?
+- export a `Support Bundle`
+- attach the generated zip first
+- record the exact QGIS version, plugin version, and operating system
 
 ## Environment
 
 - QGIS version:
 - Plugin version:
 - Operating system:
+
+## Input summary
+
+- DEM CRS:
+- DEM quality / source note:
+- Water layer used: `curated / auto-hydro / none`
+- Candidate point layer used: `yes / no`
+
+## Summary
+
+- What did you try to do?
+- What did you expect?
+- What actually happened?
 
 ## Workflow
 

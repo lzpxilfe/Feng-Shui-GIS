@@ -6,7 +6,7 @@ This guide is the shortest path for a first-time researcher using Feng-Shui-GIS.
 
 ## 1. Start with the sample project
 
-Use [examples/sample_project/README.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/examples/sample_project/README.md) first.
+Use [examples/sample_project/README.md](../examples/sample_project/README.md) first.
 
 It gives you:
 
@@ -15,23 +15,42 @@ It gives you:
 - a small candidate point layer
 - expected report examples
 
-## 2. Minimum safe setup
+## 2. Five-step first run
 
 1. Load the DEM.
-2. Confirm the project CRS is projected in meters.
-3. Load water and sites if available.
-4. Open the plugin and stay in `Quick` or `Research`.
-5. Run terrain extraction first.
-6. Only then move to scoring, compare, or calibration.
+2. Select a water layer, or use auto-hydro if you do not have one.
+3. Select the candidate point layer.
+4. Run terrain extraction and then site analysis.
+5. Check the result layers and the generated report artifacts.
 
-## 3. Why projected CRS matters
+## 3. Three common first runs
+
+### Quick terrain reading
+
+- start with DEM + water
+- stay in `Quick`
+- confirm ridge / hydro / first scoring outputs appear
+
+### Research compare / calibration
+
+- use the sample sites layer
+- stay in `Research`
+- run compare or calibration only after the first analysis path succeeds
+
+### Support bundle repro sharing
+
+- reproduce the issue once
+- export a support bundle
+- attach the bundle and report what the DEM / CRS / water setup looked like
+
+## 4. Why projected CRS matters
 
 Distance-based terrain logic is used throughout the plugin.
 
 - If the DEM is in geographic degrees, radius and smoothing behavior become distorted.
 - For reproducible interpretation, use a projected CRS in meters whenever possible.
 
-## 4. DEM quality warnings
+## 5. DEM quality warnings
 
 Low-quality DEMs can create misleading outputs:
 
@@ -42,7 +61,7 @@ Low-quality DEMs can create misleading outputs:
 
 If the DEM is coarse, treat outputs as exploratory.
 
-## 5. Auto-hydro limitations
+## 6. Auto-hydro limitations
 
 Auto-hydro is a fallback, not a replacement for curated hydrology.
 
@@ -50,7 +69,7 @@ Auto-hydro is a fallback, not a replacement for curated hydrology.
 - use auto-hydro when you need a fast first pass
 - document when auto-hydro was used in your notes or support bundle
 
-## 6. How not to read results
+## 7. How not to read results
 
 - `fs_score` is not the probability of site presence
 - calibration is not a standalone validation claim
