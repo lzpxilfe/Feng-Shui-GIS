@@ -37,3 +37,11 @@ my-study/
 Start from `reproducibility_manifest.template.json` and replace placeholders before the first run.
 
 `performance_budget.template.json` is a companion template for defining small/medium/large runtime budgets before you start comparing benchmark records.
+
+`sample_project/` contains a synthetic, repository-safe starter package:
+
+- `sample_dem.asc`
+- `sample_water.geojson`
+- `sample_sites.geojson`
+- expected report examples
+- simple screenshot surrogates for docs and smoke checks

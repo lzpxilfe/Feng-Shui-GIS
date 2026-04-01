@@ -1,0 +1,18 @@
+{
+  "mode": "analysis_example",
+  "interpretation": {
+    "reading_note": "This sample demonstrates relative terrain reading, not site-presence probability."
+  },
+  "analytical": {
+    "site_count": 3,
+    "top_site": "Site A"
+  },
+  "audit": {
+    "sample_project": true,
+    "expected_layers": [
+      "fengshui_ridges",
+      "fengshui_hydro",
+      "fengshui"
+    ]
+  }
+}

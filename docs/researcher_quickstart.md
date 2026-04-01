@@ -4,6 +4,12 @@ Updated: 2026-03-20
 
 This guide is the shortest path to a reproducible run that another lab can inspect and rerun.
 
+If this is your first time with the plugin, start with:
+
+- `examples/sample_project/README.md`
+- `docs/first_run_guide.md`
+- `docs/support_bundle_guide.md`
+
 ## 1. Preconditions
 
 - QGIS `3.28+`

@@ -1,0 +1,6 @@
+{
+  "case_id": "exploratory_context_case",
+  "description": "Context case that should surface exploratory trust badges.",
+  "expected_context_badge": "Exploratory Context",
+  "score_drift_tolerance": 0.08
+}

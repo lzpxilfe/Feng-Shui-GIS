@@ -3,6 +3,7 @@
 
 from html import escape
 
+from ..trust_metadata import badges_html, badges_markdown, build_trust_metadata, section_titles
 from ..ui_catalog import ui_text
 
 
@@ -53,26 +54,6 @@ class CalibrationReportWriter:
                 "not a standalone validation claim."
             ),
         )
-
-    @staticmethod
-    def section_titles(text_lang):
-        return {
-            "interpretation": ui_text(
-                "report_section_interpretation_title",
-                text_lang,
-                default="Interpretation",
-            ),
-            "analytical": ui_text(
-                "report_section_analytical_title",
-                text_lang,
-                default="Analytical",
-            ),
-            "audit": ui_text(
-                "report_section_audit_title",
-                text_lang,
-                default="Audit",
-            ),
-        }
 
     @staticmethod
     def phase_parts(report, text_lang):
@@ -127,6 +108,24 @@ class CalibrationReportWriter:
             ),
         )
         return phase, phase_label, phase_notice
+
+    @classmethod
+    def trust_metadata(cls, report, text_lang):
+        trust_metadata = report.get("trust_metadata") or {}
+        if isinstance(trust_metadata, dict) and trust_metadata.get("result_badges"):
+            return trust_metadata
+        phase, _phase_label, _phase_notice = cls.phase_parts(report, text_lang)
+        return build_trust_metadata(
+            text_lang,
+            advanced_context_enabled=False,
+            culture_key=str(report.get("culture_key") or ""),
+            profile_key=str(
+                report.get("exported_profile_key")
+                or report.get("profile_key")
+                or ""
+            ),
+            reported_metric_phase=phase,
+        )
 
     @staticmethod
     def _split_audit_lines(report, text_lang):
@@ -211,7 +210,8 @@ class CalibrationReportWriter:
         reported_baseline_metrics = cls.reported_baseline_metrics(report)
         goal_text = cls.goal_text(text_lang)
         _phase_code, phase_label, phase_notice = cls.phase_parts(report, text_lang)
-        section_titles = cls.section_titles(text_lang)
+        trust_metadata = cls.trust_metadata(report, text_lang)
+        titles = section_titles(text_lang)
 
         md_title = ui_text(
             "calibration_md_title_template",
@@ -340,11 +340,25 @@ class CalibrationReportWriter:
             text_lang,
             default="No profile-level paper evidence was applied.",
         )
+        md_badges = ui_text("trust_badge_label", text_lang, default="Trust badges")
+        md_score_notice = ui_text(
+            "trust_score_notice_label",
+            text_lang,
+            default="Score notice",
+        )
+        md_calibration_notice = ui_text(
+            "trust_calibration_notice_label",
+            text_lang,
+            default="Calibration notice",
+        )
 
         interpretation_lines = [
+            f"- {md_badges}: {badges_markdown(trust_metadata)}",
+            f"- {md_score_notice}: {str((trust_metadata or {}).get('score_notice') or '')}",
             f"- {md_goal}: {goal_text}",
             f"- {md_report_phase}: {phase_label}",
             f"- {md_report_note}: {phase_notice}",
+            f"- {md_calibration_notice}: {str((trust_metadata or {}).get('calibration_notice') or phase_notice)}",
             f"- {md_scope}: {report.get('calibration_scope', 'threshold_only')}",
         ]
         analytical_lines = [
@@ -390,9 +404,9 @@ class CalibrationReportWriter:
 
         return (
             f"# {md_title}\n\n"
-            f"## {section_titles['interpretation']}\n\n"
+            f"## {titles['interpretation']}\n\n"
             f"{chr(10).join(interpretation_lines)}\n\n"
-            f"## {section_titles['analytical']}\n\n"
+            f"## {titles['analytical']}\n\n"
             f"{chr(10).join(analytical_lines)}\n\n"
             f"### {md_metric_compare_title}\n\n"
             f"{metric_compare_markdown}\n\n"
@@ -400,7 +414,7 @@ class CalibrationReportWriter:
             f"{metadata_markdown}\n\n"
             f"### {md_history_title}\n\n"
             f"{history_markdown}\n\n"
-            f"## {section_titles['audit']}\n\n"
+            f"## {titles['audit']}\n\n"
             f"{chr(10).join(audit_lines)}\n\n"
             f"### {md_paper_title}\n\n"
             f"- {md_paper_summary_label}: {paper_evidence_summary or md_paper_evidence_missing}\n"
@@ -426,7 +440,8 @@ class CalibrationReportWriter:
         reported_baseline_metrics = cls.reported_baseline_metrics(report)
         goal_text = cls.goal_text(text_lang)
         _phase_code, phase_text, phase_notice = cls.phase_parts(report, text_lang)
-        section_titles = cls.section_titles(text_lang)
+        trust_metadata = cls.trust_metadata(report, text_lang)
+        titles = section_titles(text_lang)
 
         heading = ui_text(
             "calibration_report_heading",
@@ -608,6 +623,17 @@ class CalibrationReportWriter:
             text_lang,
             default="No profile-level paper evidence was applied.",
         )
+        badges_label = ui_text("trust_badge_label", text_lang, default="Trust badges")
+        score_notice_label = ui_text(
+            "trust_score_notice_label",
+            text_lang,
+            default="Score notice",
+        )
+        calibration_notice_label = ui_text(
+            "trust_calibration_notice_label",
+            text_lang,
+            default="Calibration notice",
+        )
 
         split_lines = []
         for line in cls._split_audit_lines(report, text_lang):
@@ -638,12 +664,16 @@ class CalibrationReportWriter:
 
         return (
             f"<h3>{escape(heading)}</h3>"
-            f"<h4>{escape(section_titles['interpretation'])}</h4>"
-            f"<p><b>{escape(goal_label)}</b>: {escape(goal_text)}<br/>"
+            f"<h4>{escape(titles['interpretation'])}</h4>"
+            f"{badges_html(trust_metadata)}"
+            f"<p><b>{escape(badges_label)}</b>: {escape(badges_markdown(trust_metadata))}<br/>"
+            f"<b>{escape(score_notice_label)}</b>: {escape(str((trust_metadata or {}).get('score_notice') or ''))}<br/>"
+            f"<b>{escape(goal_label)}</b>: {escape(goal_text)}<br/>"
             f"<b>{escape(report_phase_label)}</b>: {escape(phase_text)}<br/>"
             f"<b>{escape(report_note_label)}</b>: {escape(phase_notice)}<br/>"
+            f"<b>{escape(calibration_notice_label)}</b>: {escape(str((trust_metadata or {}).get('calibration_notice') or phase_notice))}<br/>"
             f"<b>{escape(scope_label)}</b>: {escape(str(report.get('calibration_scope', 'threshold_only')))}</p>"
-            f"<h4>{escape(section_titles['analytical'])}</h4>"
+            f"<h4>{escape(titles['analytical'])}</h4>"
             f"<p><b>{escape(roc_auc_label)}</b>: {reported_metrics.get('roc_auc', 0):.4f}<br/>"
             f"<b>{escape(pr_auc_label)}</b>: {reported_metrics.get('pr_auc', 0):.4f}<br/>"
             f"<b>{escape(positive_label)}</b>: {report.get('positive_count')} / "
@@ -663,7 +693,7 @@ class CalibrationReportWriter:
             f"{metadata_html}"
             f"<h5>{escape(history_title)}</h5>"
             f"{history_html}"
-            f"<h4>{escape(section_titles['audit'])}</h4>"
+            f"<h4>{escape(titles['audit'])}</h4>"
             f"<p><b>{escape(context_title)}</b><br/>"
             f"{escape(culture_label)}: {escape(str(report.get('culture_key')))}<br/>"
             f"{escape(period_label)}: {escape(str(report.get('period_key')))}<br/>"

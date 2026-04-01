@@ -1,0 +1,19 @@
+{
+  "interpretation": {
+    "claim_scope": "comparative_score_reading_only",
+    "reading_note": "Gain/drop means score shift relative to the selected profile."
+  },
+  "analytical": {
+    "delta_stats": {
+      "mean_delta": 0.041,
+      "max_gain": 0.123,
+      "max_drop": -0.052
+    }
+  },
+  "audit": {
+    "top_change_feature_uids": [
+      "site_a",
+      "site_b"
+    ]
+  }
+}

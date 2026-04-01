@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import configparser
 import hashlib
 import json
 import os
@@ -58,6 +59,7 @@ from .reference_catalog import reference_display_text
 from .reporting.benchmark_manifest_writer import BenchmarkManifestWriter
 from .reporting.calibration_report_writer import CalibrationReportWriter
 from .reporting.compare_report_writer import CompareReportWriter
+from .reporting.support_bundle_writer import SupportBundleWriter
 from .ui_catalog import ui_text
 
 
@@ -131,6 +133,7 @@ class FengShuiGisPlugin:
     def __init__(self, iface, analysis_service=None):
         self.iface = iface
         self.action = None
+        self.support_bundle_action = None
         self.toolbar = None
         self.dock = None
         self.plugin_dir = os.path.dirname(__file__)
@@ -146,6 +149,7 @@ class FengShuiGisPlugin:
         self._compare_browser = None
         self._context_warning_cache = set()
         self._analysis_task = None
+        self._recent_error_records = []
 
     def initGui(self):
         icon_path = os.path.join(self.plugin_dir, "yingyang.png")
@@ -157,6 +161,15 @@ class FengShuiGisPlugin:
         self.toolbar.addAction(self.action)
         self.toolbar.setVisible(True)
         self.iface.addPluginToMenu(tr("menu_title"), self.action)
+        self.support_bundle_action = QAction(
+            ui_text(
+                "support_bundle_menu_action",
+                default="Export Support Bundle",
+            ),
+            self.iface.mainWindow(),
+        )
+        self.support_bundle_action.triggered.connect(self.export_support_bundle)
+        self.iface.addPluginToMenu(tr("menu_title"), self.support_bundle_action)
 
     def unload(self):
         if self._analysis_task and self._analysis_task.isActive():
@@ -183,6 +196,10 @@ class FengShuiGisPlugin:
             self.iface.removePluginMenu(tr("menu_title"), self.action)
             self.action.deleteLater()
             self.action = None
+        if self.support_bundle_action:
+            self.iface.removePluginMenu(tr("menu_title"), self.support_bundle_action)
+            self.support_bundle_action.deleteLater()
+            self.support_bundle_action = None
         if self.toolbar:
             self.toolbar.deleteLater()
             self.toolbar = None
@@ -218,6 +235,7 @@ class FengShuiGisPlugin:
             self.dock.terms_requested.connect(self.run_term_extraction)
             self.dock.calibration_requested.connect(self.run_calibration)
             self.dock.cancel_requested.connect(self.cancel_running_tasks)
+            self.dock.support_bundle_requested.connect(self.export_support_bundle)
         if self.dock.isVisible():
             self.dock.hide()
         else:
@@ -261,6 +279,16 @@ class FengShuiGisPlugin:
         QgsMessageLog.logMessage(log_message, "Feng-Shui GIS", level=Qgis.Critical)
 
         ui_message = f"{context}: {user_message}" if user_message else context
+        self._recent_error_records.append(
+            {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "context": context,
+                "code": getattr(code, "value", str(code)),
+                "details": details,
+                "ui_message": ui_message,
+            }
+        )
+        self._recent_error_records = self._recent_error_records[-50:]
         self.iface.messageBar().pushCritical(tr("warn_failed"), ui_message)
         if self.dock:
             self.dock.set_status(ui_message)
@@ -392,6 +420,195 @@ class FengShuiGisPlugin:
         report_dir = os.path.join(project_home, "reports")
         os.makedirs(report_dir, exist_ok=True)
         return report_dir
+
+    @staticmethod
+    def _latest_prefixed_file(directory, prefixes, suffix):
+        if not directory or not os.path.isdir(directory):
+            return ""
+        prefixes = tuple(prefixes or ())
+        candidates = []
+        for name in os.listdir(directory):
+            if suffix and not name.endswith(suffix):
+                continue
+            if prefixes and not any(name.startswith(prefix) for prefix in prefixes):
+                continue
+            path = os.path.join(directory, name)
+            if os.path.isfile(path):
+                candidates.append(path)
+        if not candidates:
+            return ""
+        return max(candidates, key=os.path.getmtime)
+
+    def _plugin_metadata_payload(self):
+        metadata_path = os.path.join(self.plugin_dir, "metadata.txt")
+        parser = configparser.ConfigParser()
+        parser.read(metadata_path, encoding="utf-8")
+        general = parser["general"] if parser.has_section("general") else {}
+        return {
+            "metadata_path": metadata_path,
+            "name": general.get("name", "Feng Shui GIS"),
+            "version": general.get("version", ""),
+            "qgis_minimum_version": general.get("qgisMinimumVersion", ""),
+            "homepage": general.get("homepage", ""),
+            "repository": general.get("repository", ""),
+            "tracker": general.get("tracker", ""),
+        }
+
+    @staticmethod
+    def _layer_support_summary(layer):
+        if layer is None:
+            return None
+        summary = {"name": "", "source": "", "crs": "", "provider": "", "feature_count": None}
+        try:
+            summary["name"] = str(layer.name())
+        except Exception:
+            pass
+        try:
+            summary["source"] = str(layer.source())
+        except Exception:
+            pass
+        try:
+            summary["crs"] = str(layer.crs().authid())
+        except Exception:
+            pass
+        try:
+            summary["provider"] = str(layer.dataProvider().name())
+        except Exception:
+            pass
+        try:
+            summary["feature_count"] = int(layer.featureCount())
+        except Exception:
+            summary["feature_count"] = None
+        summary["fingerprint"] = hashlib.sha1(
+            json.dumps(summary, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        return summary
+
+    def _selected_layer_support_summary(self):
+        if not self.dock:
+            return {}
+        return {
+            "sites": self._layer_support_summary(
+                self.dock.sites_combo.currentLayer()
+                if hasattr(self.dock, "sites_combo")
+                else None
+            ),
+            "dem": self._layer_support_summary(
+                self.dock.dem_combo.currentLayer()
+                if hasattr(self.dock, "dem_combo")
+                else None
+            ),
+            "water": self._layer_support_summary(
+                self.dock.water_combo.currentLayer()
+                if hasattr(self.dock, "water_combo")
+                else None
+            ),
+        }
+
+    def _project_layer_support_summary(self):
+        summary = []
+        for layer in QgsProject.instance().mapLayers().values():
+            row = self._layer_support_summary(layer)
+            if row is not None:
+                summary.append(row)
+        return summary
+
+    def _latest_support_artifacts(self):
+        report_dir = self._report_dir()
+        latest_report_json = self._latest_prefixed_file(
+            report_dir,
+            (
+                "feng_shui_calibration_",
+                "feng_shui_compare_",
+            ),
+            ".json",
+        )
+        latest_report_md = self._latest_prefixed_file(
+            report_dir,
+            (
+                "feng_shui_calibration_",
+                "feng_shui_compare_",
+            ),
+            ".md",
+        )
+        return {
+            "run_manifest": self._latest_prefixed_file(
+                report_dir,
+                ("feng_shui_run_",),
+                ".json",
+            ),
+            "benchmark_manifest": self._latest_prefixed_file(
+                report_dir,
+                ("feng_shui_benchmark_",),
+                ".json",
+            ),
+            "report_json": latest_report_json,
+            "report_markdown": latest_report_md,
+        }
+
+    def export_support_bundle(self):
+        report_dir = self._report_dir()
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = os.path.join(report_dir, f"support_bundle_{stamp}.zip")
+        artifacts = self._latest_support_artifacts()
+        ui_snapshot = (
+            self.dock.support_bundle_snapshot()
+            if self.dock and hasattr(self.dock, "support_bundle_snapshot")
+            else {}
+        )
+        bundle_manifest = {
+            "bundle_created_at": datetime.now().isoformat(timespec="seconds"),
+            "plugin": self._plugin_metadata_payload(),
+            "ui_snapshot": ui_snapshot,
+            "selected_layers": self._selected_layer_support_summary(),
+            "project_layers": self._project_layer_support_summary(),
+            "latest_artifacts": artifacts,
+            "trust_metadata": dict(ui_snapshot.get("trust_metadata") or {}),
+            "latest_task_summary": dict(ui_snapshot.get("latest_task_summary") or {}),
+            "notes": {
+                "raw_input_policy": (
+                    "Raw DEM and source vectors are not embedded; only references, CRS, "
+                    "feature counts, and fingerprints are included."
+                )
+            },
+        }
+        payload_entries = {
+            "bundle_manifest.json": bundle_manifest,
+            "ui_snapshot.json": bundle_manifest["ui_snapshot"],
+            "selected_layers.json": bundle_manifest["selected_layers"],
+            "project_layers.json": bundle_manifest["project_layers"],
+            "recent_errors.json": list(self._recent_error_records),
+        }
+        file_entries = {
+            "plugin/metadata.txt": os.path.join(self.plugin_dir, "metadata.txt"),
+        }
+        config_dir = os.path.join(self.plugin_dir, "config")
+        if os.path.isdir(config_dir):
+            for name in sorted(os.listdir(config_dir)):
+                if name.endswith(".json"):
+                    file_entries[f"config/{name}"] = os.path.join(config_dir, name)
+        for archive_name, path in (
+            ("reports/latest_run_manifest.json", artifacts.get("run_manifest")),
+            ("reports/latest_benchmark_manifest.json", artifacts.get("benchmark_manifest")),
+            ("reports/latest_report.json", artifacts.get("report_json")),
+            ("reports/latest_report.md", artifacts.get("report_markdown")),
+        ):
+            if path:
+                file_entries[archive_name] = path
+        SupportBundleWriter.write_bundle(
+            output_path,
+            payload_entries=payload_entries,
+            file_entries=file_entries,
+        )
+        message = ui_text(
+            "support_bundle_success_template",
+            self._label_language(),
+            default="Support bundle exported: {path}",
+        ).format(path=output_path)
+        self.iface.messageBar().pushSuccess(tr("plugin_title"), message)
+        if self.dock:
+            self.dock.set_status(message)
+        return output_path
 
     @staticmethod
     def _write_json_payload(path, payload):
@@ -1129,6 +1346,7 @@ class FengShuiGisPlugin:
         json_path = os.path.join(report_dir, f"{base_name}.json")
         md_path = os.path.join(report_dir, f"{base_name}.md")
         text_lang = self._label_language()
+        trust_metadata = self._current_trust_metadata(profile_key=compare_profile_key)
 
         payload = CompareReportWriter.payload(
             stamp=stamp,
@@ -1141,6 +1359,7 @@ class FengShuiGisPlugin:
             top_changes=top_changes,
             change_layer_name=change_layer_name,
             reason_excerpt_limit=self._COMPARE_REPORT_REASON_EXCERPT,
+            trust_metadata=trust_metadata,
         )
         with open(json_path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
@@ -1157,10 +1376,33 @@ class FengShuiGisPlugin:
             top_changes=top_changes,
             change_layer_name=change_layer_name,
             reason_excerpt_limit=self._COMPARE_REPORT_REASON_EXCERPT,
+            trust_metadata=trust_metadata,
         )
         with open(md_path, "w", encoding="utf-8") as handle:
             handle.write(markdown)
         return json_path, md_path
+
+    def _current_trust_metadata(self, profile_key="", reported_metric_phase=""):
+        from .trust_metadata import build_trust_metadata
+
+        culture_key = ""
+        advanced_context_enabled = False
+        if self.dock is not None:
+            try:
+                culture_key, _period_key = self.dock._effective_context_keys()
+            except Exception:
+                culture_key = ""
+            try:
+                advanced_context_enabled = bool(self.dock._advanced_context_enabled())
+            except Exception:
+                advanced_context_enabled = False
+        return build_trust_metadata(
+            self._label_language(),
+            advanced_context_enabled=advanced_context_enabled,
+            culture_key=culture_key,
+            profile_key=profile_key,
+            reported_metric_phase=reported_metric_phase,
+        )
 
     def _style_compare_change_layer(self, layer, label_lang):
         if layer is None or not isinstance(layer, QgsVectorLayer):
@@ -1248,6 +1490,7 @@ class FengShuiGisPlugin:
             base_layer_name=base_layer_name,
             compare_layer_name=compare_layer_name,
             reason_excerpt_limit=88,
+            trust_metadata=self._current_trust_metadata(profile_key=compare_profile_key),
         )
         self._compare_browser.setHtml(html)
         self._compare_dialog.show()
@@ -2581,6 +2824,10 @@ class FengShuiGisPlugin:
         json_path = os.path.join(report_dir, f"{base_name}.json")
         md_path = os.path.join(report_dir, f"{base_name}.md")
         report.update(self._export_calibrated_profile(report, stamp, report_dir))
+        report["trust_metadata"] = self._current_trust_metadata(
+            profile_key=report.get("exported_profile_key") or report.get("profile_key"),
+            reported_metric_phase=report.get("reported_metric_phase"),
+        )
 
         with open(json_path, "w", encoding="utf-8") as handle:
             json.dump(report, handle, ensure_ascii=False, indent=2)

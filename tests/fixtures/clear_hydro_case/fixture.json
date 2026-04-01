@@ -1,0 +1,6 @@
+{
+  "case_id": "clear_hydro_case",
+  "description": "Small DEM and obvious hydro structure for baseline regression.",
+  "expected_report_phase": "held_out_evaluation",
+  "score_drift_tolerance": 0.05
+}

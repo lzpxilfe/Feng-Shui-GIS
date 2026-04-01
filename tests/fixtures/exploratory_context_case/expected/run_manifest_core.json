@@ -1,0 +1,4 @@
+{
+  "service_name": "run_profile_compare",
+  "required_keys": ["run_id", "request_signature", "source_layers", "output_layers"]
+}

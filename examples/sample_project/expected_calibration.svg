@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="320" viewBox="0 0 720 320">
+  <rect width="720" height="320" fill="#f4efe3"/>
+  <rect x="32" y="28" width="656" height="264" rx="18" fill="#fffaf1" stroke="#c9b998"/>
+  <text x="56" y="66" font-size="24" fill="#5b4630">Expected Calibration View</text>
+  <text x="56" y="104" font-size="16" fill="#3f4039">Held-out phase and audit metadata shown before metric details.</text>
+  <rect x="78" y="134" width="180" height="34" rx="17" fill="#f0e4c8"/>
+  <text x="102" y="156" font-size="15" fill="#5b4630">Local Calibration Applied</text>
+  <text x="78" y="204" font-size="18" fill="#1f2423">ROC AUC 0.81</text>
+  <text x="78" y="234" font-size="18" fill="#1f2423">PR AUC 0.76</text>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="320" viewBox="0 0 720 320">
+  <rect width="720" height="320" fill="#f4efe3"/>
+  <rect x="32" y="28" width="656" height="264" rx="18" fill="#fffaf1" stroke="#c9b998"/>
+  <text x="56" y="66" font-size="24" fill="#5b4630">Expected Compare View</text>
+  <text x="56" y="104" font-size="16" fill="#3f4039">Relative gain/drop shown against the selected base profile.</text>
+  <rect x="120" y="152" width="140" height="22" fill="#b14a3b"/>
+  <rect x="300" y="136" width="140" height="38" fill="#1f7a4f"/>
+  <rect x="480" y="146" width="140" height="28" fill="#b8933f"/>
+</svg>

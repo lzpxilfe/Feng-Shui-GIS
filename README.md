@@ -34,6 +34,13 @@
 
 ## 🚀 빠른 시작
 
+### 바로 써보기
+
+- 샘플 프로젝트: [examples/sample_project/README.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/examples/sample_project/README.md)
+- 첫 실행 가이드: [docs/first_run_guide.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/docs/first_run_guide.md)
+- 문제 해결: [docs/troubleshooting.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/docs/troubleshooting.md)
+- 지원 번들 안내: [docs/support_bundle_guide.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/docs/support_bundle_guide.md)
+
 ### 1분 시작 (Fast Start)
 
 1. DEM 로딩 → 수계 레이어 있으면 지정, 없으면 자동 수계 사용
@@ -157,10 +164,22 @@
 - 지역/시대 프리셋은 가설 기반 보정 계층으로, 실측/현장 검증이 필요합니다.
 - 수계·능선 자동 추출은 DEM 품질의 영향을 크게 받습니다.
 
+### What this tool is not
+
+- 이 도구는 `fs_score`를 유적 존재 확률처럼 제시하지 않습니다.
+- calibration은 독립적인 검증을 대신하지 않습니다.
+- compare의 gain/drop은 선택한 프로파일 사이의 상대 변화일 뿐, 역사적 진실의 자동 판정이 아닙니다.
+- 결과는 반드시 문헌, 현장 조사, 추가 GIS 해석과 함께 읽어야 합니다.
+
 ---
 
 ## 📚 문서
 
+- [docs/first_run_guide.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/docs/first_run_guide.md)
+- [docs/troubleshooting.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/docs/troubleshooting.md)
+- [docs/support_bundle_guide.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/docs/support_bundle_guide.md)
+- [docs/bug_report_template.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/docs/bug_report_template.md)
+- [docs/release_checklist.md](/Users/hwangjinseo/Desktop/Coding/Feng%20Shui/docs/release_checklist.md)
 - [docs/context_profiles.md](docs/context_profiles.md)
 - [docs/reference_audit.md](docs/reference_audit.md)
 - [docs/research_matrix.md](docs/research_matrix.md)
@@ -197,6 +216,7 @@
   미터 기반 CRS로 재투영 후 사용하는 것을 권장합니다.
 - 산출 레이어에서 `reason`/`fs_reason`을 확인하면 각 점수의 설명성을 빠르게 점검할 수 있습니다.
 - 보정 리포트는 실험 이력으로 누적되어, 추후 비교 분석(시대/국가별 분리)에 유리합니다.
+- `Developer` 모드에서는 `Export Support Bundle`로 최근 manifest/report/log/config를 한 번에 묶어낼 수 있습니다.
 
 ---
 

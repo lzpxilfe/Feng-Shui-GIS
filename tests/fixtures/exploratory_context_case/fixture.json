@@ -1,0 +1,6 @@
+{
+  "case_id": "exploratory_context_case",
+  "description": "Context-evidence-weak case used to keep exploratory warnings visible.",
+  "expected_context_badge": "Exploratory Context",
+  "score_drift_tolerance": 0.08
+}
