@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Profile, term, and rules catalogs loaded from validated JSON configs."""
 
+import json
 import os
 
 from .config_loader import load_config_json
@@ -110,6 +111,41 @@ def _load_local_profiles():
         _LOCAL_PROFILE_FILE,
         allow_empty=True,
     )
+
+
+def _local_profiles_payload_path():
+    return os.path.join(os.path.dirname(__file__), "config", _LOCAL_PROFILE_FILE)
+
+
+def local_profiles_payload():
+    path = _local_profiles_payload_path()
+    if not os.path.exists(path):
+        return {"schema_version": _SCHEMA_VERSION}
+    return load_config_json(
+        _LOCAL_PROFILE_FILE,
+        schema_version=_SCHEMA_VERSION,
+    )
+
+
+def write_local_profiles_payload(payload):
+    if not isinstance(payload, dict):
+        raise RuntimeError("Local profile payload must be a JSON object.")
+    payload_without_schema = _payload_without_schema_version(
+        payload,
+        _LOCAL_PROFILE_FILE,
+        allow_empty=True,
+    )
+    _validate_profiles(
+        payload_without_schema,
+        _LOCAL_PROFILE_FILE,
+        allow_empty=True,
+    )
+    payload_with_schema = {"schema_version": _SCHEMA_VERSION}
+    payload_with_schema.update(payload_without_schema)
+    path = _local_profiles_payload_path()
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload_with_schema, handle, ensure_ascii=False, indent=2)
+    return payload_with_schema
 
 
 def _validate_term_catalog(data):

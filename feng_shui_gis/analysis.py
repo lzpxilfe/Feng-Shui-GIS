@@ -729,7 +729,7 @@ class FengShuiAnalyzer:
         return rows
 
     @staticmethod
-    def _split_calibration_rows(rows, random_seed=42, validation_ratio=0.20):
+    def _split_calibration_rows_once(rows, random_seed=42, validation_ratio=0.20):
         if not rows:
             return {"train": [], "validation": []}
 
@@ -773,6 +773,44 @@ class FengShuiAnalyzer:
         rng.shuffle(train_rows)
         rng.shuffle(validation_rows)
         return {"train": train_rows, "validation": validation_rows}
+
+    @staticmethod
+    def _split_calibration_rows(
+        rows,
+        random_seed=42,
+        validation_ratio=0.20,
+        evaluation_ratio=0.10,
+    ):
+        split = FengShuiAnalyzer._split_calibration_rows_once(
+            rows,
+            random_seed=random_seed,
+            validation_ratio=validation_ratio,
+        )
+        if not rows:
+            split["evaluation"] = []
+            return split
+
+        try:
+            eval_ratio = float(evaluation_ratio)
+        except (TypeError, ValueError):
+            eval_ratio = 0.10
+        if not (0.0 < eval_ratio < 1.0):
+            split["evaluation"] = []
+            return split
+
+        train_rows = split.get("train", [])
+        if not train_rows:
+            split["evaluation"] = []
+            return split
+
+        evaluation_split = FengShuiAnalyzer._split_calibration_rows_once(
+            train_rows,
+            random_seed=random_seed + 137,
+            validation_ratio=eval_ratio,
+        )
+        split["train"] = evaluation_split["train"]
+        split["evaluation"] = evaluation_split["validation"]
+        return split
 
     def _evaluate_calibration_rows(self, rows, profile):
         labels = []
@@ -1116,13 +1154,25 @@ class FengShuiAnalyzer:
             self._normalized_weight_map(base_profile.get("weights", {}))
         )
         rows = self._calibration_rows(layer, base_profile)
-        split = self._split_calibration_rows(rows, random_seed=random_seed, validation_ratio=0.20)
-        train_rows = split["train"]
-        validation_rows = split["validation"]
+        split = self._split_calibration_rows(
+            rows,
+            random_seed=random_seed,
+            validation_ratio=0.20,
+            evaluation_ratio=0.20,
+        )
+        model_rows = split.get("train", [])
+        validation_rows = split.get("validation", [])
+        evaluation_rows = split.get("evaluation", [])
+        final_evaluation_rows = (
+            evaluation_rows
+            if evaluation_rows
+            else (validation_rows if validation_rows else rows)
+        )
         use_validation_split = bool(validation_rows)
+        use_evaluation_split = bool(evaluation_rows)
 
-        base_train_metrics, base_train_scores_by_id = self._evaluate_calibration_rows(
-            train_rows,
+        base_model_metrics, base_model_scores_by_id = self._evaluate_calibration_rows(
+            model_rows,
             base_profile,
         )
         base_validation_metrics, base_validation_scores_by_id = (
@@ -1133,12 +1183,12 @@ class FengShuiAnalyzer:
             if use_validation_split
             else ({}, {})
         )
-        base_all_metrics, base_all_scores_by_id = self._evaluate_calibration_rows(
-            rows,
+        base_final_metrics, base_final_scores_by_id = self._evaluate_calibration_rows(
+            final_evaluation_rows,
             base_profile,
         )
         base_profile_parameters = self._calibration_profile_parameters(base_profile)
-        if not rows or not base_profile["weights"] or not train_rows:
+        if not rows or not base_profile["weights"] or not model_rows:
             return {
                 "scope": "threshold_only",
                 "applied": False,
@@ -1151,15 +1201,18 @@ class FengShuiAnalyzer:
                 "parameter_deltas": {},
                 "parameter_summary": "no-parameter-fit",
                 "indicator_discrimination": {},
-                "base_metrics": base_all_metrics,
-                "metrics": base_all_metrics,
-                "scores_by_id": base_all_scores_by_id,
+                "base_metrics": base_final_metrics,
+                "metrics": base_final_metrics,
+                "scores_by_id": base_final_scores_by_id,
                 "calibration_split": {
                     "total_count": len(rows),
-                    "train_count": len(train_rows),
+                    "train_count": len(model_rows),
                     "validation_count": len(validation_rows),
+                    "evaluation_count": len(evaluation_rows),
+                    "used_validation": use_validation_split,
+                    "used_evaluation": use_evaluation_split,
                 },
-                "base_train_metrics": base_train_metrics,
+                "base_train_metrics": base_model_metrics,
                 "base_validation_metrics": base_validation_metrics,
             }
 
@@ -1171,30 +1224,35 @@ class FengShuiAnalyzer:
             },
             "weight_summary": "no-material-weight-change",
             "indicator_discrimination": {
-                key: self._indicator_discrimination(rows, key, base_profile)
+                key: self._indicator_discrimination(model_rows, key, base_profile)
                 for key in base_profile["weights"].keys()
                 if any(
                     self._calibration_row_indicator(row, key, base_profile) is not None
-                    for row in rows
+                    for row in model_rows
                 )
             },
-            "metrics": dict(base_train_metrics),
-            "scores_by_id": dict(base_train_scores_by_id),
+            "metrics": dict(base_model_metrics),
+            "scores_by_id": dict(base_model_scores_by_id),
             "weight_applied": False,
         }
-        best_selection_metrics = dict(base_validation_metrics or base_train_metrics)
+        best_selection_metrics = dict(
+            base_validation_metrics or base_model_metrics
+        )
         for index, candidate_profile in enumerate(
-            self._parameter_candidate_profiles(train_rows, base_profile)
+            self._parameter_candidate_profiles(model_rows, base_profile)
         ):
             candidate_fit = self._fit_profile_weight_candidates(
-                train_rows,
+                model_rows,
                 candidate_profile,
                 random_seed=random_seed + index,
             )
+            candidate_selection_rows = (
+                validation_rows if use_validation_split else final_evaluation_rows
+            )
             candidate_selection_metrics = dict(candidate_fit["metrics"])
-            if use_validation_split:
+            if candidate_selection_rows:
                 candidate_selection_metrics, _ = self._evaluate_calibration_rows(
-                    validation_rows,
+                    candidate_selection_rows,
                     candidate_fit["profile"],
                 )
             if self._metrics_better(candidate_selection_metrics, best_selection_metrics):
@@ -1204,13 +1262,13 @@ class FengShuiAnalyzer:
 
         applied = self._metrics_better(
             best_fit.get("selection_metrics", best_fit["metrics"]),
-            base_validation_metrics if use_validation_split else base_train_metrics,
+            base_validation_metrics if use_validation_split else base_model_metrics,
         )
         if applied:
             final_profile = dict(best_fit["profile"])
             final_weights = dict(best_fit["weights"])
             final_metrics, final_scores_by_id = self._evaluate_calibration_rows(
-                rows,
+                final_evaluation_rows,
                 final_profile,
             )
             final_weight_deltas = dict(best_fit["weight_deltas"])
@@ -1220,8 +1278,8 @@ class FengShuiAnalyzer:
         else:
             final_profile = dict(base_profile)
             final_weights = dict(base_profile["weights"])
-            final_metrics = dict(base_all_metrics)
-            final_scores_by_id = dict(base_all_scores_by_id)
+            final_metrics = dict(base_final_metrics)
+            final_scores_by_id = dict(base_final_scores_by_id)
             final_weight_deltas = {
                 key: 0.0 for key in final_weights.keys()
             }
@@ -1273,17 +1331,20 @@ class FengShuiAnalyzer:
             "parameter_deltas": parameter_deltas,
             "parameter_summary": parameter_summary,
             "indicator_discrimination": indicator_discrimination,
-            "base_metrics": base_all_metrics,
+            "base_metrics": base_final_metrics,
             "metrics": final_metrics,
             "scores_by_id": final_scores_by_id,
             "calibration_split": {
                 "total_count": len(rows),
-                "train_count": len(train_rows),
+                "train_count": len(model_rows),
                 "validation_count": len(validation_rows),
+                "evaluation_count": len(evaluation_rows),
+                "used_validation": use_validation_split,
+                "used_evaluation": use_evaluation_split,
             },
-            "base_train_metrics": base_train_metrics,
+            "base_train_metrics": base_model_metrics,
             "base_validation_metrics": base_validation_metrics,
-            "base_train_scores_by_id": base_train_scores_by_id,
+            "base_train_scores_by_id": base_model_scores_by_id,
             "base_validation_scores_by_id": base_validation_scores_by_id,
         }
 

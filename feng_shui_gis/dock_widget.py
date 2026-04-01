@@ -37,6 +37,7 @@ from .cultural_context import (
 from .locale import language_code, tr
 from .locale import set_language_code
 from .mountain_options import mountain_options
+from .dock_widget_viewmodel import DockWidgetProfileViewModel
 from .service_contracts import DemDiagnosticsRequest
 from .profile_catalog import (
     analysis_rules,
@@ -285,6 +286,7 @@ class FengShuiDockWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._diagnostic_service = FengShuiDiagnosticService()
+        self._profile_view_model = DockWidgetProfileViewModel()
         saved_ui_language = str(
             QSettings().value("feng_shui_gis/ui_language", "") or ""
         ).strip()
@@ -589,26 +591,8 @@ class FengShuiDockWidget(QWidget):
         )
 
     def _comparison_profile_keys(self):
-        current_profile_key = self.profile_combo.currentData() if hasattr(self, "profile_combo") else None
-        recommended_key = self._recommended_local_profile_key()
-        if not current_profile_key:
-            return None, None
-        current_text = str(current_profile_key)
-        if recommended_key and recommended_key != current_profile_key:
-            return current_profile_key, recommended_key
-        if "_cal_" not in current_text:
-            return None, None
-        culture_key, period_key = self._effective_context_keys()
-        suffix = f"_{culture_key}_{period_key}_cal_"
-        lower_text = current_text.lower()
-        lower_suffix = suffix.lower()
-        index = lower_text.find(lower_suffix)
-        if index <= 0:
-            return None, None
-        base_profile_key = current_text[:index]
-        if base_profile_key not in available_profiles():
-            return None, None
-        return base_profile_key, current_profile_key
+        state = self._profile_recommendation_state()
+        return state.comparison_base_key, state.comparison_profile_key
 
     def _emit_compare_requested(self):
         base_profile_key, compare_profile_key = self._comparison_profile_keys()
@@ -628,71 +612,56 @@ class FengShuiDockWidget(QWidget):
         )
 
     def _recommended_local_profile_key(self):
-        if not hasattr(self, "profile_combo"):
-            return None
-        current_profile_key = self.profile_combo.currentData()
-        if not current_profile_key:
-            return None
-        current_profile_text = str(current_profile_key)
-        if "_cal_" in current_profile_text:
-            return current_profile_key
-        culture_key, period_key = self._effective_context_keys()
-        prefix = f"{current_profile_text}_{culture_key}_{period_key}_cal_".lower()
-        matches = [
-            profile_key
-            for profile_key in available_profiles()
-            if str(profile_key).lower().startswith(prefix)
-        ]
-        if not matches:
-            return None
-        return sorted(matches)[-1]
+        return self._profile_recommendation_state().recommended_profile_key
+
+    def _profile_recommendation_state(self):
+        return self._profile_view_model.recommendation_state(
+            current_profile_key=self.profile_combo.currentData()
+            if hasattr(self, "profile_combo")
+            else None,
+            advanced_context_enabled=bool(self._advanced_context_enabled()),
+            culture_key=self.culture_combo.currentData()
+            if hasattr(self, "culture_combo")
+            else None,
+            period_key=self.period_combo.currentData()
+            if hasattr(self, "period_combo")
+            else None,
+            available_profile_keys=available_profiles(),
+        )
 
     def _update_profile_recommendation_hint(self, *_args):
         if not hasattr(self, "profile_recommendation_hint"):
             return
+        state = self._profile_recommendation_state()
         if hasattr(self, "apply_recommended_profile_button"):
-            self.apply_recommended_profile_button.setEnabled(False)
-        if hasattr(self, "compare_profiles_button"):
-            self.compare_profiles_button.setEnabled(False)
-        recommended_key = self._recommended_local_profile_key()
-        current_profile_key = self.profile_combo.currentData() if hasattr(self, "profile_combo") else None
-        if not recommended_key:
-            comparison_base_key, comparison_profile_key = self._comparison_profile_keys()
-            if comparison_base_key and comparison_profile_key:
-                if hasattr(self, "compare_profiles_button"):
-                    self.compare_profiles_button.setEnabled(True)
-                self.profile_recommendation_hint.setText(
-                    ui_text(
-                        "recommended_profile_compare_only",
-                        default="You can run a quick comparison between the calibrated profile and its base preset.",
-                    )
-                )
-                return
-            self.profile_recommendation_hint.setText(
-                ui_text(
-                    "recommended_profile_none",
-                    default="No saved local calibrated profile exists for this context yet.",
-                )
+            self.apply_recommended_profile_button.setEnabled(
+                bool(state.can_apply_recommended)
             )
-            return
-        recommended_label = profile_label(recommended_key, language_code())
-        if recommended_key == current_profile_key:
-            self.profile_recommendation_hint.setText(
-                ui_text(
-                    "recommended_profile_active_template",
-                    default="Using the recommended calibrated profile: {profile}",
-                ).format(profile=recommended_label)
-            )
-            return
-        if hasattr(self, "apply_recommended_profile_button"):
-            self.apply_recommended_profile_button.setEnabled(True)
         if hasattr(self, "compare_profiles_button"):
-            self.compare_profiles_button.setEnabled(True)
+            self.compare_profiles_button.setEnabled(
+                bool(state.can_compare_recommended)
+            )
+        if not state.current_profile_key:
+            self.profile_recommendation_hint.setText("")
+            return
+
+        recommended_key = state.recommended_profile_key
+        if recommended_key:
+            recommended_label = profile_label(recommended_key, language_code())
+        else:
+            recommended_label = ""
+        guidance_args = dict(state.guidance_args)
+        if "{profile}" in state.guidance_default and "{profile}" not in guidance_args:
+            guidance_args["profile"] = recommended_label
+        if not state.guidance_key:
+            self.profile_recommendation_hint.setText("")
+            return
         self.profile_recommendation_hint.setText(
             ui_text(
-                "recommended_profile_hint_template",
-                default="Recommended calibrated profile: {profile} ({key})",
-            ).format(profile=recommended_label, key=recommended_key)
+                state.guidance_key,
+                language_code(),
+                default=state.guidance_default,
+            ).format(**guidance_args)
         )
 
     def _build_ui(self):
