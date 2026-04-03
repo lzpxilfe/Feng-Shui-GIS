@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 """Country and period context profiles for Feng Shui archaeology workflows."""
-
-from copy import deepcopy
 from html import escape
 
-from .config_loader import load_config_json
+from .config_loader import load_json
 from .reference_catalog import reference_display_text
 from .ui_catalog import ui_text
 
 _CONFIG_FILE = "contexts.json"
-_SCHEMA_VERSION = 1
 _LEVEL_ORDER = {"A": 0, "B": 1, "C": 2, "U": 3}
 _NEUTRAL_CONTEXT_KEY = "__neutral__"
 _CONTEXT_TIERS = {"stable", "experimental", "deprecated"}
@@ -94,7 +91,9 @@ def _merge_meta(first_meta, second_meta):
         second_meta.get("evidence_level", "U"),
     ]
     levels = [item for item in levels if item in _LEVEL_ORDER]
-    level = sorted(levels, key=lambda item: _LEVEL_ORDER[item])[0] if levels else "U"
+    # Use the weakest evidence level across merged sources to avoid overclaiming confidence.
+    # Lower-confidence source should dominate the combined metadata.
+    level = sorted(levels, key=lambda item: _LEVEL_ORDER[item])[-1] if levels else "U"
     notes = [first_meta.get("note", "").strip(), second_meta.get("note", "").strip()]
     note = " | ".join(item for item in notes if item)
     return {"source_doi": unique_sources, "evidence_level": level, "note": note}
@@ -129,11 +128,8 @@ def _merge_dicts(first, second):
 
 
 def _config():
-    config = load_config_json(_CONFIG_FILE, schema_version=_SCHEMA_VERSION)
-    return _require_dict(
-        {key: value for key, value in config.items() if key != "schema_version"},
-        _CONFIG_FILE,
-    )
+    config = load_json(_CONFIG_FILE)
+    return _require_dict(config, _CONFIG_FILE)
 
 
 def _cultures():
@@ -183,23 +179,21 @@ def base_period_key():
     return _require_text(_config().get("base_period_key"), f"{_CONFIG_FILE}.base_period_key")
 
 
-def available_cultures():
-    return tuple(_cultures().keys())
-
-
-def available_cultures_filtered_by_tier(visibility_tier=None):
+def available_cultures(visibility_tier=None):
     cultures = _cultures()
     if visibility_tier is None:
         return tuple(cultures.keys())
     requested_tier = _normalize_context_tier(visibility_tier)
-    result = []
+    filtered = []
     for culture_key, culture in cultures.items():
         if not isinstance(culture, dict):
             continue
-        tier = _normalize_context_tier(culture.get("visibility_tier", _DEFAULT_CONTEXT_TIER))
+        tier = _normalize_context_tier(
+            culture.get("visibility_tier", _DEFAULT_CONTEXT_TIER)
+        )
         if tier == requested_tier:
-            result.append(culture_key)
-    return tuple(result)
+            filtered.append(culture_key)
+    return tuple(filtered)
 
 
 def culture_visibility_tier(culture_key):
@@ -207,13 +201,6 @@ def culture_visibility_tier(culture_key):
     if not isinstance(culture, dict):
         return _DEFAULT_CONTEXT_TIER
     return _normalize_context_tier(culture.get("visibility_tier", _DEFAULT_CONTEXT_TIER))
-
-
-def culture_evidence_scope(culture_key):
-    culture = _cultures().get(culture_key, {})
-    if not isinstance(culture, dict):
-        return ""
-    return str(culture.get("evidence_scope", "")).strip()
 
 
 def _context_tier_labels(language):
@@ -476,6 +463,17 @@ def build_context(culture_key, period_key, hemisphere):
         culture.get("term_bias", {}),
         f"{_CONFIG_FILE}.cultures.{culture_id}.term_bias",
     )
+    term_bias_period, term_bias_meta_period = _normalize_scalar_map_with_meta(
+        period.get("term_bias", {}),
+        f"{_CONFIG_FILE}.periods.{period_id}.term_bias",
+    )
+    merged_term_bias = _merge_dicts(term_bias_culture, term_bias_period)
+    merged_term_meta = {}
+    for key in set(term_bias_meta_culture.keys()) | set(term_bias_meta_period.keys()):
+        merged_term_meta[key] = _merge_meta(
+            term_bias_meta_culture.get(key, _default_meta()),
+            term_bias_meta_period.get(key, _default_meta()),
+        )
 
     merged_weight_bias = _merge_dicts(weight_bias_culture, weight_bias_period)
     merged_weight_meta = {}
@@ -496,7 +494,7 @@ def build_context(culture_key, period_key, hemisphere):
         "micro_radius_multiplier": micro_multiplier * micro_period,
         "hyeol_threshold": combined_hyeol_threshold,
         "weight_bias": merged_weight_bias,
-        "term_bias": deepcopy(term_bias_culture),
+        "term_bias": merged_term_bias,
         "term_target_shift": term_target_shift + term_period_shift,
         "evidence": {
             "parameters": {
@@ -532,8 +530,8 @@ def build_context(culture_key, period_key, hemisphere):
                 for key, value in merged_weight_bias.items()
             },
             "term_bias": {
-                key: {"value": value, **term_bias_meta_culture.get(key, _default_meta())}
-                for key, value in term_bias_culture.items()
+                key: {"value": value, **merged_term_meta.get(key, _default_meta())}
+                for key, value in merged_term_bias.items()
             },
         },
     }
@@ -638,10 +636,6 @@ def context_evidence_html(culture_key, period_key, hemisphere, language=None):
     meta_tier = ui_text("context_evidence_meta_tier", lang, default="context tier")
     tier_labels = _context_tier_labels(lang or "en")
     tier_label = tier_labels.get(culture_visibility_tier(culture_key), "stable")
-    meta_scope = ui_text("context_evidence_meta_scope", lang, default="evidence scope")
-    scope_text = culture_evidence_scope(culture_key)
-    if not scope_text:
-        scope_text = "-"
     col_group = ui_text("context_evidence_col_group", lang, default="group")
     col_name = ui_text("context_evidence_col_name", lang, default="name")
     col_value = ui_text("context_evidence_col_value", lang, default="value")
@@ -665,9 +659,8 @@ def context_evidence_html(culture_key, period_key, hemisphere, language=None):
         f"<h3>{escape(title)}</h3>"
         f"<p><b>{escape(meta_culture)}</b>: {escape(str(culture_key))}, "
         f"<b>{escape(meta_period)}</b>: {escape(str(period_key))}, "
-        f"<b>{escape(meta_hemisphere)}</b>: {escape(str(hemisphere))}, "
         f"<b>{escape(meta_tier)}</b>: {escape(str(tier_label))}, "
-        f"<b>{escape(meta_scope)}</b>: {escape(scope_text)}</p>"
+        f"<b>{escape(meta_hemisphere)}</b>: {escape(str(hemisphere))}</p>"
         "<table border='1' cellspacing='0' cellpadding='4'>"
         "<tr>"
         f"<th>{escape(col_group)}</th>"

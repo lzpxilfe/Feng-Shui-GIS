@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": "1.0.0",
   "base_culture_key": "east_asia",
   "base_period_key": "early_modern",
   "neutral_defaults": {
@@ -68,6 +68,8 @@
         "zh": "东亚基准",
         "ja": "東アジア基準"
       },
+      "visibility_tier": "stable",
+      "evidence_scope": "cross_region",
       "aspect_targets": {
         "north": {
           "value": 180.0,
@@ -161,6 +163,8 @@
         "zh": "韩国",
         "ja": "韓国"
       },
+      "visibility_tier": "stable",
+      "evidence_scope": "national_historical",
       "aspect_targets": {
         "north": {
           "value": 180.0,
@@ -384,6 +388,8 @@
         "zh": "中国",
         "ja": "中国"
       },
+      "visibility_tier": "stable",
+      "evidence_scope": "regional_case_studies",
       "aspect_targets": {
         "north": {
           "value": 180.0,
@@ -568,6 +574,8 @@
         "zh": "日本",
         "ja": "日本"
       },
+      "visibility_tier": "stable",
+      "evidence_scope": "mixed_literature_and_case",
       "aspect_targets": {
         "north": {
           "value": 170.0,
@@ -1064,6 +1072,8 @@
         "zh": "全球预测基准",
         "ja": "グローバル予測基準"
       },
+      "visibility_tier": "stable",
+      "evidence_scope": "cross_region_benchmark",
       "aspect_targets": {
         "north": {
           "value": 180.0,

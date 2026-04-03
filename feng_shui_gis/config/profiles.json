@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": "1.0.0",
   "general": {
     "label": {
       "en": "General",
@@ -122,7 +122,37 @@
     "slope_target": 9.0,
     "slope_sigma": 10.0,
     "tpi_target": 0.18,
-    "tpi_sigma": 0.25
+    "tpi_sigma": 0.25,
+    "paper_evidence": {
+      "weight_bias": {
+        "form": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.1515/9781438468716-011"
+          ],
+          "evidence_level": "B",
+          "note": "사찰 배치 문헌에서 축선·형체의 균형을 입지 판단에 반영."
+        },
+        "aspect": {
+          "value": 0.01,
+          "source_doi": [
+            "https://doi.org/10.1515/9781438468716-011"
+          ],
+          "evidence_level": "B",
+          "note": "의례 공간의 방향성 정합을 완만하게 보정."
+        }
+      },
+      "target_overrides": {
+        "tpi_target": {
+          "value": 0.17,
+          "source_doi": [
+            "https://doi.org/10.1515/9781438468716-009"
+          ],
+          "evidence_level": "C",
+          "note": "사찰 지형 분석에서 지형의 완만한 양향 보정치를 반영."
+        }
+      }
+    }
   },
   "urban_real_estate": {
     "label": {
@@ -142,7 +172,37 @@
     "slope_target": 4.0,
     "slope_sigma": 6.0,
     "tpi_target": -0.02,
-    "tpi_sigma": 0.22
+    "tpi_sigma": 0.22,
+    "paper_evidence": {
+      "weight_bias": {
+        "water": {
+          "value": 0.01,
+          "source_doi": [
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "B",
+          "note": "공간 설계 관점에서 수계-수리적 요소의 조정 중요도를 반영."
+        },
+        "form": {
+          "value": 0.01,
+          "source_doi": [
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "B",
+          "note": "도시 단지의 형성 환경에서 조형 안정성 가중을 소폭 보완."
+        }
+      },
+      "term_bias": {
+        "naesugu": {
+          "value": 0.015,
+          "source_doi": [
+            "https://doi.org/10.1038/s40494-025-01686-y"
+          ],
+          "evidence_level": "C",
+          "note": "도시 개발지 주변 수문 접합점 해석의 보조 우선순위."
+        }
+      }
+    }
   },
   "global_apm": {
     "label": {
@@ -165,7 +225,6 @@
     "tpi_sigma": 0.3
   },
   "tomb_kr": {
-    "_refs": "Um JS 2012 IntechOpen doi:10.5772/51071 (한국 묘지 공간회귀); ISPRS IJGI 10(11):752 2021 Nanjing (AHP-I 무덤 풍수); 서춘석·천인호 RISS (수치고도모델+사신사 검증)",
     "label": {
       "en": "Korean Tomb (Pungsu)",
       "ko": "한국 음택 (풍수)",
@@ -184,10 +243,66 @@
     "slope_target": 10.0,
     "slope_sigma": 8.0,
     "tpi_target": 0.05,
-    "tpi_sigma": 0.25
+    "tpi_sigma": 0.25,
+    "paper_evidence": {
+      "weight_bias": {
+        "sashinsa": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752"
+          ],
+          "evidence_level": "A",
+          "note": "Mausoleum suitability evidence emphasizes stronger sashin-sa enclosure balance."
+        },
+        "enclosure": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752"
+          ],
+          "evidence_level": "A",
+          "note": "Mausoleum terrain reading indicates enclosure effect is meaningful."
+        },
+        "water": {
+          "value": -0.01,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752"
+          ],
+          "evidence_level": "A",
+          "note": "Balanced emphasis on hydrology over overdominance in Korean tomb settings."
+        }
+      },
+      "term_bias": {
+        "myeongdang": {
+          "value": 0.05,
+          "source_doi": [
+            "https://doi.org/10.1080/13658810802055954",
+            "https://doi.org/10.3390/ijgi10110752"
+          ],
+          "evidence_level": "B",
+          "note": "문헌적 해석: 한국 묘지에서 명당 후보의 핵심 역할성을 강조."
+        }
+      },
+      "target_overrides": {
+        "slope_target": {
+          "value": 10.5,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752"
+          ],
+          "evidence_level": "B",
+          "note": "한국 무덤지형에서 경사 적합점 중앙값 보정."
+        },
+        "tpi_target": {
+          "value": 0.06,
+          "source_doi": [
+            "https://doi.org/10.3390/ijgi10110752"
+          ],
+          "evidence_level": "B",
+          "note": "무덤 지형의 종심-국지 경사 균형 완화용 보정."
+        }
+      }
+    }
   },
   "village_kr": {
-    "_refs": "Guan et al. 2024 Applied Spatial Analysis doi:10.1007/s12061-024-09595-6 (AHP-GIS 하카마을); Um 2012 IntechOpen (배산임수 마을 지형); 풍수AI 배산임수·사신사·장풍득수 종합 모델",
     "label": {
       "en": "Korean Village (Baesanimsu)",
       "ko": "한국 마을 (배산임수)",
@@ -206,6 +321,44 @@
     "slope_target": 5.0,
     "slope_sigma": 7.0,
     "tpi_target": -0.08,
-    "tpi_sigma": 0.28
+    "tpi_sigma": 0.28,
+    "paper_evidence": {
+      "weight_bias": {
+        "water": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.1007/s12061-024-09595-6"
+          ],
+          "evidence_level": "A",
+          "note": "AHP-GIS 하카마을 분석: 수계 인접성이 비교적 핵심."
+        },
+        "sashinsa": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.1007/s12061-024-09595-6"
+          ],
+          "evidence_level": "A",
+          "note": "마을지형에서 사신사 균형 기여도를 보완."
+        }
+      },
+      "term_bias": {
+        "ipsu": {
+          "value": 0.03,
+          "source_doi": [
+            "https://doi.org/10.1007/s12061-024-09595-6"
+          ],
+          "evidence_level": "A",
+          "note": "배산임수 지형에서 이수(易 수) 항목의 해석 보강."
+        },
+        "naesugu": {
+          "value": 0.02,
+          "source_doi": [
+            "https://doi.org/10.1007/s12061-024-09595-6"
+          ],
+          "evidence_level": "A",
+          "note": "남서측 주변 항목의 보수적 우선순위 반영."
+        }
+      }
+    }
   }
 }

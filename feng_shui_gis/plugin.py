@@ -63,6 +63,8 @@ from .feature_identity import (
 )
 from .feature_reason_presenter import (
     build_feature_reason_message,
+    build_feature_reason_limitations,
+    build_feature_reason_overview,
     build_reason_popup_html,
     build_term_cluster_reason,
 )
@@ -1740,6 +1742,26 @@ class FengShuiGisPlugin:
         text_lang = self._label_language()
         reason_empty = ui_text("reason_empty", text_lang, default="No description")
         reason_title = ui_text("reason_alias", text_lang, default="Reason")
+        reason_overview_title = ui_text(
+            "reason_overview_title",
+            text_lang,
+            default="Top reasons",
+        )
+        reason_detail_title = ui_text(
+            "reason_detail_title",
+            text_lang,
+            default="Detailed explanation",
+        )
+        reason_limitations_title = ui_text(
+            "reason_limitations_title",
+            text_lang,
+            default="What this result cannot say",
+        )
+        reason_cluster_title = ui_text(
+            "reason_cluster_title",
+            text_lang,
+            default="Cluster context",
+        )
         mountain_prefix = ui_text("mountain_prefix_label", text_lang, default="Nearby mountain")
         mountain_lang_label = ui_text("mountain_lang_inline_label", text_lang, default="lang")
 
@@ -1759,18 +1781,44 @@ class FengShuiGisPlugin:
                 mountain_lang_label=mountain_lang_label,
             )
             cluster_reason = self._term_cluster_reason(layer, feature, text_lang)
-            if cluster_reason:
-                message = f"{message}\n\n{cluster_reason}"
-            if len(message) > 1800:
-                message = f"{message[:1797]}..."
+            overview_items = build_feature_reason_overview(feature, text_lang)
+            limitations_items = build_feature_reason_limitations(feature, text_lang)
+            popup_message = message
+            if len(popup_message) > 1800:
+                popup_message = f"{popup_message[:1797]}..."
             title = f"{layer.name()} {reason_title}"
-            self._show_reason_popup(title, message)
-            self.iface.messageBar().pushInfo(title, message)
+            self._show_reason_popup(
+                title,
+                overview_items=overview_items,
+                detail_message=popup_message,
+                cluster_reason=cluster_reason,
+                limitations_items=limitations_items,
+                overview_title=reason_overview_title,
+                detail_title=reason_detail_title,
+                cluster_title=reason_cluster_title,
+                limitations_title=reason_limitations_title,
+            )
+            brief = " | ".join(overview_items[:2]) if overview_items else message
+            if len(brief) > 240:
+                brief = f"{brief[:237]}..."
+            self.iface.messageBar().pushInfo(title, brief)
 
         layer.selectionChanged.connect(_on_selection)
         self._selection_hooks[layer.id()] = _on_selection
 
-    def _show_reason_popup(self, title, message):
+    def _show_reason_popup(
+        self,
+        title,
+        *,
+        overview_items,
+        detail_message,
+        cluster_reason,
+        limitations_items,
+        overview_title,
+        detail_title,
+        cluster_title,
+        limitations_title,
+    ):
         if self._reason_dialog is None:
             self._reason_dialog = QDialog(self.iface.mainWindow())
             self._reason_dialog.setWindowTitle(
@@ -1783,7 +1831,19 @@ class FengShuiGisPlugin:
             self._reason_browser.setReadOnly(True)
             layout.addWidget(self._reason_browser)
         self._reason_dialog.setWindowTitle(title)
-        self._reason_browser.setHtml(build_reason_popup_html(title, message))
+        self._reason_browser.setHtml(
+            build_reason_popup_html(
+                title,
+                overview_title=overview_title,
+                overview_items=overview_items,
+                detail_title=detail_title,
+                message=detail_message,
+                cluster_title=cluster_title,
+                cluster_reason=cluster_reason,
+                limitations_title=limitations_title,
+                limitations_items=limitations_items,
+            )
+        )
         self._reason_dialog.show()
         self._reason_dialog.raise_()
         self._reason_dialog.activateWindow()

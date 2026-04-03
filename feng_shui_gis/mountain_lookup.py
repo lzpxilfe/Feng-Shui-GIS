@@ -3,6 +3,7 @@
 
 import json
 import math
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -21,12 +22,23 @@ from .mountain_options import mountain_options
 
 class MountainNameService:
     OVERPASS_URL_DEFAULT = "https://overpass-api.de/api/interpreter"
-    _LOG_TAG = "Feng Shui MountainLookup"
+    _LOG_TAG = "Feng Shui GIS MountainLookup"
+    STATUS_OK = "ok"
+    STATUS_NETWORK_ERROR = "network"
+    STATUS_TIMEOUT_ERROR = "timeout"
+    STATUS_BAD_PAYLOAD = "bad_payload"
+    STATUS_NO_DATA = "no_data"
+    STATUS_CACHE_HIT = "cache_hit"
+    STATUS_CACHE_HIT_NO_DATA = "cache_hit_no_data"
+    STATUS_BBOX_UNSUPPORTED = "bbox_unsupported"
+    STATUS_UNKNOWN = "unknown"
 
     def __init__(self, project=None, timeout_sec=None):
         options = mountain_options()
         self.project = project or QgsProject.instance()
+        self._candidate_cache = {}
         self.last_query_error = None
+        self.last_query_error_code = self.STATUS_OK
         configured_timeout = options.get("request_timeout_sec", 18)
         if timeout_sec is None:
             timeout_sec = configured_timeout
@@ -60,6 +72,30 @@ class MountainNameService:
         )
         return 2.0 * radius * math.asin(min(1.0, math.sqrt(value)))
 
+    def _set_query_state(self, code, message=None):
+        self.last_query_error_code = code
+        self.last_query_error = message
+        if message:
+            self._log_query_warning(message)
+
+    @staticmethod
+    def _cache_key_for_extent(extent, source_crs):
+        try:
+            crs_key = (
+                source_crs.authid()
+                if source_crs is not None and source_crs.isValid()
+                else str(source_crs)
+            )
+            return (
+                crs_key,
+                round(float(extent.xMinimum()), 6),
+                round(float(extent.yMinimum()), 6),
+                round(float(extent.xMaximum()), 6),
+                round(float(extent.yMaximum()), 6),
+            )
+        except (TypeError, ValueError, AttributeError):
+            return None
+
     def _to_wgs84_point(self, point, source_crs):
         if point is None or source_crs is None:
             return None
@@ -74,7 +110,7 @@ class MountainNameService:
                 f"Mountain lookup skipped: failed to transform coordinate point ({type(exc).__name__}: {exc})."
             )
             return None
-        except Exception as exc:
+        except (RuntimeError, TypeError, ValueError, OverflowError, AttributeError) as exc:
             self._log_query_warning(
                 f"Mountain lookup skipped: unexpected coordinate transform error ({type(exc).__name__}: {exc})."
             )
@@ -82,9 +118,26 @@ class MountainNameService:
 
     def fetch_candidates_for_extent(self, extent, source_crs, max_bbox_deg=None):
         if extent is None or source_crs is None:
+            self._set_query_state(self.STATUS_BBOX_UNSUPPORTED, "Mountain lookup skipped: invalid extent or CRS.")
             return []
         if max_bbox_deg is None:
             max_bbox_deg = self.max_bbox_deg
+
+        self._set_query_state(self.STATUS_OK, None)
+
+        cache_key = self._cache_key_for_extent(extent, source_crs)
+        if cache_key is not None:
+            cached = self._candidate_cache.get(cache_key)
+            if cached is not None:
+                if cached:
+                    self.last_query_error_code = self.STATUS_CACHE_HIT
+                    return list(cached)
+                self.last_query_error_code = self.STATUS_CACHE_HIT_NO_DATA
+                self.last_query_error = (
+                    f"Mountain lookup cache is empty for extent ({cache_key[0]})."
+                )
+                self._log_query_warning(self.last_query_error)
+                return []
 
         corners = [
             QgsPointXY(extent.xMinimum(), extent.yMinimum()),
@@ -95,6 +148,10 @@ class MountainNameService:
         transformed = [self._to_wgs84_point(point, source_crs) for point in corners]
         transformed = [point for point in transformed if point is not None]
         if len(transformed) < 2:
+            self._set_query_state(
+                self.STATUS_BBOX_UNSUPPORTED,
+                "Mountain lookup skipped: failed to transform extent corners to WGS84.",
+            )
             return []
 
         lons = [point.x() for point in transformed]
@@ -102,6 +159,10 @@ class MountainNameService:
         west, east = min(lons), max(lons)
         south, north = min(lats), max(lats)
         if (east - west) > float(max_bbox_deg) or (north - south) > float(max_bbox_deg):
+            self._set_query_state(
+                self.STATUS_NO_DATA,
+                "Mountain lookup skipped: requested area is too large for one query.",
+            )
             return []
 
         query = (
@@ -126,34 +187,57 @@ class MountainNameService:
             },
             method="POST",
         )
-        self.last_query_error = None
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_sec) as response:
                 raw = response.read().decode("utf-8")
             data = json.loads(raw)
+            if not isinstance(data, dict):
+                self._set_query_state(
+                    self.STATUS_BAD_PAYLOAD,
+                    "Overpass API returned non-json payload.",
+                )
+                return []
         except urllib.error.HTTPError as exc:
-            self.last_query_error = f"Overpass API HTTP error ({exc.code}): {exc.reason}"
-            self._log_query_warning(self.last_query_error)
+            self._set_query_state(
+                self.STATUS_NETWORK_ERROR,
+                f"Overpass API HTTP error ({exc.code}): {exc.reason}",
+            )
             return []
         except urllib.error.URLError as exc:
             reason = getattr(exc, "reason", str(exc))
-            self.last_query_error = f"Overpass API request failed: {reason}"
-            self._log_query_warning(self.last_query_error)
+            if isinstance(reason, socket.timeout) or "timed out" in str(reason).lower():
+                self._set_query_state(
+                    self.STATUS_TIMEOUT_ERROR,
+                    f"Overpass API request timed out: {reason}",
+                )
+            else:
+                self._set_query_state(
+                    self.STATUS_NETWORK_ERROR,
+                    f"Overpass API request failed: {reason}",
+                )
             return []
         except json.JSONDecodeError as exc:
-            self.last_query_error = f"Overpass API returned invalid JSON: {exc}"
-            self._log_query_warning(self.last_query_error)
+            self._set_query_state(
+                self.STATUS_BAD_PAYLOAD,
+                f"Overpass API returned invalid JSON: {exc}",
+            )
             return []
         except UnicodeDecodeError as exc:
-            self.last_query_error = f"Overpass API response decoding failed: {exc}"
-            self._log_query_warning(self.last_query_error)
-            return []
-        except Exception as exc:
-            self.last_query_error = (
-                f"Mountain lookup failed while requesting OSM service: {type(exc).__name__}: {exc}"
+            self._set_query_state(
+                self.STATUS_BAD_PAYLOAD,
+                f"Overpass API response decoding failed: {exc}",
             )
-            self._log_query_warning(self.last_query_error)
             return []
+        except (RuntimeError, OSError, ValueError, TypeError) as exc:
+            self._set_query_state(
+                self.STATUS_UNKNOWN,
+                (
+                    f"Mountain lookup failed while requesting OSM service: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            )
+            return []
+
         candidates = []
         for item in data.get("elements", []):
             if not isinstance(item, dict):
@@ -198,7 +282,17 @@ class MountainNameService:
                 round(item["lon"], 6),
             )
             unique[key] = item
-        return list(unique.values())
+        normalized = list(unique.values())
+        if cache_key is not None:
+            self._candidate_cache[cache_key] = list(normalized)
+        if normalized:
+            self._set_query_state(self.STATUS_OK, None)
+            return normalized
+        self._set_query_state(
+            self.STATUS_NO_DATA,
+            "Overpass API returned no named mountain candidates for the requested extent.",
+        )
+        return []
 
     @staticmethod
     def _select_name(item, preferred_language="local"):

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": "1.0.0",
   "sampling": {
     "micro_radius_factor": 2.0,
     "macro_radius_factor": 12.0,

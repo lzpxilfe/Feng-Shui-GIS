@@ -111,7 +111,7 @@ def build_term_link_feature(
     feature["azimuth"] = azimuth
     feature["curved"] = 1
     feature["reason_ko"] = build_term_link_reason(
-        spec_label=spec["label"],
+        spec_label=spec.get("label_ko", spec["label"]),
         source_id=source_id,
         target_id=target_id,
         style_term=style_term,

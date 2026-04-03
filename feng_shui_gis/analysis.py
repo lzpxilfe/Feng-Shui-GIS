@@ -435,6 +435,7 @@ class FengShuiAnalyzer:
         culture_key="east_asia",
         period_key="early_modern",
         max_hyeol=5,
+        label_language="ko",
     ):
         context = build_context(culture_key, period_key, hemisphere)
         profile = self._contextualize_profile(
@@ -530,6 +531,7 @@ class FengShuiAnalyzer:
             context=context,
             profile_key=profile_key,
             profile=profile,
+            label_language=label_language,
         )
 
     def _as_vector_layer(self, output_obj):
@@ -1961,6 +1963,7 @@ class FengShuiAnalyzer:
         context,
         profile_key,
         profile=None,
+        label_language="ko",
     ):
         layer_name = f"{dem_layer.name()}_fengshui_terms"
         term_layer = QgsVectorLayer(
@@ -1999,6 +2002,8 @@ class FengShuiAnalyzer:
         term_target_shift = term_state["term_target_shift"]
         term_min_score = term_state["term_min_score"]
         radius_map = term_state["radius_map"]
+        outer_radius = radius_map["outer"]
+        term_display_language = label_language if label_language in ("ko", "en") else "ko"
 
         def add_term(
             term_id,
@@ -2116,7 +2121,7 @@ class FengShuiAnalyzer:
                     center_elev=center_elev,
                     relief=relief,
                     reason_text=hyeol_reason,
-                    term_name=term_label("hyeol", "en"),
+                    term_name=term_label("hyeol", term_display_language),
                 )
             )
 
@@ -2154,12 +2159,12 @@ class FengShuiAnalyzer:
                     fit_score=myeongdang_fit,
                     radius_m=myeongdang_radius * float(myeongdang_spec["offset_factor"]),
                     azimuth=card[myeongdang_spec["direction"]],
-                    term_name=term_label("myeongdang", "en"),
+                    term_name=term_label("myeongdang", term_display_language),
                 )
             )
             for spec in term_specs():
                 term_id = spec["term_id"]
-                term_name = term_label(term_id, "en")
+                term_name = term_label(term_id, term_display_language)
                 radius = radius_map[spec["radius"]]
                 azimuth = card[spec["direction"]]
                 mode = spec["mode"]
@@ -2225,7 +2230,7 @@ class FengShuiAnalyzer:
                         fit_score=fit_score,
                         radius_m=ipsu_radius,
                         mode=ipsu_spec["mode"],
-                        term_name=term_label("ipsu", "en"),
+                        term_name=term_label("ipsu", term_display_language),
                     )
                 )
 
@@ -2260,7 +2265,7 @@ class FengShuiAnalyzer:
                         fit_score=fit_score,
                         radius_m=radius_map[misa_spec["radius"]],
                         azimuth=card[misa_spec["direction"]],
-                        term_name=term_label("misa", "en"),
+                        term_name=term_label("misa", term_display_language),
                     )
                 )
 
@@ -2317,7 +2322,7 @@ class FengShuiAnalyzer:
             reason_ko=reason_ko,
         )
 
-    def build_term_links(self, term_layer):
+    def build_term_links(self, term_layer, label_language="ko"):
         link_layer = QgsVectorLayer(
             f"LineString?crs={term_layer.crs().authid()}",
             f"{term_layer.name()}_links",
@@ -2396,36 +2401,42 @@ class FengShuiAnalyzer:
                 "style_term": "jusan",
                 "link_type": "backbone",
                 "label": "Backbone",
+                "label_ko": "주산 축선",
             },
             {
                 "node_ids": ["oecheongnyong", "josan", "oebaekho"],
                 "style_term": "oecheongnyong",
                 "link_type": "outer_wrap",
                 "label": "Outer Wrap",
+                "label_ko": "외곽 감싸기",
             },
             {
                 "node_ids": ["naecheongnyong", "ansan", "naebaekho"],
                 "style_term": "myeongdang",
                 "link_type": "inner_wrap",
                 "label": "Inner Wrap",
+                "label_ko": "내곽 감싸기",
             },
             {
                 "node_ids": ["jusan", "myeongdang", "ansan"],
                 "style_term": "myeongdang",
                 "link_type": "core_axis",
                 "label": "Core Axis",
+                "label_ko": "중심 축선",
             },
             {
                 "node_ids": ["naesugu", "ansan", "oesugu"],
                 "style_term": "naesugu",
                 "link_type": "front_arc",
                 "label": "Front Arc",
+                "label_ko": "전면 수구 호",
             },
             {
                 "node_ids": ["naesugu", "oesugu", "ipsu"],
                 "style_term": "naesugu",
                 "link_type": "water_flow",
                 "label": "Water Flow",
+                "label_ko": "수구 흐름",
             },
         ]
         if not isinstance(link_rules, dict):
@@ -2448,12 +2459,14 @@ class FengShuiAnalyzer:
             style_term = str(item.get("style_term", clean_nodes[0])).strip() or clean_nodes[0]
             link_type = str(item.get("link_type", "path")).strip() or "path"
             label = str(item.get("label", link_type)).strip() or link_type
+            label_ko = str(item.get("label_ko", label)).strip() or label
             normalized.append(
                 {
                     "node_ids": clean_nodes,
                     "style_term": style_term,
                     "link_type": link_type,
                     "label": label,
+                    "label_ko": label_ko,
                 }
             )
         return normalized or default_plan
@@ -2518,9 +2531,10 @@ class FengShuiAnalyzer:
             current = smoothed
         return current
 
-    def style_term_points(self, term_layer):
+    def style_term_points(self, term_layer, label_language="ko"):
         style_map = point_styles()
         categories = []
+        display_language = label_language if label_language in ("ko", "en") else "ko"
         for term_id, style in style_map.items():
             fill_color, size, stroke_color, stroke_width = style
             if term_id == "hyeol":
@@ -2542,7 +2556,9 @@ class FengShuiAnalyzer:
                 }
             )
             symbol.setOpacity(opacity)
-            categories.append(QgsRendererCategory(term_id, symbol, term_id))
+            categories.append(
+                QgsRendererCategory(term_id, symbol, term_label(term_id, display_language))
+            )
 
         renderer = QgsCategorizedSymbolRenderer("term_id", categories)
         fallback = QgsMarkerSymbol.createSimple(
@@ -2559,9 +2575,10 @@ class FengShuiAnalyzer:
         term_layer.setRenderer(renderer)
         term_layer.triggerRepaint()
 
-    def style_term_links(self, link_layer):
+    def style_term_links(self, link_layer, label_language="ko"):
         style_map = line_styles()
         categories = []
+        display_language = label_language if label_language in ("ko", "en") else "ko"
         for term_id, style in style_map.items():
             color, width = style
             symbol = QgsLineSymbol.createSimple(
@@ -2574,7 +2591,9 @@ class FengShuiAnalyzer:
                 }
             )
             symbol.setOpacity(0.32)
-            categories.append(QgsRendererCategory(term_id, symbol, term_id))
+            categories.append(
+                QgsRendererCategory(term_id, symbol, term_label(term_id, display_language))
+            )
 
         renderer = QgsCategorizedSymbolRenderer("term_id", categories)
         default_symbol = QgsLineSymbol.createSimple(

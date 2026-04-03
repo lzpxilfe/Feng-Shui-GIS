@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": "1.0.0",
   "texts": {
     "help_tab_quick_terms": {
       "ko": "숫자 해석",
@@ -37,70 +37,6 @@
       "ko": "직접 설정",
       "en": "Manual Setup"
     },
-    "workflow_mode_label": {
-      "ko": "분석 모드",
-      "en": "Workflow mode"
-    },
-    "workflow_mode_quick": {
-      "ko": "빠른 시작",
-      "en": "Quick"
-    },
-    "workflow_mode_research": {
-      "ko": "연구",
-      "en": "Research"
-    },
-    "workflow_mode_developer": {
-      "ko": "개발자",
-      "en": "Developer"
-    },
-    "workflow_mode_basic": {
-      "ko": "기본",
-      "en": "Basic"
-    },
-    "workflow_mode_expert": {
-      "ko": "전문",
-      "en": "Expert"
-    },
-    "workflow_mode_basic_short": {
-      "ko": "기본",
-      "en": "Basic"
-    },
-    "workflow_mode_expert_short": {
-      "ko": "전문",
-      "en": "Expert"
-    },
-    "workflow_mode_quick_short": {
-      "ko": "빠른 시작",
-      "en": "Quick"
-    },
-    "workflow_mode_research_short": {
-      "ko": "연구",
-      "en": "Research"
-    },
-    "workflow_mode_developer_short": {
-      "ko": "개발자",
-      "en": "Developer"
-    },
-    "workflow_mode_hint_quick": {
-      "ko": "<b>빠른 시작</b>은 목표와 DEM, 기본 레이어만 고르고 바로 실행하는 가장 짧은 흐름입니다.",
-      "en": "<b>Quick</b> keeps only the shortest path: choose the goal, DEM, and layers, then run."
-    },
-    "workflow_mode_hint_research": {
-      "ko": "<b>연구</b>는 근거 보기, 프로파일 비교, 보정 기능을 열어 연구용 탐색 흐름을 제공합니다.",
-      "en": "<b>Research</b> opens evidence, compare, and calibration controls for archaeology-oriented reading."
-    },
-    "workflow_mode_hint_developer": {
-      "ko": "<b>개발자</b>는 연구 제어를 항상 보이게 하고 진행 상태를 더 자세히 드러냅니다.",
-      "en": "<b>Developer</b> keeps research controls visible and exposes more workflow state for inspection."
-    },
-    "advanced_options_button_research": {
-      "ko": "연구 제어 열기",
-      "en": "Research Controls"
-    },
-    "advanced_options_button_developer": {
-      "ko": "개발자 제어",
-      "en": "Developer Controls"
-    },
     "goal_hint_tomb": {
       "ko": "<b>의식/무덤</b> 모드입니다. 의례·묘지·제사 공간의 형세를 읽기 위해 <b>{profile}</b> 프리셋을 자동 적용합니다.",
       "en": "<b>Ritual-Burial mode</b>. The <b>{profile}</b> preset is applied automatically for landscapes associated with ritual or mortuary settings."
@@ -128,46 +64,6 @@
     "context_evidence_button": {
       "ko": "컨텍스트 근거 보기",
       "en": "View Context Evidence"
-    },
-    "support_bundle_button": {
-      "ko": "지원 번들 내보내기",
-      "en": "Export Support Bundle"
-    },
-    "support_bundle_menu_action": {
-      "ko": "지원 번들 내보내기",
-      "en": "Export Support Bundle"
-    },
-    "support_bundle_success_template": {
-      "ko": "지원 번들을 내보냈습니다: {path}",
-      "en": "Support bundle exported: {path}"
-    },
-    "context_general_mode_hint": {
-      "ko": "현재 일반 원칙 모드입니다. 지역·시대 가중치가 적용되지 않습니다.",
-      "en": "General-principles mode is active. Region/period overrides are disabled."
-    },
-    "context_general_mode_note": {
-      "ko": "중립 전역 원칙만 적용됩니다.",
-      "en": "Using neutral global principles only (no country/period overrides)."
-    },
-    "context_scope_label": {
-      "ko": "프로필 범위",
-      "en": "Context Profile Scope"
-    },
-    "context_experimental_toggle_label": {
-      "ko": "탐색 지역 프로필 표시 (근거 제한)",
-      "en": "Show exploratory region profiles (limited evidence)"
-    },
-    "context_experimental_profile_suffix": {
-      "ko": "(실험적)",
-      "en": "(Exploratory)"
-    },
-    "advanced_context_toggle_label": {
-      "en": "Enable advanced context (country/period)",
-      "ko": "고급 컨텍스트 적용(지역/시대)"
-    },
-    "context_mode_label": {
-      "en": "Context Mode",
-      "ko": "컨텍스트 모드"
     },
     "guide_title": {
       "ko": "진행 가이드",
@@ -217,157 +113,9 @@
       "ko": "지표 빠른 설명",
       "en": "Metric Help"
     },
-    "guide_section_interpretation": {
-      "ko": "<b>해석</b>",
-      "en": "<b>Interpretation</b>"
-    },
-    "guide_section_analytical": {
-      "ko": "<b>분석 수치</b>",
-      "en": "<b>Analytical</b>"
-    },
-    "guide_section_audit": {
-      "ko": "<b>감사 메타</b>",
-      "en": "<b>Audit</b>"
-    },
-    "report_section_interpretation_title": {
-      "ko": "해석",
-      "en": "Interpretation"
-    },
-    "report_section_analytical_title": {
-      "ko": "분석 수치",
-      "en": "Analytical"
-    },
-    "report_section_audit_title": {
-      "ko": "감사 메타",
-      "en": "Audit"
-    },
-    "trust_badge_general_principles": {
-      "ko": "일반 원칙",
-      "en": "General Principles"
-    },
-    "trust_badge_advanced_context": {
-      "ko": "고급 컨텍스트",
-      "en": "Advanced Context"
-    },
-    "trust_badge_exploratory_context": {
-      "ko": "탐색적 컨텍스트",
-      "en": "Exploratory Context"
-    },
-    "trust_badge_local_calibration": {
-      "ko": "로컬 보정 적용",
-      "en": "Local Calibration Applied"
-    },
-    "trust_boundary_score_note": {
-      "ko": "<b>fs_score</b>를 유적 존재 확률처럼 해석하지 마세요. 비교 가능한 공간 읽기 프레임으로 다루세요.",
-      "en": "Do not interpret <b>fs_score</b> as the probability of site presence. Treat it as a comparative reading frame."
-    },
-    "compare_report_interpretation_note": {
-      "ko": "이 비교는 보정 프로파일이 기본 프로파일에 비해 점수를 어떻게 바꾸는지 설명할 뿐이며, 독립적인 검증 결과는 아닙니다.",
-      "en": "This comparison explains how the calibrated profile shifts scores relative to the base profile; it is not a standalone validation result."
-    },
-    "compare_report_top_change_count_label": {
-      "ko": "상위 변화 피처 수",
-      "en": "Top changed features"
-    },
-    "compare_report_reading_note_label": {
-      "ko": "해석 메모",
-      "en": "Reading note"
-    },
-    "compare_report_reason_excerpt_limit_label": {
-      "ko": "이유 문장 길이 제한",
-      "en": "Reason excerpt limit"
-    },
-    "compare_report_timestamp_label": {
-      "ko": "생성 시각",
-      "en": "Timestamp"
-    },
-    "compare_report_top_change_uids_label": {
-      "ko": "상위 변화 feature_uid",
-      "en": "Top change feature_uids"
-    },
-    "calibration_md_split_deterministic_label": {
-      "ko": "결정적 분할",
-      "en": "deterministic_split"
-    },
-    "calibration_md_split_fit_count_label": {
-      "ko": "학습 행 수",
-      "en": "fit_count"
-    },
-    "calibration_md_split_selection_count_label": {
-      "ko": "선정 행 수",
-      "en": "selection_count"
-    },
-    "calibration_md_split_report_count_label": {
-      "ko": "보고 행 수",
-      "en": "report_count"
-    },
-    "calibration_md_split_fit_role_label": {
-      "ko": "학습 역할",
-      "en": "fit_role"
-    },
-    "calibration_md_split_selection_role_label": {
-      "ko": "선정 역할",
-      "en": "selection_role"
-    },
-    "calibration_md_split_report_role_label": {
-      "ko": "보고 역할",
-      "en": "report_role"
-    },
-    "calibration_md_request_signature_label": {
-      "ko": "요청 시그니처",
-      "en": "request_signature"
-    },
-    "calibration_md_report_signature_label": {
-      "ko": "리포트 시그니처",
-      "en": "report_signature"
-    },
-    "calibration_md_manifest_seed_label": {
-      "ko": "실행 시드",
-      "en": "manifest_seed"
-    },
-    "calibration_md_qgis_version_label": {
-      "ko": "QGIS 버전",
-      "en": "qgis_version"
-    },
     "workflow_progress_format": {
       "ko": "%p% 준비",
       "en": "%p% ready"
-    },
-    "workflow_progress_running_format": {
-      "ko": "%p% 실행 중",
-      "en": "%p% running"
-    },
-    "workflow_running_next_template": {
-      "ko": "현재 실행 중: {action}. 필요하면 이 패널에서 취소할 수 있습니다.",
-      "en": "Running now: {action}. You can cancel from this panel if needed."
-    },
-    "workflow_running_summary_suffix": {
-      "ko": "상태: 실행 중",
-      "en": "Status: running"
-    },
-    "workflow_status_running_default_label": {
-      "ko": "작업",
-      "en": "workflow"
-    },
-    "workflow_status_running_template": {
-      "ko": "실행 중: {action}.",
-      "en": "Running: {action}."
-    },
-    "analysis_task_running": {
-      "ko": "이미 작업이 진행 중입니다. 취소한 뒤 다시 시작해주세요.",
-      "en": "A task is already running. Please wait or cancel it before starting another."
-    },
-    "analysis_task_cancelled": {
-      "ko": "작업이 취소되었습니다.",
-      "en": "Operation was canceled."
-    },
-    "analysis_task_cancel_requested": {
-      "ko": "취소 요청을 보냈습니다. 작업 종료를 기다리는 중입니다.",
-      "en": "Cancel request sent. Waiting for workflow to stop."
-    },
-    "analysis_no_task_to_cancel": {
-      "ko": "현재 실행 중인 작업이 없습니다.",
-      "en": "No running workflow to cancel."
     },
     "negative_ratio_label": {
       "ko": "음성 샘플 배수",
@@ -396,10 +144,6 @@
     "context_hint_reference_prefix": {
       "ko": "대표 참고문헌: ",
       "en": " Representative references: "
-    },
-    "context_quality_warning": {
-      "ko": "컨텍스트 근거에 휴리스틱 prior (C/U) 항목이 {low}/{total}개 있습니다. 이 실행은 탐색적 분석으로 간주하고 지역별 캘리브레이션으로 검증하세요.",
-      "en": "Context evidence includes heuristic priors (C/U): {low}/{total}. Treat this run as exploratory and validate with local calibration."
     },
     "context_no_params": {
       "ko": "선택 가능한 파라미터 근거가 없습니다.",
@@ -466,8 +210,8 @@
       "en": "English"
     },
     "workflow_summary_template": {
-      "ko": "목적: {goal} | 현재 탭: {mode} | 모델: {profile} | 워크플로우: {workflow_mode} | 용어 언어: {lang} | 컨텍스트: {context_mode} | 산 이름(web): {mountain_mode}/{mountain_lang} | 준비도 {percent}%",
-      "en": "Goal: {goal} | Tab: {mode} | Model: {profile} | Workflow: {workflow_mode} | Label language: {lang} | Context: {context_mode} | Mountain names(web): {mountain_mode}/{mountain_lang} | Readiness {percent}%"
+      "ko": "목적: {goal} | 현재 탭: {mode} | 모델: {profile} | 용어 언어: {lang} | 컨텍스트: {context_mode} | 산 이름(web): {mountain_mode}/{mountain_lang} | 준비도 {percent}%",
+      "en": "Goal: {goal} | Tab: {mode} | Model: {profile} | Label language: {lang} | Context: {context_mode} | Mountain names(web): {mountain_mode}/{mountain_lang} | Readiness {percent}%"
     },
     "workflow_next_template": {
       "ko": "다음 단계: {pending}",
@@ -492,6 +236,22 @@
     "reason_alias": {
       "ko": "설명",
       "en": "Reason"
+    },
+    "reason_overview_title": {
+      "ko": "핵심 이유 3개",
+      "en": "Top 3 reasons"
+    },
+    "reason_detail_title": {
+      "ko": "상세 설명",
+      "en": "Detailed explanation"
+    },
+    "reason_cluster_title": {
+      "ko": "형국 묶음 맥락",
+      "en": "Cluster context"
+    },
+    "reason_limitations_title": {
+      "ko": "이 결과만으로 말할 수 없는 것",
+      "en": "What this result cannot say"
     },
     "fs_reason_alias": {
       "ko": "입지근거",
@@ -518,52 +278,8 @@
       "en": "Calibration Report"
     },
     "calibration_report_heading": {
-      "ko": "로컬 튜닝 요약",
-      "en": "Local Tuning Summary"
-    },
-    "calibration_goal_local_tuning": {
-      "ko": "입지 규칙의 로컬 가중치와 파라미터를 탐색적으로 조정하는 단계입니다. 단독 검증 결론으로 해석하면 안 됩니다.",
-      "en": "This step tunes local weights and profile parameters for exploratory calibration. It should not be treated as a standalone validation claim."
-    },
-    "calibration_phase_held_out_evaluation": {
-      "ko": "홀드아웃 평가",
-      "en": "Held-out evaluation"
-    },
-    "calibration_phase_held_out_evaluation_note": {
-      "ko": "보고 지표는 후보 선택에 쓰이지 않은 홀드아웃 행에서 계산되었습니다.",
-      "en": "Reported metrics were computed on held-out rows that were not used for candidate selection."
-    },
-    "calibration_phase_no_holdout_evaluation": {
-      "ko": "홀드아웃 평가 없음",
-      "en": "No held-out evaluation available"
-    },
-    "calibration_phase_no_holdout_evaluation_note": {
-      "ko": "홀드아웃 평가 행이 없어, 이번 실행은 튜닝 진단만 제공하고 보고 가능한 평가 지표는 비워둡니다.",
-      "en": "No held-out evaluation rows were available, so this run exposes tuning diagnostics but leaves reportable evaluation metrics empty."
-    },
-    "calibration_phase_validation_reused": {
-      "ko": "선정 재사용 검증",
-      "en": "Validation reused for model selection"
-    },
-    "calibration_phase_validation_reused_note": {
-      "ko": "보고 지표는 후보 선택에도 사용된 validation 행을 다시 사용합니다.",
-      "en": "Reported metrics reuse the same validation rows that were used for candidate selection."
-    },
-    "calibration_phase_evaluation_reused": {
-      "ko": "선정 재사용 평가",
-      "en": "Evaluation rows reused for model selection"
-    },
-    "calibration_phase_evaluation_reused_note": {
-      "ko": "evaluation 행이 후보 선택에도 다시 사용되어, 순수 홀드아웃 평가로 볼 수 없습니다.",
-      "en": "Evaluation rows were also reused for candidate selection, so this is not a pure held-out estimate."
-    },
-    "calibration_phase_in_sample_diagnostic": {
-      "ko": "표본내 튜닝 진단",
-      "en": "In-sample tuning diagnostic"
-    },
-    "calibration_phase_in_sample_diagnostic_note": {
-      "ko": "보고 지표는 표본내 튜닝 진단값이므로 일반화 성능처럼 해석하면 안 됩니다.",
-      "en": "Reported metrics are in-sample tuning diagnostics and should not be interpreted as held-out performance."
+      "ko": "로컬 캘리브레이션 결과",
+      "en": "Local Calibration Result"
     },
     "link_arrow": {
       "ko": "→",
@@ -584,10 +300,6 @@
     "calibration_success_template": {
       "ko": "캘리브레이션 완료: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}",
       "en": "Calibration done: ROC_AUC={roc_auc:.4f}, PR_AUC={pr_auc:.4f}"
-    },
-    "calibration_success_no_holdout_template": {
-      "ko": "캘리브레이션 완료: 튜닝 진단은 생성했지만 홀드아웃 평가 행이 부족해 보고 지표는 만들지 않았습니다.",
-      "en": "Calibration done: tuning diagnostics were prepared, but there were not enough held-out evaluation rows to report metrics."
     },
     "projected_crs_required": {
       "ko": "DEM 좌표계가 경위도(도 단위)입니다. 이 플러그인의 거리·반경 계산은 투영 좌표계가 필요합니다. 미터 기반 CRS로 재투영한 뒤 다시 실행하세요.",
@@ -757,26 +469,6 @@
       "ko": "프로파일 비교 완료.",
       "en": "Profile comparison completed."
     },
-    "compare_feature_contract_failed": {
-      "ko": "프로파일 비교 결과 레이어의 식별자 매칭이 맞지 않아 작업을 중단했습니다.",
-      "en": "Profile comparison contract check failed because feature identity sets are inconsistent."
-    },
-    "compare_top_change_contract_failed": {
-      "ko": "변화도 분석 결과와 기반 레이어의 식별자가 일치하지 않아 비교를 안전하게 중단했습니다.",
-      "en": "Top-change contract check failed because top-change identities are inconsistent with source layers."
-    },
-    "compare_top_change_selection_failed": {
-      "ko": "변화도 선택 단계에서 식별자 매핑이 맞지 않아 지도 선택을 완료하지 못했습니다.",
-      "en": "Feature selection by UID failed during top-change inspection."
-    },
-    "compare_top_change_export_failed": {
-      "ko": "변화도 레이어 생성 시 식별자 매핑이 깨져 결과를 내보낼 수 없습니다.",
-      "en": "Top-change export failed because UID mapping became unstable."
-    },
-    "calibration_feature_contract_failed": {
-      "ko": "캘리브레이션 결과 레이어의 식별자 계약을 만족하지 못해 작업이 중단되었습니다.",
-      "en": "Calibration output failed UID contract validation; stopping to avoid mismatched identifiers."
-    },
     "compare_report_reason_compare_template": {
       "ko": "기준: {base} / 보정: {calibrated}",
       "en": "Base: {base} / Calibrated: {calibrated}"
@@ -853,6 +545,38 @@
       "ko": "상위 변화 지점",
       "en": "Top changed features"
     },
+    "compare_change_feature_alias": {
+      "ko": "지점",
+      "en": "Feature"
+    },
+    "compare_change_base_alias": {
+      "ko": "기준 점수",
+      "en": "Base score"
+    },
+    "compare_change_calibrated_alias": {
+      "ko": "보정 점수",
+      "en": "Calibrated score"
+    },
+    "compare_change_delta_alias": {
+      "ko": "차이",
+      "en": "Delta"
+    },
+    "compare_change_trend_alias": {
+      "ko": "추세",
+      "en": "Trend"
+    },
+    "compare_change_reason_b_alias": {
+      "ko": "기준 이유",
+      "en": "Base reason"
+    },
+    "compare_change_reason_c_alias": {
+      "ko": "보정 이유",
+      "en": "Calibrated reason"
+    },
+    "compare_change_model_alias": {
+      "ko": "모델",
+      "en": "Model"
+    },
     "calibration_md_parameter_summary_label": {
       "ko": "파라미터 보정",
       "en": "parameter_update"
@@ -894,16 +618,32 @@
       "en": "Metric"
     },
     "calibration_metric_header_base": {
-      "ko": "기준선",
-      "en": "Baseline"
+      "ko": "기준",
+      "en": "Base"
     },
     "calibration_metric_header_tuned": {
-      "ko": "보고값",
-      "en": "Reported"
+      "ko": "보정",
+      "en": "Tuned"
     },
     "calibration_metric_header_delta": {
       "ko": "차이",
       "en": "Delta"
+    },
+    "calibration_metric_row_roc_auc": {
+      "ko": "ROC AUC",
+      "en": "ROC AUC"
+    },
+    "calibration_metric_row_pr_auc": {
+      "ko": "PR AUC",
+      "en": "PR AUC"
+    },
+    "calibration_metric_row_best_f1": {
+      "ko": "최적 F1",
+      "en": "Best F1"
+    },
+    "calibration_metric_row_best_youden_j": {
+      "ko": "최적 Youden J",
+      "en": "Best Youden J"
     },
     "calibration_metadata_layer_label": {
       "ko": "레이어",
@@ -1081,233 +821,421 @@
       "ko": "누적 캘리브레이션 비교",
       "en": "Calibration history comparison"
     },
+    "web_mountain_lang_local": {
+      "ko": "현지명",
+      "en": "Local name"
+    },
+    "web_mountain_lang_ko": {
+      "ko": "한국어",
+      "en": "Korean preferred"
+    },
+    "web_mountain_lang_en": {
+      "ko": "영문(로마자)",
+      "en": "English preferred"
+    },
+    "web_mountain_option_label": {
+      "ko": "산 이름 표시",
+      "en": "Mountain naming"
+    },
+    "web_mountain_lang_label": {
+      "ko": "산 이름 언어",
+      "en": "Mountain name language"
+    },
+    "web_mountain_radius_label": {
+      "ko": "검색 반경",
+      "en": "Search radius"
+    },
+    "web_mountain_limit_label": {
+      "ko": "최대 표시 개수",
+      "en": "Max features"
+    },
+    "web_mountain_mode_on": {
+      "ko": "켜짐",
+      "en": "On"
+    },
+    "web_mountain_mode_off": {
+      "ko": "꺼짐",
+      "en": "Off"
+    },
+    "advanced_options_button": {
+      "ko": "고급 옵션",
+      "en": "Advanced Options"
+    },
+    "context_mode_label": {
+      "ko": "컨텍스트 모드",
+      "en": "Context Mode"
+    },
+    "context_experimental_toggle_label": {
+      "ko": "탐색 지역 프로필 표시 (근거 제한)",
+      "en": "Show exploratory region profiles (limited evidence)"
+    },
+    "context_scope_label": {
+      "ko": "프로필 범위",
+      "en": "Context Profile Scope"
+    },
+    "context_mode_general_short": {
+      "ko": "일반",
+      "en": "General"
+    },
+    "context_mode_advanced_short": {
+      "ko": "고급",
+      "en": "Advanced"
+    },
+    "context_general_mode_dialog_html": {
+      "ko": "<h3>일반 원칙 모드</h3><p>국가/시대 오버라이드가 비활성화됩니다.</p><p>지역/역사 근거 표를 보려면 고급 컨텍스트를 켜세요.</p>",
+      "en": "<h3>General Principles Mode</h3><p>Country/period overrides are disabled.</p><p>Enable advanced context to inspect regional/historical evidence tables.</p>"
+    },
+    "context_general_mode_hint": {
+      "ko": "일반 원칙 모드가 활성화되어 있습니다. 국가/시대 편향은 적용되지 않습니다. 지역/역사 기반 프로파일을 적용하려면 고급 컨텍스트를 켜세요.",
+      "en": "General principles mode is active. Country/period biases are disabled. Enable advanced context to apply regional and historical profiles."
+    },
+    "context_general_mode_note": {
+      "ko": "중립적 글로벌 원칙만 적용합니다(국가/시대 오버라이드 없음).",
+      "en": "Using neutral global principles only (no country/period overrides)."
+    },
     "maptip_score_label": {
+      "ko": "점수",
       "en": "score"
     },
     "maptip_len_m_label": {
+      "ko": "길이(m)",
       "en": "len(m)"
     },
     "maptip_azimuth_label": {
+      "ko": "방위각",
       "en": "azimuth"
     },
     "maptip_rank_label": {
+      "ko": "순위",
       "en": "rank"
     },
     "maptip_fit_label": {
+      "ko": "적합도",
       "en": "fit"
     },
     "maptip_delta_label": {
+      "ko": "차이",
       "en": "delta"
     },
     "maptip_target_label": {
+      "ko": "목표치",
       "en": "target"
     },
     "maptip_radius_m_label": {
+      "ko": "반경(m)",
       "en": "radius(m)"
     },
     "maptip_strength_label": {
+      "ko": "강도",
       "en": "strength"
     },
     "maptip_len_label": {
+      "ko": "길이",
       "en": "len"
     },
+    "maptip_ridge_score_label": {
+      "ko": "능선 점수",
+      "en": "ridge score"
+    },
     "maptip_order_label": {
+      "ko": "순서",
       "en": "order"
     },
     "maptip_flow_acc_label": {
+      "ko": "유량 누적",
       "en": "flow_acc"
     },
     "maptip_confidence_label": {
+      "ko": "신뢰도",
       "en": "confidence"
     },
     "maptip_components_label": {
+      "ko": "구성 요소 적합",
       "en": "Component fits"
     },
     "maptip_terrain_label": {
+      "ko": "지형 지표",
       "en": "Terrain metrics"
     },
     "maptip_dem_water_label": {
+      "ko": "DEM 습윤",
       "en": "dem_water"
     },
     "maptip_distance_water_label": {
+      "ko": "수로 거리(m)",
       "en": "distance_to_water(m)"
     },
+    "maptip_base_fs_score_label": {
+      "ko": "기준 점수",
+      "en": "Base fs_score"
+    },
+    "maptip_best_f1_th_label": {
+      "ko": "최적 F1 임계값",
+      "en": "Best F1 threshold"
+    },
+    "maptip_best_youden_th_label": {
+      "ko": "최적 Youden 임계값",
+      "en": "Best Youden threshold"
+    },
+    "maptip_mountain_label": {
+      "ko": "산",
+      "en": "mountain"
+    },
+    "maptip_mountain_dist_label": {
+      "ko": "산거리(m)",
+      "en": "mountain_dist(m)"
+    },
+    "maptip_mountain_lang_label": {
+      "ko": "산 이름 언어",
+      "en": "mountain_lang"
+    },
     "maptip_link_note": {
+      "ko": "점수는 전체 구조 적합도(0-1)입니다. 높을수록 유리합니다.",
       "en": "score=overall structural fit (0-1). Higher is stronger."
     },
     "maptip_term_note": {
+      "ko": "fit은 델타가 목표치에 얼마나 가까운지, score는 전체 용어 적합도입니다.",
       "en": "fit=how close delta is to target. score=overall term suitability."
     },
     "maptip_ridge_note": {
+      "ko": "강도는 국부 돌출 정도와 연결성을 반영합니다.",
       "en": "strength reflects local prominence and connectivity."
     },
     "maptip_hydro_note": {
+      "ko": "order는 배수 네트워크 내 계층 구조, flow_acc는 상류 지원 강도입니다.",
       "en": "order=hierarchy in drainage graph, flow_acc=upstream support."
     },
     "maptip_site_note": {
+      "ko": "0~1 적합도: 높을수록 유리합니다. TPI는 0 근처가 평탄, 음수는 오목, 양수는 볼록입니다.",
       "en": "0-1 fits: higher is better. TPI near 0 is flatter; negative is concave; positive is convex."
     },
     "mountain_attach_success_template": {
+      "ko": "{count}개 피처에 주변 산 이름을 추가했습니다 ({source}).",
       "en": "Attached mountain names to {count} features ({source})."
     },
     "mountain_alias_name": {
+      "ko": "인근 산",
       "en": "Nearby mountain"
     },
     "mountain_alias_dist": {
+      "ko": "산 거리(m)",
       "en": "Mountain distance (m)"
     },
     "mountain_alias_source": {
+      "ko": "산 데이터 출처",
       "en": "Mountain source"
     },
     "mountain_alias_lang": {
+      "ko": "산 이름 언어",
       "en": "Mountain name language"
     },
     "mountain_prefix_label": {
+      "ko": "인근 산",
       "en": "Nearby mountain"
     },
     "mountain_lang_inline_label": {
+      "ko": "언어",
       "en": "lang"
     },
     "link_alias_score": {
+      "ko": "연결 점수(0-1)",
       "en": "Link score (0-1)"
     },
     "link_alias_len_m": {
+      "ko": "연결 길이(m)",
       "en": "Link length (m)"
     },
     "link_alias_azimuth": {
+      "ko": "방향(도)",
       "en": "Direction (deg)"
     },
     "link_alias_rank": {
+      "ko": "후보 순위",
       "en": "Candidate rank"
     },
     "term_alias_score": {
+      "ko": "용어 점수(0-1)",
       "en": "Term score (0-1)"
     },
     "term_alias_fit": {
+      "ko": "형상 적합도(0-1)",
       "en": "Shape fit (0-1)"
     },
     "term_alias_delta": {
+      "ko": "상대 고도차",
       "en": "Relative elevation delta"
     },
     "term_alias_target": {
+      "ko": "목표 상대값",
       "en": "Expected relative delta"
     },
     "term_alias_radius": {
+      "ko": "검색 반경(m)",
       "en": "Search radius (m)"
     },
     "term_alias_relief": {
+      "ko": "국부 경사폭(m)",
       "en": "Local relief (m)"
     },
     "term_alias_rank": {
+      "ko": "후보 순위",
       "en": "Candidate rank"
     },
     "ridge_alias_strength": {
+      "ko": "능선 강도(0-1)",
       "en": "Ridge strength (0-1)"
     },
     "ridge_alias_score": {
+      "ko": "능선 순위 점수(0-1)",
       "en": "Ridge rank score (0-1)"
     },
     "ridge_alias_len": {
+      "ko": "능선 길이(지도 단위)",
       "en": "Ridge length (map units)"
     },
     "hydro_alias_order": {
+      "ko": "하천 단계",
       "en": "Stream order"
     },
     "hydro_alias_flow_acc": {
+      "ko": "유량 축적 대리변수",
       "en": "Flow accumulation proxy"
     },
     "hydro_alias_len": {
+      "ko": "하천 길이(지도 단위)",
       "en": "Stream length (map units)"
     },
     "site_alias_score": {
+      "ko": "입지 점수(0-1)",
       "en": "Site score (0-1)"
     },
     "site_alias_conf": {
+      "ko": "신뢰도(0-1)",
       "en": "Confidence (0-1)"
     },
     "site_alias_slope": {
+      "ko": "경사 적합도(0-1)",
       "en": "Slope fit (0-1)"
     },
     "site_alias_aspect": {
+      "ko": "향 적합도(0-1)",
       "en": "Aspect fit (0-1)"
     },
     "site_alias_form": {
+      "ko": "형태 적합도(0-1)",
       "en": "Form fit (0-1)"
     },
     "site_alias_long": {
+      "ko": "전후 적합도(0-1)",
       "en": "Fore-aft fit (0-1)"
     },
     "site_alias_water": {
+      "ko": "물 적합도(0-1)",
       "en": "Water fit (0-1)"
     },
     "site_alias_dem_water": {
+      "ko": "DEM 수분 적합도(0-1)",
       "en": "DEM wetness fit (0-1)"
     },
     "site_alias_tpi": {
+      "ko": "지형 위치지수",
       "en": "Topographic position index"
     },
     "site_alias_conv": {
+      "ko": "수렴도(0-1)",
       "en": "Convergence (0-1)"
     },
+    "cal_score_title": {
+      "ko": "보정 점수",
+      "en": "Calibrated Score"
+    },
+    "cal_f1_alias": {
+      "ko": "최적 F1 임계값",
+      "en": "Best F1 threshold"
+    },
+    "cal_youden_alias": {
+      "ko": "최적 Youden 임계값",
+      "en": "Best Youden threshold"
+    },
+    "calibration_md_scope_label": {
+      "ko": "캘리브레이션 범위",
+      "en": "calibration_scope"
+    },
+    "calibration_md_weight_summary_label": {
+      "ko": "가중치 보정",
+      "en": "weight_update"
+    },
+    "calibration_md_base_roc_auc_label": {
+      "ko": "기준 ROC AUC",
+      "en": "Base ROC AUC"
+    },
+    "calibration_md_base_pr_auc_label": {
+      "ko": "기준 PR AUC",
+      "en": "Base PR AUC"
+    },
     "calibration_md_title_template": {
+      "ko": "풍수 캘리브레이션 리포트 ({stamp})",
       "en": "Feng Shui Calibration Report ({stamp})"
     },
     "calibration_md_positive_label": {
+      "ko": "양성 샘플",
       "en": "Positive samples"
     },
     "calibration_md_negative_label": {
+      "ko": "음성 샘플",
       "en": "Negative samples"
     },
     "calibration_md_valid_label": {
+      "ko": "유효 점수 샘플",
       "en": "Valid scored samples"
     },
     "calibration_md_roc_auc_label": {
+      "ko": "ROC AUC",
       "en": "ROC AUC"
     },
     "calibration_md_pr_auc_label": {
+      "ko": "PR AUC",
       "en": "PR AUC"
     },
     "calibration_md_best_f1_label": {
+      "ko": "최적 F1",
       "en": "Best F1"
     },
     "calibration_md_best_youden_label": {
+      "ko": "최적 Youden J",
       "en": "Best Youden J"
     },
     "calibration_md_threshold_label": {
+      "ko": "임계값",
       "en": "threshold"
     },
     "calibration_md_context_title": {
+      "ko": "컨텍스트",
       "en": "Context"
     },
     "calibration_md_context_culture_label": {
+      "ko": "국가/지역",
       "en": "culture"
     },
     "calibration_md_context_period_label": {
+      "ko": "시대",
       "en": "period"
     },
     "calibration_md_context_profile_label": {
+      "ko": "프로파일",
       "en": "profile"
     },
     "calibration_md_context_hemisphere_label": {
+      "ko": "반구",
       "en": "hemisphere"
     },
     "calibration_md_context_negative_ratio_label": {
+      "ko": "음성 샘플 비율",
       "en": "negative_ratio"
     },
     "calibration_md_context_random_seed_label": {
+      "ko": "임의 시드",
       "en": "random_seed"
-    },
-    "calibration_md_goal_label": {
-      "ko": "목표",
-      "en": "goal"
-    },
-    "calibration_md_report_phase_label": {
-      "ko": "보고 지표 단계",
-      "en": "reported_metric_phase"
-    },
-    "calibration_md_report_note_label": {
-      "ko": "해석 주의",
-      "en": "reported_metric_note"
     },
     "calibration_md_paper_evidence_title": {
       "ko": "논문 근거",
@@ -1325,46 +1253,60 @@
       "ko": "프로파일 기반 논문 근거가 적용되지 않았습니다.",
       "en": "No profile-level paper evidence was applied."
     },
+    "calibration_html_scope_label": {
+      "ko": "캘리브레이션 범위",
+      "en": "Calibration scope"
+    },
+    "calibration_html_weight_summary_label": {
+      "ko": "가중치 보정",
+      "en": "Weight update"
+    },
+    "calibration_html_base_roc_auc_label": {
+      "ko": "기준 ROC AUC",
+      "en": "Base ROC AUC"
+    },
+    "calibration_html_base_pr_auc_label": {
+      "ko": "기준 PR AUC",
+      "en": "Base PR AUC"
+    },
     "calibration_html_roc_auc_label": {
+      "ko": "ROC AUC",
       "en": "ROC AUC"
     },
     "calibration_html_pr_auc_label": {
+      "ko": "PR AUC",
       "en": "PR AUC"
     },
     "calibration_html_positive_label": {
+      "ko": "양성",
       "en": "Positive"
     },
     "calibration_html_negative_label": {
+      "ko": "음성",
       "en": "Negative"
     },
     "calibration_html_valid_label": {
+      "ko": "유효",
       "en": "Valid"
     },
-    "calibration_html_goal_label": {
-      "ko": "목표",
-      "en": "Goal"
-    },
-    "calibration_html_report_phase_label": {
-      "ko": "보고 지표 단계",
-      "en": "Reported metric phase"
-    },
-    "calibration_html_report_note_label": {
-      "ko": "해석 주의",
-      "en": "Interpretation note"
-    },
     "calibration_html_best_f1_label": {
+      "ko": "최적 F1",
       "en": "Best F1"
     },
     "calibration_html_best_youden_label": {
+      "ko": "최적 Youden J",
       "en": "Best Youden J"
     },
     "calibration_html_threshold_label": {
+      "ko": "임계값",
       "en": "threshold"
     },
     "calibration_html_json_label": {
+      "ko": "JSON",
       "en": "JSON"
     },
     "calibration_html_markdown_label": {
+      "ko": "Markdown",
       "en": "Markdown"
     },
     "calibration_html_paper_evidence_title": {
@@ -1383,6 +1325,34 @@
       "ko": "프로파일 기반 논문 근거가 적용되지 않았습니다.",
       "en": "No profile-level paper evidence was applied."
     },
+    "guide_quick_numbers_html": {
+      "ko": "<b>숫자 빠른 해석</b><br/>점수/신뢰도(0-1): 0.80 이상 강함, 0.65-0.79 좋음, 0.50-0.64 보통, 0.50 미만 약함.<br/>TPI: 0에 가까우면 평탄, 음수는 오목, 양수는 볼록.",
+      "en": "<b>Quick Number Read</b><br/>score/confidence (0-1): 0.80+ strong, 0.65-0.79 good, 0.50-0.64 moderate, below 0.50 weak.<br/>TPI: near 0 flat, negative concave, positive convex."
+    },
+    "guide_dem_diag_empty": {
+      "ko": "<b>DEM 진단</b><br/>해상도, CRS 단위 신뢰도, 샘플 밀도를 확인하려면 DEM 레이어를 선택하세요.",
+      "en": "<b>DEM Diagnostics</b><br/>Select a DEM layer to inspect resolution, CRS unit reliability, and sampling density."
+    },
+    "guide_dem_diag_template": {
+      "ko": "<b>DEM 진단</b><br/>레이어={layer}<br/>픽셀 스텝={step:.4f}, 범위={width:.1f} x {height:.1f}, 적응 간격={spacing:.2f}, 추정 샘플 노드={nodes}<br/>CRS 모드={crs_mode}: {crs_note}",
+      "en": "<b>DEM Diagnostics</b><br/>layer={layer}<br/>pixel_step={step:.4f}, extent={width:.1f} x {height:.1f}, adaptive_spacing={spacing:.2f}, approx_sampling_nodes={nodes}<br/>CRS mode={crs_mode}: {crs_note}"
+    },
+    "guide_evidence_general_mode": {
+      "ko": "<b>근거 요약</b><br/>일반 원칙 모드에서는 지역/시대 근거를 의도적으로 적용하지 않습니다.",
+      "en": "<b>Evidence Summary</b><br/>General principles mode: region/period evidence is intentionally not applied."
+    },
+    "guide_evidence_empty": {
+      "ko": "<b>근거 요약</b><br/>로드된 컨텍스트 근거가 없습니다.",
+      "en": "<b>Evidence Summary</b><br/>No context evidence loaded."
+    },
+    "guide_evidence_template": {
+      "ko": "<b>근거 요약</b><br/>A={a}, B={b}, C={c}, U={u} (총 {total})<br/>품질={quality}<br/>{recommendation}",
+      "en": "<b>Evidence Summary</b><br/>A={a}, B={b}, C={c}, U={u} (total={total})<br/>quality={quality}<br/>{recommendation}"
+    },
+    "context_evidence_meta_tier": {
+      "ko": "컨텍스트 구간",
+      "en": "context tier"
+    },
     "context_evidence_html_title": {
       "ko": "컨텍스트 근거",
       "en": "Context Evidence"
@@ -1396,24 +1366,16 @@
       "en": "parameter"
     },
     "context_evidence_group_weight_bias": {
-      "ko": "가중치 보정",
+      "ko": "가중치 편향",
       "en": "weight bias"
     },
     "context_evidence_group_term_bias": {
-      "ko": "용어 보정",
+      "ko": "용어 편향",
       "en": "term bias"
     },
     "context_evidence_meta_culture": {
-      "ko": "문화권",
+      "ko": "국가/지역",
       "en": "culture"
-    },
-    "context_evidence_meta_tier": {
-      "ko": "프로파일 분류",
-      "en": "context tier"
-    },
-    "context_evidence_meta_scope": {
-      "ko": "근거 범위",
-      "en": "evidence scope"
     },
     "context_evidence_meta_period": {
       "ko": "시대",
@@ -1424,7 +1386,7 @@
       "en": "hemisphere"
     },
     "context_evidence_col_group": {
-      "ko": "그룹",
+      "ko": "군",
       "en": "group"
     },
     "context_evidence_col_name": {
@@ -1436,22 +1398,19 @@
       "en": "value"
     },
     "context_evidence_col_level": {
-      "ko": "근거수준",
+      "ko": "레벨",
       "en": "level"
     },
     "context_evidence_col_source_doi": {
-      "ko": "근거DOI",
-      "en": "source_doi"
-    },
-    "context_evidence_col_reference": {
       "ko": "참고문헌",
-      "en": "reference"
+      "en": "source_doi"
     },
     "context_evidence_col_note": {
       "ko": "메모",
       "en": "note"
     },
     "context_evidence_level_note": {
+      "ko": "근거 수준: A=직접 정량 근거, B=사례연구 기반, C=휴리스틱 사전지식, U=미지정.",
       "en": "Evidence level: A=direct quantitative, B=case-study anchored, C=heuristic prior, U=unspecified."
     }
   },

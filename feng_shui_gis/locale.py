@@ -5,9 +5,9 @@ _LANGUAGE_OVERRIDE = None
 
 _MESSAGES = {
     "en": {
-        "plugin_title": "Asian Landscape Reader",
-        "menu_title": "Asian Landscape Reader",
-        "panel_title": "Asian Landscape Reader",
+        "plugin_title": "Feng Shui GIS",
+        "menu_title": "Feng Shui GIS",
+        "panel_title": "Feng Shui GIS",
         "panel_subtitle": "Read East Asian and cross-regional terrain form before scoring: ridges, hydro structure, and historical settlement clues.",
         "sites_label": "Site points",
         "dem_label": "DEM raster",
@@ -42,7 +42,7 @@ _MESSAGES = {
         "analysis_auto_hydro_label": "Use DEM-derived hydro network when water layer is missing",
         "extract_landscape_button": "Extract Landscape Structure",
         "help_button": "Detailed Help",
-        "help_dialog_title": "Asian Landscape Reader - Detailed Guide",
+        "help_dialog_title": "Feng Shui GIS - Detailed Guide",
         "help_tab_overview": "Workflow",
         "help_tab_symbols": "Symbols",
         "help_tab_references": "References",
@@ -61,9 +61,9 @@ _MESSAGES = {
         "ok_landscape_finished": "Created landscape flow layers",
     },
     "ko": {
-        "plugin_title": "아시아 고대공간 리더",
-        "menu_title": "아시아 고대공간 리더",
-        "panel_title": "아시아 고대공간 리더",
+        "plugin_title": "Feng Shui GIS",
+        "menu_title": "Feng Shui GIS",
+        "panel_title": "Feng Shui GIS",
         "panel_subtitle": "DEM으로 지형의 능선·수계 골격을 먼저 읽고, 필요 시 후보지 점수까지 이어가는 고고·공간지리 도구입니다.",
         "sites_label": "후보지 포인트",
         "dem_label": "DEM 래스터",
@@ -98,7 +98,7 @@ _MESSAGES = {
         "analysis_auto_hydro_label": "분석 시 수계가 없으면 DEM 자동 수문 추출 사용",
         "extract_landscape_button": "지형 구조 추출",
         "help_button": "상세 도움말",
-        "help_dialog_title": "아시아 고대공간 리더 - 상세 가이드",
+        "help_dialog_title": "Feng Shui GIS - 상세 가이드",
         "help_tab_overview": "워크플로우",
         "help_tab_symbols": "심볼",
         "help_tab_references": "레퍼런스",
