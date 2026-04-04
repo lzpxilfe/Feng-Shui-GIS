@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import configparser
 import json
+import sys
 import tempfile
 from pathlib import Path
 
-from feng_shui_gis.reporting.support_bundle_writer import SupportBundleWriter
-
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from feng_shui_gis.reporting.support_bundle_writer import SupportBundleWriter
 
 
 def required_paths():
