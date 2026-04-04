@@ -4,7 +4,7 @@ import os
 from html import escape
 from datetime import datetime
 
-from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtCore import QTimer, QVariant
 from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtWidgets import QAction, QDialog, QVBoxLayout, QTextBrowser
 from qgis.core import (
@@ -430,6 +430,47 @@ class FengShuiGisPlugin:
     def _error_priority(cls, code):
         return cls._ERROR_HANDLING_PRIORITY.get(code, 0)
 
+    @staticmethod
+    def _post_to_main_thread(callback):
+        if callback is None:
+            return
+        try:
+            QTimer.singleShot(0, callback)
+            return
+        except Exception:
+            pass
+        try:
+            callback()
+        except Exception:
+            pass
+
+    def _push_messagebar(self, level, title, message):
+        text = str(message) if message is not None else ""
+
+        def _emit():
+            if self.iface is None:
+                return
+            bar = self.iface.messageBar()
+            if bar is None:
+                return
+            if level == "critical":
+                bar.pushCritical(title, text)
+            elif level == "warning":
+                bar.pushWarning(title, text)
+            elif level == "info":
+                bar.pushInfo(title, text)
+            elif level == "success":
+                bar.pushSuccess(title, text)
+            else:
+                bar.pushInfo(title, text)
+
+        self._post_to_main_thread(_emit)
+
+    def _set_status(self, text):
+        if not self.dock or text is None:
+            return
+        self._post_to_main_thread(lambda: self.dock.set_status(text))
+
     def _log_and_notify_error(self, code, context, exc, include_exception=True):
         lang = self._label_language()
         entry = self._ERROR_CATALOG.get(
@@ -449,13 +490,9 @@ class FengShuiGisPlugin:
         else:
             details = f"{debug_text} | code={code} | priority={self._error_priority(code)}"
         self._log_debug(details, Qgis.Warning)
-        if self.iface:
-            self.iface.messageBar().pushCritical(
-                tr("warn_failed"),
-                self._error_user_message(code, context, exc if include_exception else None),
-            )
-        if self.dock:
-            self.dock.set_status(self._error_user_message(code, context, None))
+        user_message = self._error_user_message(code, context, exc if include_exception else None)
+        self._push_messagebar("critical", tr("warn_failed"), user_message)
+        self._set_status(self._error_user_message(code, context, None))
 
     def _log_and_notify_warning(self, code, context, detail=None):
         lang = self._label_language()
@@ -480,10 +517,8 @@ class FengShuiGisPlugin:
             f"{entry.get('debug', message)} | code={code} | priority={self._error_priority(code)}",
             Qgis.Warning,
         )
-        if self.iface:
-            self.iface.messageBar().pushWarning(tr("plugin_title"), message)
-        if self.dock:
-            self.dock.set_status(message)
+        self._push_messagebar("warning", tr("plugin_title"), message)
+        self._set_status(message)
 
     def _warn_mountain_lookup_status(self, service):
         status_code = getattr(service, "last_query_error_code", None)
@@ -1102,7 +1137,8 @@ class FengShuiGisPlugin:
 
     def _warn_if_geographic(self, layer):
         if layer and layer.crs().isGeographic():
-            self.iface.messageBar().pushWarning(
+            self._push_messagebar(
+                "warning",
                 tr("plugin_title"),
                 tr("warn_geographic_crs"),
             )
@@ -1150,9 +1186,8 @@ class FengShuiGisPlugin:
             text_lang,
             default=default_message,
         )
-        self.iface.messageBar().pushCritical(tr("plugin_title"), message)
-        if self.dock:
-            self.dock.set_status(message)
+        self._push_messagebar("critical", tr("plugin_title"), message)
+        self._set_status(message)
         return False
 
     def _warn_if_crs_mismatch(self, dem_layer, *other_layers):
@@ -1183,7 +1218,7 @@ class FengShuiGisPlugin:
                 "DEM과 다른 CRS 레이어를 DEM CRS로 변환해 계산합니다: {layers}."
             ),
         ).format(layers=", ".join(mismatched))
-        self.iface.messageBar().pushWarning(tr("plugin_title"), message)
+        self._push_messagebar("warning", tr("plugin_title"), message)
 
     def _label_language(self):
         if self.dock and hasattr(self.dock, "label_language"):
@@ -1374,7 +1409,7 @@ class FengShuiGisPlugin:
                 "Treat this run as exploratory and validate with local calibration."
             ),
         ).format(low=low_count, total=total)
-        self.iface.messageBar().pushWarning(tr("plugin_title"), warning)
+        self._push_messagebar("warning", tr("plugin_title"), warning)
         self._context_warning_cache.add(warning_key)
 
     def _insert_output_layers(self, layers_top_to_bottom, label_lang="ko"):
@@ -1799,9 +1834,9 @@ class FengShuiGisPlugin:
                 limitations_title=reason_limitations_title,
             )
             brief = " | ".join(overview_items[:2]) if overview_items else message
-            if len(brief) > 240:
-                brief = f"{brief[:237]}..."
-            self.iface.messageBar().pushInfo(title, brief)
+        if len(brief) > 240:
+            brief = f"{brief[:237]}..."
+        self._push_messagebar("info", title, brief)
 
         layer.selectionChanged.connect(_on_selection)
         self._selection_hooks[layer.id()] = _on_selection
@@ -1913,10 +1948,8 @@ class FengShuiGisPlugin:
                 if self._label_language() == "en"
                 else "다른 작업이 진행 중입니다. 완료 후 다시 실행해 주세요."
             )
-            if self.iface:
-                self.iface.messageBar().pushWarning(tr("plugin_title"), busy_text)
-            if self.dock:
-                self.dock.set_status(busy_text)
+            self._push_messagebar("warning", tr("plugin_title"), busy_text)
+            self._set_status(busy_text)
             return False
 
         if self.dock and hasattr(self.dock, "workflow_progress"):
@@ -1954,13 +1987,11 @@ class FengShuiGisPlugin:
         auto_hydro,
     ):
         if not site_layer or not dem_layer:
-            self.iface.messageBar().pushWarning(tr("plugin_title"), tr("warn_missing_layers"))
-            if self.dock:
-                self.dock.set_status(tr("warn_missing_layers"))
+            self._push_messagebar("warning", tr("plugin_title"), tr("warn_missing_layers"))
+            self._set_status(tr("warn_missing_layers"))
             return
 
-        if self.dock:
-            self.dock.set_status(tr("status_running"))
+        self._set_status(tr("status_running"))
         label_lang = self._label_language()
         mountain_enabled, mountain_radius_m, mountain_max_features, mountain_lang = (
             self._mountain_name_options()
@@ -1991,12 +2022,11 @@ class FengShuiGisPlugin:
         def _done(payload):
             if not payload.get("ok"):
                 if payload.get("error_code") == "E_TASK_CANCELLED":
-                    if self.dock:
-                        self.dock.set_status(
-                            "analysis"
-                            if self._label_language() == "en"
-                            else "분석이 취소되었습니다."
-                        )
+                    self._set_status(
+                        "analysis"
+                        if self._label_language() == "en"
+                        else "분석이 취소되었습니다."
+                    )
                     return
                 self._log_and_notify_error(
                     payload.get("error_code") or "E_ANALYSIS_UNEXPECTED",
@@ -2007,17 +2037,14 @@ class FengShuiGisPlugin:
 
             output_layer_name = payload.get("output_layer_name", "")
             mountain_updated = int(payload.get("mountain_updated") or 0)
-            self.iface.messageBar().pushSuccess(
-                tr("plugin_title"),
-                f"{tr('ok_finished')}: {output_layer_name}",
-            )
+            self._push_messagebar("success", tr("plugin_title"), f"{tr('ok_finished')}: {output_layer_name}")
             if mountain_updated > 0:
-                self.iface.messageBar().pushInfo(
+                self._push_messagebar(
+                    "info",
                     tr("plugin_title"),
                     self._mountain_attached_message(mountain_updated),
                 )
-            if self.dock:
-                self.dock.set_status(tr("status_done"))
+            self._set_status(tr("status_done"))
 
         self._run_background_task("analysis", "analysis", _worker, _done)
 
@@ -2073,16 +2100,11 @@ class FengShuiGisPlugin:
         include_terms,
     ):
         if not dem_layer:
-            self.iface.messageBar().pushWarning(
-                tr("plugin_title"),
-                tr("warn_dem_required"),
-            )
-            if self.dock:
-                self.dock.set_status(tr("warn_dem_required"))
+            self._push_messagebar("warning", tr("plugin_title"), tr("warn_dem_required"))
+            self._set_status(tr("warn_dem_required"))
             return
 
-        if self.dock:
-            self.dock.set_status(tr("status_terms_running"))
+        self._set_status(tr("status_terms_running"))
         label_lang = self._label_language()
         mountain_enabled, mountain_radius_m, mountain_max_features, mountain_lang = (
             self._mountain_name_options()
@@ -2113,12 +2135,11 @@ class FengShuiGisPlugin:
         def _done(payload):
             if not payload.get("ok"):
                 if payload.get("error_code") == "E_TASK_CANCELLED":
-                    if self.dock:
-                        self.dock.set_status(
-                            "done"
-                            if self._label_language() == "en"
-                            else "취소되었습니다."
-                        )
+                    self._set_status(
+                        "done"
+                        if self._label_language() == "en"
+                        else "취소되었습니다."
+                    )
                     return
                 self._log_and_notify_error(
                     payload.get("error_code") or "E_LANDSCAPE_UNEXPECTED",
@@ -2129,17 +2150,18 @@ class FengShuiGisPlugin:
             created = payload.get("created_layers", [])
             mountain_updated = int(payload.get("mountain_updated") or 0)
             message_key = "ok_terms_finished" if include_terms else "ok_landscape_finished"
-            self.iface.messageBar().pushSuccess(
+            self._push_messagebar(
+                "success",
                 tr("plugin_title"),
                 f"{tr(message_key)}: " + ", ".join(created),
             )
             if mountain_updated > 0:
-                self.iface.messageBar().pushInfo(
+                self._push_messagebar(
+                    "info",
                     tr("plugin_title"),
                     self._mountain_attached_message(mountain_updated),
                 )
-            if self.dock:
-                self.dock.set_status(tr("status_done"))
+            self._set_status(tr("status_done"))
 
         self._run_background_task("term_extraction", "term_extraction", _worker, _done)
 
@@ -2192,19 +2214,17 @@ class FengShuiGisPlugin:
         auto_hydro,
     ):
         if not site_layer or not dem_layer:
-            self.iface.messageBar().pushWarning(tr("plugin_title"), tr("warn_missing_layers"))
-            if self.dock:
-                self.dock.set_status(tr("warn_missing_layers"))
+            self._push_messagebar("warning", tr("plugin_title"), tr("warn_missing_layers"))
+            self._set_status(tr("warn_missing_layers"))
             return
 
-        if self.dock:
-            self.dock.set_status(
-                ui_text(
-                    "profile_compare_status_running",
-                    self._label_language(),
-                    default="Comparing base and calibrated profiles...",
-                )
+        self._set_status(
+            ui_text(
+                "profile_compare_status_running",
+                self._label_language(),
+                default="Comparing base and calibrated profiles...",
             )
+        )
         label_lang = self._label_language()
         mountain_enabled, mountain_radius_m, mountain_max_features, mountain_lang = (
             self._mountain_name_options()
@@ -2236,12 +2256,11 @@ class FengShuiGisPlugin:
         def _done(payload):
             if not payload.get("ok"):
                 if payload.get("error_code") == "E_TASK_CANCELLED":
-                    if self.dock:
-                        self.dock.set_status(
-                            "compare canceled"
-                            if self._label_language() == "en"
-                            else "비교가 취소되었습니다."
-                        )
+                    self._set_status(
+                        "compare canceled"
+                        if self._label_language() == "en"
+                        else "비교가 취소되었습니다."
+                    )
                     return
                 self._log_and_notify_error(
                     payload.get("error_code") or "E_COMPARE_UNEXPECTED",
@@ -2264,14 +2283,13 @@ class FengShuiGisPlugin:
                 base_layer_name=payload.get("base_layer_name", ""),
                 compare_layer_name=payload.get("compare_layer_name", ""),
             )
-            if self.dock:
-                success_message = ui_text(
-                    "profile_compare_status_done",
-                    label_lang,
-                    default="Created base/calibrated comparison layers.",
-                )
-                self.dock.set_status(success_message)
-                self.iface.messageBar().pushSuccess(tr("plugin_title"), success_message)
+            success_message = ui_text(
+                "profile_compare_status_done",
+                label_lang,
+                default="Created base/calibrated comparison layers.",
+            )
+            self._set_status(success_message)
+            self._push_messagebar("success", tr("plugin_title"), success_message)
 
         self._run_background_task("profile_compare", "profile_compare", _worker, _done)
 
@@ -2332,15 +2350,11 @@ class FengShuiGisPlugin:
         auto_hydro,
     ):
         if not site_layer or not dem_layer:
-            self.iface.messageBar().pushWarning(tr("plugin_title"), tr("warn_missing_layers"))
-            if self.dock:
-                self.dock.set_status(tr("warn_missing_layers"))
+            self._push_messagebar("warning", tr("plugin_title"), tr("warn_missing_layers"))
+            self._set_status(tr("warn_missing_layers"))
             return
 
-        if self.dock:
-            self.dock.set_status(
-                ui_text("calibration_status_running", default="Calibration in progress...")
-            )
+        self._set_status(ui_text("calibration_status_running", default="Calibration in progress..."))
         label_lang = self._label_language()
         mountain_enabled, mountain_radius_m, mountain_max_features, mountain_lang = (
             self._mountain_name_options()
@@ -2381,12 +2395,11 @@ class FengShuiGisPlugin:
         def _done(payload):
             if not payload.get("ok"):
                 if payload.get("error_code") == "E_TASK_CANCELLED":
-                    if self.dock:
-                        self.dock.set_status(
-                            "calibration canceled"
-                            if self._label_language() == "en"
-                            else "보정이 취소되었습니다."
-                        )
+                    self._set_status(
+                        "calibration canceled"
+                        if self._label_language() == "en"
+                        else "보정이 취소되었습니다."
+                    )
                     return
                 self._log_and_notify_error(
                     payload.get("error_code") or "E_CALIBRATION_UNEXPECTED",
@@ -2395,7 +2408,8 @@ class FengShuiGisPlugin:
                 )
                 return
             report = payload.get("report", {})
-            self.iface.messageBar().pushSuccess(
+            self._push_messagebar(
+                "success",
                 tr("plugin_title"),
                 ui_text(
                     "calibration_success_template",
@@ -2404,14 +2418,12 @@ class FengShuiGisPlugin:
             )
             mountain_updated = int(payload.get("mountain_updated") or 0)
             if mountain_updated > 0:
-                self.iface.messageBar().pushInfo(
+                self._push_messagebar(
+                    "info",
                     tr("plugin_title"),
                     self._mountain_attached_message(mountain_updated),
                 )
-            if self.dock:
-                self.dock.set_status(
-                    ui_text("calibration_status_done", default="Calibration completed.")
-                )
+            self._set_status(ui_text("calibration_status_done", default="Calibration completed."))
             self._show_report_popup(report, payload.get("json_path"), payload.get("md_path"))
 
         self._run_background_task("calibration", "calibration", _worker, _done)
