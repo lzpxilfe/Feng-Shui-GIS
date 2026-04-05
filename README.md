@@ -2,41 +2,58 @@
 
 > **DEM-first QGIS plugin for terrain reading, principle-first Feng Shui interpretation, and comparative historical landscape analysis.**
 
-이 저장소는 풍수를 "자동 정답기"로 만들기보다,  
-`지형 구조 추출 -> 원리 기반 해석 -> 비교/보정 -> 반복 가능한 실험`의 흐름으로 다루기 위한 GIS 도구입니다.
+풍수를 "자동 정답기"로 만들기보다,  
+`지형 구조 추출 -> 원리 기반 해석 -> 비교/보정 -> 반복 가능한 실험`의 흐름으로 다루기 위한 GIS 플러그인입니다.
 
 ![QGIS](https://img.shields.io/badge/QGIS-3.28%2B-589632?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?style=flat-square)
 ![Model](https://img.shields.io/badge/Model-Principle--first-7A5C3E?style=flat-square)
 ![Visualization](https://img.shields.io/badge/Visualization-Embodied%20terrain-1F6F78?style=flat-square)
+![Status](https://img.shields.io/badge/Status-Research%20tool-b8933f?style=flat-square)
 
 ---
 
-## Start Here
+## ✨ At a Glance
 
-| What you need | Where to go |
+| Lens | What it means here |
 | --- | --- |
-| Fast first run | [docs/first_run_guide.md](docs/first_run_guide.md) |
-| Principle-first interpretation model | [docs/PRINCIPLES.md](docs/PRINCIPLES.md) |
-| Visualization direction | [docs/VISUALIZATION.md](docs/VISUALIZATION.md) |
-| Research workflow | [docs/researcher_quickstart.md](docs/researcher_quickstart.md) |
-| Validation guidance | [docs/validation_protocol.md](docs/validation_protocol.md) |
+| 🏔️ Terrain-first | Start from DEM, ridges, hydro, slope, TPI, convergence |
+| 📜 Principle-first | Explain sites with `배산/형국`, `혈 조건`, `사신사`, `장풍/감쌈`, `득수/수계 관계` first |
+| 🫀 Visual-first | Show ridges and water as layered ribbons, not thin abstract wires |
+| 🔁 Comparative | Use calibration and context/profile comparison to read differences, not to declare absolute truth |
+
+> [!IMPORTANT]
+> 이 플러그인은 **predictive truth model**이 아닙니다.  
+> 점수는 발굴 진실을 대신하지 않고, 풍수적 공간 구조를 더 투명하고 반복 가능하게 읽도록 돕는 해석 보조 도구입니다.
 
 ---
 
-## What This Plugin Does
+## 🚪 Start Here
 
-### 1. Terrain structure first
+| Need | Go |
+| --- | --- |
+| ⚡ 빠르게 첫 실행 | [docs/first_run_guide.md](docs/first_run_guide.md) |
+| 🧪 샘플/기준선 확인 | [examples/sample_project/README.md](examples/sample_project/README.md) |
+| 📐 원리 우선 해석 모델 | [docs/PRINCIPLES.md](docs/PRINCIPLES.md) |
+| 🎨 시각화 방향 | [docs/VISUALIZATION.md](docs/VISUALIZATION.md) |
+| 🔬 연구용 워크플로 | [docs/researcher_quickstart.md](docs/researcher_quickstart.md) |
+| ✅ 검증/제한사항 | [docs/validation_protocol.md](docs/validation_protocol.md), [docs/tested_versions.md](docs/tested_versions.md) |
 
-- extracts ridge hierarchy from DEM
-- accepts a supplied water layer or derives hydro from DEM
-- builds terrain metrics needed for later interpretation
+---
 
-### 2. Principle-first Feng Shui reading
+## 🧠 What Makes This Plugin Different
 
-Site scoring is no longer framed as "the profile says tomb/house/etc."
+### 🏔️ 1. Terrain structure comes first
 
-It now starts from explicit terrain principles:
+- DEM에서 능선 구조를 뽑고
+- water 레이어가 있으면 우선 사용하고, 없으면 DEM 기반 auto-hydro를 만들고
+- slope / TPI / convergence 같은 지표를 해석의 기반으로 씁니다
+
+즉, "문헌 이름표"부터 붙이는 게 아니라 **지형의 몸체를 먼저 읽습니다.**
+
+### 📜 2. It is principle-first, not preset-first
+
+후보지 설명은 이제 "이 프로파일은 tomb다"가 아니라 이런 원리에서 출발합니다.
 
 - `배산/형국`
 - `혈 조건`
@@ -44,76 +61,96 @@ It now starts from explicit terrain principles:
 - `장풍/감쌈`
 - `득수/수계 관계`
 
-Context and profile settings still matter, but they are treated as secondary calibration overlays rather than the first explanation.
+프로파일과 문화권/시대 컨텍스트는 여전히 중요하지만,  
+**첫 해석층이 아니라 보정층**으로 다룹니다.
 
-### 3. Comparative analysis, not absolute truth claims
+### 🫀 3. It wants to feel like a living terrain body
 
-- optional site scoring with `fs_score`, `fs_note`, and `fs_reason`
-- local calibration with `ROC AUC`, `PR AUC`, `F1`, and threshold diagnostics
-- profile/context comparison for exploratory reading
+풍수는 점 몇 개와 가는 선 몇 개로 끝나지 않습니다.
 
-### 4. GIS-native visual interpretation
+현재 시각화 방향:
 
-풍수는 점 몇 개와 얇은 선 몇 개로 끝나지 않습니다.
+- ridges as `spine / vein ribbons`
+- hydro as `flow ribbons`
+- term points as `halo + body + core`
+- structural links as `secondary anatomy`, not flat wiring
 
-이 플러그인은 결과를 가능한 한 "몸체감" 있게 보여주도록 바꾸는 중입니다:
+자세한 방향은 [docs/VISUALIZATION.md](docs/VISUALIZATION.md)에서 볼 수 있습니다.
 
-- ridges as layered spine/vein ribbons
-- hydro as layered flow ribbons
-- term points as halo/body/core markers
-- structural links as secondary connective anatomy rather than flat wiring
+### 🔁 4. It is made for comparison, not overclaiming
 
-자세한 방향은 [docs/VISUALIZATION.md](docs/VISUALIZATION.md)에 정리했습니다.
+- local calibration으로 분리력을 점검하고
+- profile/context compare로 상대 변화를 보고
+- study-case 구조로 반복 실험을 굴립니다
 
----
-
-## Current Real Features
-
-현재 코드 기준으로 실제로 쓸 수 있는 핵심 기능은 다음과 같습니다.
-
-- `DEM + water(optional)` 기반 지형 구조 추출
-- supplied water가 없을 때 `auto-hydro` 사용
-- `sites` 레이어를 `Point`뿐 아니라 `Polygon`도 입력 가능
-- optional Feng Shui term extraction and structural links
-- site scoring with principle-first reasoning text
-- stable/exploratory preset filtering in the UI
-- local calibration reports and threshold inspection fields
-- study-case bootstrap tool for repeated experiments:
-  `python3 tools/setup_study_case.py ...`
+즉, **"맞다/틀리다"보다 "어떻게 다르게 읽히는가"**에 초점을 둡니다.
 
 ---
 
-## Core Workflow
+## 🗺️ Workflow
 
-```text
-DEM + Water(optional) + Sites(optional)
-        ↓
-Terrain extraction
-Ridges / Hydro / Terrain metrics
-        ↓
-Interpretation layers
-Terms / Links / Site scoring
-        ↓
-Comparative reading
-Calibration / Compare / Reports / Repeated study cases
+```mermaid
+flowchart TD
+    A["DEM + Water(optional) + Sites(optional)"] --> B["Terrain Extraction"]
+    B --> C["Ridges / Hydro / Terrain Metrics"]
+    C --> D["Interpretation Layers"]
+    D --> E["Terms / Links / Site Scoring"]
+    E --> F["Comparative Reading"]
+    F --> G["Calibration / Compare / Reports / Repeated Study Cases"]
 ```
 
 ---
 
-## Quick Start
+## 🌟 Current Real Features
+
+### 🏞️ Terrain extraction
+
+- DEM 기반 ridge hierarchy 추출
+- supplied water 우선 사용
+- water가 없으면 auto-hydro 사용
+- terrain metrics 계산
+
+### 🧭 Interpretation layers
+
+- Feng Shui term points 추출
+- structural links 생성
+- `fs_score`, `fs_note`, `fs_reason` 기반 site scoring
+- sites 레이어는 `Point`뿐 아니라 `Polygon`도 입력 가능
+
+### 🎛️ Conservative UI defaults
+
+- front-door 목적 선택을 더 보수적으로 축소
+- stable / exploratory preset 분리
+- 과장된 preset 노출을 기본값에서 줄임
+
+### 🧪 Repeated experiment loop
+
+- local calibration
+- threshold inspection fields
+- repeated study-case bootstrap:
+  `python3 tools/setup_study_case.py ...`
+
+### 🎨 Visualization upgrade
+
+- ridge / hydro / term / link 심볼을 다층 리본/핵 구조로 재정의
+- GitHub README용 문서와 QGIS 도움말 텍스트도 같이 정리
+
+---
+
+## ⚡ Quick Start
 
 ### 1-minute path
 
-1. Load a DEM in QGIS.
-2. Add a water layer if you have one. If not, keep `auto-hydro` enabled.
-3. Add a site layer if you want scoring. Point and polygon layers are both accepted.
-4. Run terrain extraction first.
-5. Turn on term extraction only when you need structure-level reading.
-6. Run site analysis after the terrain layers look reasonable.
+1. QGIS에서 DEM을 고릅니다.
+2. water 레이어가 있으면 넣고, 없으면 `auto-hydro`를 둡니다.
+3. 점수화가 필요하면 sites 레이어를 넣습니다.
+4. terrain extraction을 먼저 실행합니다.
+5. 구조 읽기가 더 필요할 때만 term extraction을 켭니다.
+6. terrain 결과가 납득될 때 site analysis로 넘어갑니다.
 
-### Repeated real-data workflow
+### 🔁 Repeated real-data workflow
 
-If you want to test multiple datasets without rebuilding everything every time:
+실데이터를 여러 번 돌릴 예정이면 케이스 폴더를 먼저 만드는 편이 좋습니다.
 
 ```bash
 python3 tools/setup_study_case.py \
@@ -125,27 +162,27 @@ python3 tools/setup_study_case.py \
   --profile tomb
 ```
 
-This creates a reusable case folder with:
+이 명령은 다음을 만듭니다.
 
 - `case.json`
 - `README.md`
 - `inputs/`
 
-It also warns when polygon site layers are being reduced to centroid-based interpretation.
+그리고 폴리곤 sites를 넣으면 centroid 기반 해석 경고도 함께 남깁니다.
 
 ---
 
-## Main Outputs
+## 📦 Main Outputs
 
-| Layer | Description |
+| Layer | Meaning |
 | --- | --- |
 | `*_fengshui_ridges` | DEM-derived ridge hierarchy |
 | `*_fengshui_hydro` | supplied or DEM-derived hydro network |
 | `*_fengshui_terms` | Feng Shui term points |
-| `*_fengshui_links` | structural link lines between terms |
+| `*_fengshui_links` | structural links between terms |
 | `*_fengshui` | site scoring layer with reasoning fields |
 
-Important site fields:
+핵심 site fields:
 
 - `fs_score`
 - `fs_note`
@@ -155,36 +192,32 @@ Important site fields:
 
 ---
 
-## Trust Model
+## 🧪 What To Trust, What To Be Careful About
 
-This plugin is designed for structured interpretation, not final proof.
+| ✅ Relatively strong | ⚠️ Needs caution |
+| --- | --- |
+| DEM handling | cultural translation |
+| ridge extraction | profile/context generalization |
+| hydro extraction | archaeology claims from score alone |
+| explicit metric calculation | reading calibration as proof |
 
-- `fs_score` is not a probability of site existence.
-- context/profile presets are not universal truth.
-- calibration is an exploratory signal unless independently validated.
-- automated output should be read with field evidence, documentary context, and local expertise.
+> [!NOTE]
+> `fs_score`는 **site existence probability**가 아닙니다.  
+> context/profile preset도 **보편 진실**이 아닙니다.
 
-The most reproducible part of the stack is still:
-
-- DEM handling
-- ridge extraction
-- hydro extraction
-- explicit metric calculation
-
-The least settled part is:
-
-- cultural translation
-- profile/context generalization
-- strong archaeological claims from score alone
+> [!TIP]
+> 가장 좋은 사용법은 이렇습니다:  
+> `terrain structure 확인 -> principle reading 확인 -> calibration/compare로 차이 확인 -> 현장 맥락과 함께 해석`
 
 ---
 
-## Documentation
+## 📚 Documentation Map
 
 ### Getting started
 
 - [docs/first_run_guide.md](docs/first_run_guide.md)
-- [docs/researcher_quickstart.md](docs/researcher_quickstart.md)
+- [examples/sample_project/README.md](examples/sample_project/README.md)
+- [docs/troubleshooting.md](docs/troubleshooting.md)
 
 ### Interpretation model
 
@@ -192,24 +225,31 @@ The least settled part is:
 - [docs/VISUALIZATION.md](docs/VISUALIZATION.md)
 - [docs/context_profiles.md](docs/context_profiles.md)
 
-### Validation and references
+### Validation and evidence
 
 - [docs/validation_protocol.md](docs/validation_protocol.md)
+- [docs/validation_matrix.md](docs/validation_matrix.md)
 - [docs/research_matrix.md](docs/research_matrix.md)
 - [docs/reference_audit.md](docs/reference_audit.md)
 - [docs/regional_period_notes.md](docs/regional_period_notes.md)
 
+### Operations and reporting
+
+- [docs/support_bundle_guide.md](docs/support_bundle_guide.md)
+- [docs/release_checklist.md](docs/release_checklist.md)
+- [docs/operations_playbook.md](docs/operations_playbook.md)
+
 ---
 
-## Requirements
+## 🧰 Requirements
 
 - QGIS `3.28+`
 - Python `3.8+`
-- projected CRS in meters is strongly recommended
-- vector water layer is preferred when interpretation depends heavily on hydro
+- projected CRS in meters strongly recommended
+- hydro-sensitive work에는 벡터 water layer 권장
 
 ---
 
-## Repository
+## 🔗 Repository
 
 - GitHub: [lzpxilfe/Feng-Shui-GIS](https://github.com/lzpxilfe/Feng-Shui-GIS)
