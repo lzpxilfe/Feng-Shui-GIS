@@ -10,7 +10,37 @@
   "expected": {
     "report_contract": "expected/report_contract.json",
     "run_manifest_contract": "expected/run_manifest_contract.json",
-    "benchmark_manifest_contract": "expected/benchmark_manifest_contract.json"
+    "benchmark_manifest_contract": "expected/benchmark_manifest_contract.json",
+    "required_artifacts": {
+      "run_manifest": "reports/run_manifest.json",
+      "benchmark_manifest": "reports/benchmark_manifest.json",
+      "analysis_report": "reports/analysis_report.json",
+      "compare_summary": "reports/compare_summary.json",
+      "calibration_report": "reports/calibration_report.json",
+      "false_positive_notes": "reports/false_positive_notes.md",
+      "false_negative_notes": "reports/false_negative_notes.md"
+    },
+    "compare_pairs": [
+      {"id": "context_vs_neutral", "base": "neutral", "candidate": "context"},
+      {"id": "calibrated_vs_context", "base": "context", "candidate": "calibrated"}
+    ]
+  },
+  "benchmark": {
+    "mode": "descriptive_benchmark",
+    "audience": "researcher_beta",
+    "truth_level": "cluster_level",
+    "positive_definition": "polygon_centroid_clusters",
+    "negative_definition": "same_aoi_non_site_controls",
+    "water_policy": "supplied_water",
+    "interpretation_boundary": "not_individual_site_detection",
+    "compare_pairs": [
+      {"id": "context_vs_neutral", "base": "neutral", "candidate": "context"},
+      {"id": "calibrated_vs_context", "base": "context", "candidate": "calibrated"}
+    ],
+    "limitations": [
+      "polygon_sites_centroid_cluster_level_only",
+      "descriptive_only_until_held_out_split"
+    ]
   },
   "score_drift_tolerance": 0.04
 }

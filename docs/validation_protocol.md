@@ -4,6 +4,9 @@ Updated: 2026-03-20
 
 This protocol defines how to evaluate the plugin against published studies or local archaeological truth data without overstating agreement.
 
+Use `descriptive benchmark` as the default label for case notes and reports.
+Reserve `replication` for cases where source alignment, preprocessing, and evaluation design genuinely justify that word.
+
 ## 1. Freeze the Benchmark Inputs
 
 For each benchmark case, record:
@@ -27,6 +30,8 @@ Each paper or field dataset should be represented as one case sheet containing:
 - Site type: tomb, village, temple, well, house, or mixed
 - Positive sample definition
 - Negative sample definition
+- Truth level: point, cluster, polygon proxy, or other explicit proxy
+- Water policy: supplied layer, auto-hydro only, or hybrid
 - Geographic study window
 - Metrics to compare
 - Acceptance threshold or qualitative expectation
@@ -39,7 +44,7 @@ performance or the source study explicitly depends on that historical context.
 
 - Use calibration only on a training split.
 - Evaluate the final model on a held-out split or an external case study.
-- If the source paper has no explicit split, document that the replication is descriptive rather than predictive.
+- If the source paper has no explicit split, document that the benchmark is descriptive rather than predictive.
 - Record both `random_seed` and `split_seed` for any calibration/calibration-like workflow in the run manifest.
 
 ## 4. Metrics to Report
@@ -60,12 +65,13 @@ Report mismatches directly. Do not hide them inside narrative text.
 - If the study window had to be approximated, say so.
 - If a water layer was unavailable and DEM auto-hydro was used, say so.
 - If the plugin required local calibration to match the paper, report the delta from default config.
+- If the site layer is polygon-based and the current run uses centroid proxies, say so and avoid point-level claims.
 - If results are unstable under small threshold changes, include a sensitivity note.
 - If present-day DEM or hydrography was compared against ancient tombs or settlement remains, report preservation uncertainty such as mound truncation, terracing, stream relocation, or modern earthworks.
 
 ## 6. Publication Checklist
 
-Before claiming replication, verify all of the following:
+Before claiming a reusable descriptive benchmark, verify all of the following:
 
 1. The run manifest exists and matches the archived outputs.
 2. The config snapshot is archived alongside the manuscript materials.
@@ -80,3 +86,4 @@ Before claiming replication, verify all of the following:
 - One machine-readable run manifest per execution
 - One summary table comparing paper vs plugin outputs
 - One short narrative on why agreements or disagreements occurred
+- One explicit false-positive / false-negative note set with the chosen taxonomy

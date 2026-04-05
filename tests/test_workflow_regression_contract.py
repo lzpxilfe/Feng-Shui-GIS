@@ -28,6 +28,11 @@ class WorkflowRegressionContractTests(unittest.TestCase):
             self.assertTrue((case_dir / "expected" / "report_contract.json").is_file())
             self.assertTrue((case_dir / "expected" / "run_manifest_contract.json").is_file())
             self.assertTrue((case_dir / "expected" / "benchmark_manifest_contract.json").is_file())
+            self.assertEqual(case["benchmark"]["mode"], "descriptive_benchmark")
+            self.assertIn("required_artifacts", case["expected"])
+            self.assertIn("compare_pairs", case["expected"])
+            self.assertEqual(len(case["expected"]["compare_pairs"]), 2)
+            self.assertIn("truth_level", case["benchmark"])
             self.assertGreater(case["score_drift_tolerance"], 0.0)
         self.assertEqual(found_case_ids, expected_case_ids)
 

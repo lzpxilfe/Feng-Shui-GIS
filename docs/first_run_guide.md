@@ -1,5 +1,19 @@
 # ⚡ 5분 빠른 시작 가이드
 
+`five-step first run`
+
+1. Load the DEM.
+2. Select a water layer, or use auto-hydro.
+3. Select the candidate point layer.
+4. Run terrain extraction and then site analysis.
+5. Check the result layers and the generated report artifacts.
+
+Representative use cases:
+
+- quick terrain reading
+- research compare / calibration
+- support bundle repro sharing
+
 1. QGIS에서 플러그인을 실행하고, `Asian Landscape Reader (Feng Shui GIS)` 패널을 엽니다.
 2. `DEM` 레이어를 선택합니다.
 3. `water` 레이어가 있으면 지정하고, 없으면 `auto-hydro`를 켭니다.

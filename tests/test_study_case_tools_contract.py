@@ -61,12 +61,37 @@ class StudyCaseToolsContractTests(unittest.TestCase):
             self.assertTrue((case_dir / "README.md").exists())
             self.assertTrue((case_dir / "inputs" / "study_sites.shp").exists())
             self.assertTrue((case_dir / "inputs" / "study_sites.dbf").exists())
+            self.assertTrue((case_dir / "reports" / "false_positive_notes.md").exists())
+            self.assertTrue((case_dir / "reports" / "false_negative_notes.md").exists())
 
             case_payload = json.loads((case_dir / "case.json").read_text(encoding="utf-8"))
+            readme_text = (case_dir / "README.md").read_text(encoding="utf-8")
+            false_positive_text = (
+                case_dir / "reports" / "false_positive_notes.md"
+            ).read_text(encoding="utf-8")
             self.assertEqual(case_payload["title"], "Fixture case")
             self.assertEqual(case_payload["inputs"]["dem"], "inputs/study_dem.tif")
             self.assertEqual(case_payload["inputs"]["sites"], "inputs/study_sites.shp")
             self.assertTrue(case_payload["run_defaults"]["auto_hydro"])
+            self.assertEqual(case_payload["benchmark"]["mode"], "descriptive_benchmark")
+            self.assertEqual(case_payload["benchmark"]["truth_level"], "cluster_level")
+            self.assertEqual(
+                case_payload["benchmark"]["positive_definition"],
+                "polygon_centroid_clusters",
+            )
+            self.assertEqual(
+                case_payload["expected"]["required_artifacts"]["run_manifest"],
+                "reports/run_manifest.json",
+            )
+            self.assertEqual(
+                len(case_payload["expected"]["compare_pairs"]),
+                2,
+            )
+            self.assertIn("Standard Run Matrix", readme_text)
+            self.assertIn("descriptive_benchmark", readme_text)
+            self.assertIn("context_vs_neutral", readme_text)
+            self.assertIn("## Taxonomy", false_positive_text)
+            self.assertIn("DEM quality / preservation issue", false_positive_text)
             self.assertIn("polygon-based", " ".join(payload["warnings"]))
 
 

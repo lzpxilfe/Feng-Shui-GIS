@@ -59,6 +59,34 @@ python3 tools/build_benchmark_manifest.py \
 
 This keeps the archive step machine-readable even when the original run was triggered from the QGIS UI.
 
+When the run belongs to a frozen study case, prefer the case-folder path:
+
+```bash
+python3 tools/build_benchmark_manifest.py \
+  --case-dir /path/to/gongju_baekje_case \
+  --service analysis \
+  --benchmark-tier medium \
+  --qgis-version 3.40.5 \
+  --runtime-seconds 21.4 \
+  --peak-memory-mb 640 \
+  --cancel-latency-ms 900
+```
+
+`--case-dir` reads `case.json` and carries over the study-case contract:
+
+- workflow steps
+- score drift tolerance
+- descriptive benchmark metadata
+- expected artifact contract
+
+For the current Gongju researcher-beta benchmark, preserve the same sequence every time:
+
+1. neutral
+2. context
+3. calibrated
+4. `context_vs_neutral`
+5. `calibrated_vs_context`
+
 ## 5. Progress / Cancel Expectations
 
 During long operations:

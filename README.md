@@ -32,12 +32,12 @@
 
 | Need | Go |
 | --- | --- |
-| ⚡ 빠르게 첫 실행 | [docs/first_run_guide.md](docs/first_run_guide.md) |
-| 🧪 샘플/기준선 확인 | [examples/sample_project/README.md](examples/sample_project/README.md) |
+| ⚡ First run guide | [docs/first_run_guide.md](docs/first_run_guide.md) |
+| 🧪 Sample project | [examples/sample_project/README.md](examples/sample_project/README.md) |
 | 📐 원리 우선 해석 모델 | [docs/PRINCIPLES.md](docs/PRINCIPLES.md) |
 | 🎨 시각화 방향 | [docs/VISUALIZATION.md](docs/VISUALIZATION.md) |
 | 🔬 연구용 워크플로 | [docs/researcher_quickstart.md](docs/researcher_quickstart.md) |
-| ✅ 검증/제한사항 | [docs/validation_protocol.md](docs/validation_protocol.md), [docs/tested_versions.md](docs/tested_versions.md) |
+| ✅ 검증/제한사항 | [Validation protocol](docs/validation_protocol.md), [Tested versions](docs/tested_versions.md) |
 
 ---
 
@@ -193,6 +193,20 @@ python3 tools/setup_study_case.py \
 - `fs_enclosure`
 
 ---
+
+## 🚫 What This Tool Is Not
+
+- not a predictive truth model
+- not an archaeological truth oracle
+- not a replacement for curated field interpretation or excavation evidence
+- not a license to read calibration as standalone validation
+
+## 🧪 Known Limitations
+
+- projected CRS in meters is strongly recommended
+- cultural/context presets remain heuristic overlays
+- polygon sites may be handled as centroid-driven cluster-level proxies
+- auto-hydro is a fallback, not a replacement for trusted hydrology
 
 ## 🧪 What To Trust, What To Be Careful About
 

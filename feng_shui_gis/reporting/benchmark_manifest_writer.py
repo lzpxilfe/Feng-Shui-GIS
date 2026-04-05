@@ -101,8 +101,12 @@ class BenchmarkManifestWriter:
         report_json_path: str = "",
         report_md_path: str = "",
         budget_template_path: str = str(DEFAULT_BUDGET_PATH),
+        case_payload: Dict[str, Any] | None = None,
+        case_path: str = "",
     ) -> Dict[str, Any]:
         del run_manifest
+        case_payload = dict(case_payload or {})
+        benchmark = case_payload.get("benchmark") or {}
         budgets = _read_json(budget_template_path)
         service_budgets = (
             (budgets.get("budgets") or {}).get(service_name) or {}
@@ -131,12 +135,30 @@ class BenchmarkManifestWriter:
                 "benchmark_tier": benchmark_tier,
                 "qgis_version": str(qgis_version),
             },
+            "workflow_steps": list(case_payload.get("workflow") or []),
+            "score_drift_tolerance": case_payload.get("score_drift_tolerance"),
             "service": {
                 "name": str(service_name),
                 "runtime_seconds": runtime,
                 "peak_memory_mb": peak,
                 "cancel_latency_ms": cancel,
             },
+            "case": {
+                "path": str(case_path or ""),
+                "case_id": str(case_payload.get("case_id") or ""),
+                "title": str(case_payload.get("title") or ""),
+                "mode": str(benchmark.get("mode") or ""),
+                "audience": str(benchmark.get("audience") or ""),
+                "truth_level": str(benchmark.get("truth_level") or ""),
+                "positive_definition": str(benchmark.get("positive_definition") or ""),
+                "negative_definition": str(benchmark.get("negative_definition") or ""),
+                "water_policy": str(benchmark.get("water_policy") or ""),
+                "interpretation_boundary": str(
+                    benchmark.get("interpretation_boundary") or ""
+                ),
+                "compare_pairs": list(benchmark.get("compare_pairs") or []),
+            },
+            "expected_contract": dict(case_payload.get("expected") or {}),
             "artifacts": {
                 "run_manifest": _artifact(run_manifest_path),
                 "report_json": _artifact(report_json_path),

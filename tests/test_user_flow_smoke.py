@@ -35,6 +35,10 @@ class UserFlowSmokeTests(unittest.TestCase):
         self.assertEqual(headless_payload["status"], "dry_run_contract_ready")
         self.assertEqual(asset_payload.get("fixture_count"), len(asset_payload.get("fixture_cases", [])))
         self.assertEqual(len(asset_payload["fixture_cases"]), 3)
+        self.assertEqual(
+            asset_payload["fixture_cases"][0]["benchmark"]["mode"],
+            "descriptive_benchmark",
+        )
 
     def test_first_run_docs_exist_and_reference_sample_project(self):
         readme = (ROOT / "docs" / "first_run_guide.md").read_text(encoding="utf-8")

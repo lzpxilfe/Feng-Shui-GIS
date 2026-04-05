@@ -16,14 +16,27 @@ if str(ROOT) not in sys.path:
 from feng_shui_gis.reporting.benchmark_manifest_writer import BenchmarkManifestWriter
 
 
+def load_case_payload(case_dir: str):
+    if not case_dir:
+        return {}, ""
+    case_path = Path(case_dir).expanduser().resolve() / "case.json"
+    if not case_path.is_file():
+        raise FileNotFoundError(f"case.json not found under case dir: {case_path}")
+    return json.loads(case_path.read_text(encoding="utf-8")), str(case_path)
+
+
 def build_manifest(args):
     run_manifest = None
     if args.manifest:
         manifest_path = Path(args.manifest)
         if manifest_path.is_file():
             run_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    case_payload, case_path = load_case_payload(args.case_dir)
+    dataset_id = args.dataset_id or case_payload.get("case_id") or ""
+    if not dataset_id:
+        raise ValueError("dataset_id is required unless --case-dir provides case.json")
     return BenchmarkManifestWriter.build_manifest(
-        dataset_id=args.dataset_id,
+        dataset_id=dataset_id,
         service_name=args.service,
         qgis_version=args.qgis_version,
         runtime_seconds=args.runtime_seconds,
@@ -36,12 +49,19 @@ def build_manifest(args):
         benchmark_tier=args.benchmark_tier,
         budget_template_path=args.budget_template,
         notes=args.notes,
+        case_payload=case_payload,
+        case_path=case_path,
     )
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset-id", required=True, help="Stable dataset identifier.")
+    parser.add_argument("--dataset-id", default="", help="Stable dataset identifier.")
+    parser.add_argument(
+        "--case-dir",
+        default="",
+        help="Optional study-case directory that contains case.json.",
+    )
     parser.add_argument(
         "--service",
         required=True,
@@ -77,6 +97,8 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if not args.dataset_id and not args.case_dir:
+        raise SystemExit("Provide --dataset-id or --case-dir.")
     manifest = build_manifest(args)
     text = json.dumps(manifest, ensure_ascii=False, indent=2)
     if args.output:

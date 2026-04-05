@@ -37,6 +37,7 @@ def _fixture_summary(case_dir: Path):
     case_path = case_dir / "case.json"
     case = json.loads(case_path.read_text(encoding="utf-8"))
     expected = case.get("expected", {})
+    benchmark = case.get("benchmark", {})
     input_specs = case.get("inputs", {})
     input_summaries = []
     for key, rel_path in input_specs.items():
@@ -74,6 +75,12 @@ def _fixture_summary(case_dir: Path):
             "report_contract": str(case_dir / expected.get("report_contract", "")),
             "run_manifest_contract": str(case_dir / expected.get("run_manifest_contract", "")),
             "benchmark_manifest_contract": str(case_dir / expected.get("benchmark_manifest_contract", "")),
+        },
+        "required_artifacts": dict(expected.get("required_artifacts", {})),
+        "benchmark": {
+            "mode": benchmark.get("mode", ""),
+            "truth_level": benchmark.get("truth_level", ""),
+            "water_policy": benchmark.get("water_policy", ""),
         },
         "score_drift_tolerance": case.get("score_drift_tolerance"),
     }

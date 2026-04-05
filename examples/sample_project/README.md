@@ -18,6 +18,22 @@ This folder is the starting point for repeatable regression-style walkthroughs.
    - `calibration`
 4. Archive the resulting report/manifest artifacts for regression comparison.
 
+## Expected layers
+
+- `*_fengshui_ridges`
+- `*_fengshui_hydro`
+- `*_fengshui_terms`
+- `*_fengshui_links`
+- `*_fengshui`
+
+## Expected report examples
+
+- analysis report JSON / Markdown
+- compare summary report
+- calibration report
+- run manifest
+- benchmark manifest
+
 ## Notes
 
 - This repository keeps the sample project lightweight and license-safe.
