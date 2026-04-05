@@ -71,9 +71,20 @@ def build_advanced_options_fragment(
 
     lang = language_code()
     profile_combo = QComboBox(owner)
-    profile_keys = list(available_profiles()) or ["general"]
+    stable_profile_keys = list(available_profiles("stable"))
+    experimental_profile_keys = list(available_profiles("experimental"))
+    profile_keys = stable_profile_keys or ["general"]
     for profile_key in profile_keys:
         profile_combo.addItem(profile_label(profile_key, lang), profile_key)
+    if getattr(owner, "_show_experimental_contexts", lambda: False)():
+        suffix = " (실험적)" if lang == "ko" else " (Exploratory)"
+        for profile_key in experimental_profile_keys:
+            if profile_key in stable_profile_keys:
+                continue
+            profile_combo.addItem(
+                f"{profile_label(profile_key, lang)}{suffix}",
+                profile_key,
+            )
     profile_row_widget = QWidget(owner)
     profile_row_layout = QHBoxLayout(profile_row_widget)
     profile_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -104,9 +115,9 @@ def build_advanced_options_fragment(
         ui_text(
             "context_experimental_toggle_label",
             default=(
-                "탐색 지역 프로필 표시 (근거 제한)"
+                "탐색 프리셋/지역 프로필 표시 (근거 제한)"
                 if language_code() == "ko"
-                else "Show exploratory region profiles (limited evidence)"
+                else "Show exploratory presets and region profiles (limited evidence)"
             ),
         ),
         owner,
@@ -115,7 +126,11 @@ def build_advanced_options_fragment(
     advanced_form.addRow(
         ui_text(
             "context_scope_label",
-            default="프로필 범위" if language_code() == "ko" else "Context Profile Scope",
+            default=(
+                "프리셋/지역 범위"
+                if language_code() == "ko"
+                else "Preset / Context Scope"
+            ),
         ),
         show_experimental_context_checkbox,
     )

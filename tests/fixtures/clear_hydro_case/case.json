@@ -1,6 +1,16 @@
 {
   "case_id": "clear_hydro_case",
-  "description": "Small DEM and obvious hydro structure for baseline regression.",
-  "expected_report_phase": "held_out_evaluation",
+  "title": "Clear hydro baseline",
+  "workflow": ["analysis", "compare", "calibration"],
+  "inputs": {
+    "dem": "inputs/sample_dem.tif",
+    "water": "inputs/sample_water.shp",
+    "sites": "inputs/sample_sites.shp"
+  },
+  "expected": {
+    "report_contract": "expected/report_contract.json",
+    "run_manifest_contract": "expected/run_manifest_contract.json",
+    "benchmark_manifest_contract": "expected/benchmark_manifest_contract.json"
+  },
   "score_drift_tolerance": 0.05
 }

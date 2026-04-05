@@ -103,6 +103,7 @@ def build_manifest(args):
         },
         "config_snapshot": config_snapshot(),
         "run": {
+            "run_contract_version": "2.0.0",
             "operator": args.operator,
             "generated_at_utc": datetime.now(timezone.utc)
             .replace(microsecond=0)
@@ -112,6 +113,10 @@ def build_manifest(args):
             "profile": args.profile,
             "culture_key": args.culture_key,
             "period_key": args.period_key,
+            "random_seed": args.random_seed,
+            "validation_ratio": args.validation_ratio,
+            "split_seed": args.split_seed,
+            "validation_group": args.validation_group,
             "auto_hydro": args.auto_hydro,
             "include_terms": args.include_terms,
             "notes": args.notes,
@@ -139,6 +144,10 @@ def parse_args():
     parser.add_argument("--profile", default="general")
     parser.add_argument("--culture-key", default="")
     parser.add_argument("--period-key", default="")
+    parser.add_argument("--random-seed", type=int, default=42)
+    parser.add_argument("--validation-ratio", type=float, default=0.2)
+    parser.add_argument("--split-seed", type=int, default=1234)
+    parser.add_argument("--validation-group", default="cv_holdout")
     parser.add_argument("--notes", default="")
     parser.add_argument("--commit", default="", help="Override detected git commit.")
     parser.add_argument("--landscape-layer", default="")

@@ -23,7 +23,7 @@ def workflow_checks_state(
         checks = [
             (ui_text("workflow_check_dem", default="Select DEM layer"), dem_ready),
             (
-                ui_text("workflow_check_sites", default="Select candidate point layer"),
+                ui_text("workflow_check_sites", default="Select candidate site layer"),
                 sites_ready,
             ),
             (ui_text("workflow_check_hydro", default="Confirm hydro source"), hydro_ready),

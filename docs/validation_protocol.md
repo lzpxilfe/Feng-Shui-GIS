@@ -15,6 +15,7 @@ For each benchmark case, record:
 - DEM source, resolution, and CRS
 - Water source type: supplied layer or DEM-derived hydro
 - Site inventory source, inclusion criteria, and label date
+- Run-manifest hash and run contract fields (`run_contract_version`, seed, validation split settings)
 
 Do not change config or preprocessing after metrics have been computed unless the benchmark is rerun from scratch.
 
@@ -39,6 +40,7 @@ performance or the source study explicitly depends on that historical context.
 - Use calibration only on a training split.
 - Evaluate the final model on a held-out split or an external case study.
 - If the source paper has no explicit split, document that the replication is descriptive rather than predictive.
+- Record both `random_seed` and `split_seed` for any calibration/calibration-like workflow in the run manifest.
 
 ## 4. Metrics to Report
 
@@ -67,7 +69,7 @@ Before claiming replication, verify all of the following:
 
 1. The run manifest exists and matches the archived outputs.
 2. The config snapshot is archived alongside the manuscript materials.
-3. Calibration and evaluation data were not mixed.
+3. Calibration and evaluation data were not mixed (run manifest split fields are present and fixed).
 4. The paper-specific preprocessing steps are described in plain language.
 5. The limits of `country/period` priors are stated explicitly.
 6. Non-matching results are documented, not discarded.

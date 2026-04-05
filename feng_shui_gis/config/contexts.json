@@ -1072,7 +1072,7 @@
         "zh": "全球预测基准",
         "ja": "グローバル予測基準"
       },
-      "visibility_tier": "stable",
+      "visibility_tier": "experimental",
       "evidence_scope": "cross_region_benchmark",
       "aspect_targets": {
         "north": {

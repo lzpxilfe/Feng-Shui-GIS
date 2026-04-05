@@ -1,0 +1,4 @@
+{
+  "required_sections": ["analysis", "compare", "calibration"],
+  "required_keys": ["calibration_fit", "calibration_report", "reported_metrics"]
+}

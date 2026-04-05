@@ -11,6 +11,8 @@ _LOCAL_PROFILE_FILE = "local_profiles.json"
 _TERM_FILE = "terms.json"
 _RULE_FILE = "analysis_rules.json"
 _LOCAL_PROFILE_SCHEMA_VERSION = "1.0.0"
+_PROFILE_VISIBILITY_TIERS = {"stable", "experimental", "deprecated"}
+_DEFAULT_PROFILE_VISIBILITY_TIER = "stable"
 
 _REQUIRED_RULE_TYPES = {
     "sampling": dict,
@@ -67,12 +69,20 @@ def _require_string(container, key, context):
     return value
 
 
+def _normalize_profile_visibility_tier(value):
+    tier = str(value or "").strip().lower()
+    if tier not in _PROFILE_VISIBILITY_TIERS:
+        return _DEFAULT_PROFILE_VISIBILITY_TIER
+    return tier
+
+
 def _validate_profiles(data, context_name=_PROFILE_FILE, allow_empty=False):
     profiles = _require_dict(data, context_name, allow_empty=allow_empty)
     for profile_key, spec in profiles.items():
         context = f"{context_name}:{profile_key}"
         spec = _require_dict(spec, context)
         _require_dict(spec.get("label"), f"{context}.label")
+        _normalize_profile_visibility_tier(spec.get("visibility_tier"))
         weights = _require_dict(spec.get("weights"), f"{context}.weights")
         for weight_key, value in weights.items():
             try:
@@ -247,8 +257,31 @@ def profile_specs():
     return profiles
 
 
-def available_profiles():
-    return tuple(profile_specs().keys())
+def profile_visibility_tier(profile_key):
+    profiles = profile_specs()
+    spec = profiles.get(profile_key, {})
+    if not isinstance(spec, dict):
+        return _DEFAULT_PROFILE_VISIBILITY_TIER
+    return _normalize_profile_visibility_tier(
+        spec.get("visibility_tier", _DEFAULT_PROFILE_VISIBILITY_TIER)
+    )
+
+
+def available_profiles(visibility_tier=None):
+    profiles = profile_specs()
+    if visibility_tier is None:
+        return tuple(profiles.keys())
+    requested_tier = _normalize_profile_visibility_tier(visibility_tier)
+    return tuple(
+        profile_key
+        for profile_key, spec in profiles.items()
+        if _normalize_profile_visibility_tier(
+            spec.get("visibility_tier", _DEFAULT_PROFILE_VISIBILITY_TIER)
+            if isinstance(spec, dict)
+            else _DEFAULT_PROFILE_VISIBILITY_TIER
+        )
+        == requested_tier
+    )
 
 
 def profile_spec(profile_key):

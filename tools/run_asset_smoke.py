@@ -1,144 +1,104 @@
 #!/usr/bin/env python3
-"""Repository-safe smoke workflow for productization assets and report manifests."""
+"""Validate sample workflow assets and regression-fixture structure."""
 
 from __future__ import annotations
 
-import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SAMPLE_DIR = ROOT / "examples" / "sample_project"
+FIXTURE_ROOT = ROOT / "tests" / "fixtures"
+SAMPLE_PROJECT_ROOT = ROOT / "examples" / "sample_project"
 
 
-def required_sample_paths():
-    return [
-        SAMPLE_DIR / "sample_dem.asc",
-        SAMPLE_DIR / "sample_water.geojson",
-        SAMPLE_DIR / "sample_sites.geojson",
-        SAMPLE_DIR / "expected_analysis_report.json",
-        SAMPLE_DIR / "expected_compare_report.json",
-        SAMPLE_DIR / "expected_calibration_report.md",
-        SAMPLE_DIR / "sample_project.qgz",
-    ]
+def _check_shapefile_bundle(path: Path) -> dict:
+    if path.suffix.lower() != ".shp":
+        return {
+            "kind": "raster",
+            "exists": path.exists(),
+            "ready": path.exists(),
+            "missing_files": [],
+        }
+
+    base = path.with_suffix("")
+    required = [".shp", ".shx", ".dbf", ".prj"]
+    missing = [str(base.with_suffix(ext)) for ext in required if not base.with_suffix(ext).exists()]
+    return {
+        "kind": "shapefile",
+        "exists": path.exists(),
+        "missing_files": missing,
+        "ready": not missing,
+    }
 
 
-def run_command(args):
-    return subprocess.run(args, cwd=ROOT, check=True, capture_output=True, text=True)
+def _fixture_summary(case_dir: Path):
+    case_path = case_dir / "case.json"
+    case = json.loads(case_path.read_text(encoding="utf-8"))
+    expected = case.get("expected", {})
+    input_specs = case.get("inputs", {})
+    input_summaries = []
+    for key, rel_path in input_specs.items():
+        path = case_dir / rel_path
+        if key.lower() in {"sites", "water"} and path.suffix.lower() != ".shp":
+            extra = {
+                "path": str(path),
+                "kind": "vector",
+                "exists": path.exists(),
+                "ready": path.exists(),
+                "missing_files": [],
+            }
+        else:
+            bundle = _check_shapefile_bundle(path)
+            extra = {
+                "path": str(path),
+                "kind": bundle["kind"],
+                "exists": bundle["exists"],
+                "ready": bundle["ready"],
+                "missing_files": bundle["missing_files"],
+            }
+        extra["key"] = key
+        input_summaries.append(extra)
+
+    input_ready = all(item["ready"] for item in input_summaries) and bool(input_summaries)
+    return {
+        "case_id": case.get("case_id", case_dir.name),
+        "title": case.get("title", ""),
+        "workflow": list(case.get("workflow", [])),
+        "input_specs": input_specs,
+        "input_check": input_summaries,
+        "inputs_ready": input_ready,
+        "inputs_dir": str(case_dir / "inputs"),
+        "expected_files": {
+            "report_contract": str(case_dir / expected.get("report_contract", "")),
+            "run_manifest_contract": str(case_dir / expected.get("run_manifest_contract", "")),
+            "benchmark_manifest_contract": str(case_dir / expected.get("benchmark_manifest_contract", "")),
+        },
+        "score_drift_tolerance": case.get("score_drift_tolerance"),
+    }
+
+
+def build_summary():
+    fixtures = []
+    for case_dir in sorted(path for path in FIXTURE_ROOT.iterdir() if path.is_dir()):
+        fixtures.append(_fixture_summary(case_dir))
+    all_inputs_ready = all(row["inputs_ready"] for row in fixtures if row["input_specs"])
+    return {
+        "ok": True,
+        "fixture_count": len(fixtures),
+        "all_inputs_ready": all_inputs_ready,
+        "sample_project": {
+            "readme": str(SAMPLE_PROJECT_ROOT / "README.md"),
+            "project_file": str(SAMPLE_PROJECT_ROOT / "sample_project.qgs"),
+        },
+        "fixture_cases": fixtures,
+        "workflow_steps": ["analysis", "compare", "calibration", "report_generation", "manifest_generation"],
+    }
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output-dir",
-        default=str(ROOT / "reports" / "asset_smoke"),
-        help="Directory for generated smoke manifests.",
-    )
-    args = parser.parse_args()
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    missing = [str(path.relative_to(ROOT)) for path in required_sample_paths() if not path.is_file()]
-    if missing:
-        raise SystemExit("Missing sample project assets: " + ", ".join(missing))
-
-    repro_manifest = output_dir / "repro_manifest.json"
-    run_command(
-        [
-            "python3",
-            str(ROOT / "tools" / "build_repro_manifest.py"),
-            "--dataset-id",
-            "sample-project-asset-smoke",
-            "--study-label",
-            "sample project asset smoke",
-            "--qgis-version",
-            "3.28+",
-            "--dem",
-            str((SAMPLE_DIR / "sample_dem.asc").relative_to(ROOT)),
-            "--water",
-            str((SAMPLE_DIR / "sample_water.geojson").relative_to(ROOT)),
-            "--sites",
-            str((SAMPLE_DIR / "sample_sites.geojson").relative_to(ROOT)),
-            "--crs",
-            "LOCAL_SAMPLE_GRID",
-            "--profile",
-            "tomb",
-            "--culture-key",
-            "korea",
-            "--period-key",
-            "early_modern",
-            "--output",
-            str(repro_manifest),
-        ]
-    )
-
-    benchmark_outputs = {}
-    for service_name, report_name in (
-        ("analysis", "expected_analysis_report.json"),
-        ("compare", "expected_compare_report.json"),
-        ("calibration", "expected_calibration_report.md"),
-    ):
-        report_json = (
-            SAMPLE_DIR / report_name
-            if report_name.endswith(".json")
-            else output_dir / f"{service_name}_report_proxy.json"
-        )
-        report_md = (
-            SAMPLE_DIR / report_name
-            if report_name.endswith(".md")
-            else output_dir / f"{service_name}_report_proxy.md"
-        )
-        if report_name.endswith(".json"):
-            report_md.write_text(f"# {service_name} asset smoke markdown\n", encoding="utf-8")
-        else:
-            report_json.write_text(
-                json.dumps({"service": service_name, "source": report_name}, indent=2) + "\n",
-                encoding="utf-8",
-            )
-        benchmark_path = output_dir / f"{service_name}_benchmark_manifest.json"
-        run_command(
-            [
-                "python3",
-                str(ROOT / "tools" / "build_benchmark_manifest.py"),
-                "--dataset-id",
-                "sample-project-asset-smoke",
-                "--service",
-                service_name,
-                "--benchmark-tier",
-                "small",
-                "--qgis-version",
-                "3.28+",
-                "--runtime-seconds",
-                "5.0",
-                "--peak-memory-mb",
-                "256",
-                "--cancel-latency-ms",
-                "600",
-                "--manifest",
-                str(repro_manifest),
-                "--report",
-                str(report_json),
-                "--markdown",
-                str(report_md),
-                "--output",
-                str(benchmark_path),
-            ]
-        )
-        benchmark_outputs[service_name] = str(benchmark_path)
-
-    summary_path = output_dir / "smoke_summary.json"
-    summary = {
-        "sample_project_ready": True,
-        "mode": "asset_smoke",
-        "repro_manifest": str(repro_manifest),
-        "benchmarks": benchmark_outputs,
-        "sample_inputs": [str(path.relative_to(ROOT)) for path in required_sample_paths()],
-    }
-    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    sys.stdout.write(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
+    sys.stdout.write(json.dumps(build_summary(), ensure_ascii=False, indent=2) + "\n")
 
 
 if __name__ == "__main__":

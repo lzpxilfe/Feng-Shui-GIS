@@ -1,30 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<qgis projectname="sample_project" version="3.28.0">
+<qgis projectname="Feng Shui GIS Sample Project" version="3.28.0">
   <homePath path="."/>
   <title>Feng Shui GIS Sample Project</title>
-  <layer-tree-group>
-    <layer-tree-layer id="sample_sites_id" name="sample_sites" source="./sample_sites.geojson" providerKey="ogr"/>
-    <layer-tree-layer id="sample_water_id" name="sample_water" source="./sample_water.geojson" providerKey="ogr"/>
-    <layer-tree-layer id="sample_dem_id" name="sample_dem" source="./sample_dem.asc" providerKey="gdal"/>
+  <projectCrs>
+    <spatialrefsys>
+      <authid>EPSG:5186</authid>
+      <description>KGD2002 / Central Belt 2010</description>
+      <projectionacronym>tmerc</projectionacronym>
+      <ellipsoidacronym>GRS80</ellipsoidacronym>
+      <geographicflag>false</geographicflag>
+    </spatialrefsys>
+  </projectCrs>
+  <layer-tree-group name="Sample Workflow" expanded="1">
+    <customproperties/>
+    <layer-tree-layer providerKey="gdal" name="sample_dem" source="./data/sample_dem.tif" checked="Qt::Checked"/>
+    <layer-tree-layer providerKey="ogr" name="sample_water" source="./data/sample_water.gpkg|layername=water" checked="Qt::Checked"/>
+    <layer-tree-layer providerKey="ogr" name="sample_sites" source="./data/sample_sites.gpkg|layername=sites" checked="Qt::Checked"/>
   </layer-tree-group>
-  <projectlayers>
-    <maplayer type="vector" geometry="Point" simplifyDrawingHints="1">
-      <id>sample_sites_id</id>
-      <layername>sample_sites</layername>
-      <datasource>./sample_sites.geojson</datasource>
-      <provider encoding="UTF-8">ogr</provider>
-    </maplayer>
-    <maplayer type="vector" geometry="Line" simplifyDrawingHints="1">
-      <id>sample_water_id</id>
-      <layername>sample_water</layername>
-      <datasource>./sample_water.geojson</datasource>
-      <provider encoding="UTF-8">ogr</provider>
-    </maplayer>
-    <maplayer type="raster">
-      <id>sample_dem_id</id>
-      <layername>sample_dem</layername>
-      <datasource>./sample_dem.asc</datasource>
-      <provider>gdal</provider>
-    </maplayer>
-  </projectlayers>
+  <legend updateDrawingOrder="true"/>
+  <projectlayers/>
 </qgis>

@@ -1,0 +1,3 @@
+{
+  "required_keys": ["run_id", "service_name", "manifest_version", "config_sha", "source_layers"]
+}

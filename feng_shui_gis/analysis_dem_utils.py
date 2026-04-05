@@ -7,6 +7,8 @@ import math
 
 from qgis.core import QgsPointXY
 
+from .analysis_text import azimuth_label, fmt_num
+
 
 def sample_dem(provider, point):
     value, ok = provider.sample(point, 1)
@@ -41,29 +43,6 @@ def mean_scores(*values):
     if not valid:
         return None
     return sum(valid) / len(valid)
-
-
-def fmt_num(value, digits=3):
-    if value is None:
-        return "n/a"
-    return f"{float(value):.{digits}f}"
-
-
-def azimuth_label(azimuth):
-    if azimuth is None:
-        return "ring"
-    directions = [
-        "북",
-        "북동",
-        "동",
-        "남동",
-        "남",
-        "남서",
-        "서",
-        "북서",
-    ]
-    idx = int(((azimuth % 360.0) + 22.5) // 45.0) % 8
-    return directions[idx]
 
 
 def stddev(values):

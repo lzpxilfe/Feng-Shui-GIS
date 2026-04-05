@@ -36,9 +36,20 @@ This matrix separates direct quantitative evidence from contextual interpretatio
   - B-class: regional/historical interpretation studies.
   - C-class: plugin prior parameters pending local calibration.
 
-## D. Required Next Validation (for research-grade use)
+## D. Reference-to-method mapping used by this implementation
+
+| Source focus | What was extracted | In-code method / tool |
+|---|---|---|
+| Um (2009), Li et al. (2021), Tung Fung & Marafa (2002) | Terrain and drainage suitability pattern | `qgis:slope`, `qgis:aspect`, `qgis:rastersampling`, and custom scoring wrappers in `FengShuiAnalyzer` (`_compute_form_metrics`, `_combine_hydro_scores`) |
+| Whang & Lee (2006), Chen et al. (2008), Nakama & Chen (2011), UFUG (2008) | Landscape/woodland and settlement form context | Feature scoring in `extract_terms` + profile evidence overlays (`contexts.json`, `reference_catalog.py`) |
+| Kim (2016), Feng-shui architectural studies | Orientation and directional criteria | Azimuth/sector logic in site/term scoring (`_sector_extreme`, `_ring_extreme`, `aspect`-based hints) |
+| P'ungsu / burial sources (2017, 2020) | Water-distance and terrain constraints in historical practices | DEM water proxy + distance scoring (`_sample_dem`, `water distance` fields, `_compose_site_reason`) |
+
+## E. Required Next Validation (for research-grade use)
 
 1. Per-country/per-period ground-truth site dataset.
-2. Out-of-sample evaluation (AUC/PR/F1) by site type (tomb, village, temple, well, etc.).
+2. Out-of-sample evaluation (AUC/PR/F1/Youden J) by site type (tomb, village, temple, well, etc.).
 3. Sensitivity analysis for radius, threshold, directional targets.
 4. Publish calibration sheet and uncertainty intervals with each release.
+
+> In short: the plugin currently uses standard GIS-derived terrain metrics + custom geomorphic graph logic, then weights them through profile/spec rules.

@@ -1,6 +1,16 @@
 {
   "case_id": "exploratory_context_case",
-  "description": "Context case that should surface exploratory trust badges.",
-  "expected_context_badge": "Exploratory Context",
+  "title": "Exploratory context case",
+  "workflow": ["analysis", "compare", "calibration"],
+  "inputs": {
+    "dem": "inputs/sample_dem.tif",
+    "water": "inputs/sample_water.shp",
+    "sites": "inputs/sample_sites.shp"
+  },
+  "expected": {
+    "report_contract": "expected/report_contract.json",
+    "run_manifest_contract": "expected/run_manifest_contract.json",
+    "benchmark_manifest_contract": "expected/benchmark_manifest_contract.json"
+  },
   "score_drift_tolerance": 0.08
 }

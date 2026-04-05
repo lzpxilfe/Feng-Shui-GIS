@@ -1,0 +1,4 @@
+{
+  "required_sections": ["analysis", "compare", "calibration"],
+  "required_keys": ["context_evidence", "interpretation", "analytical"]
+}

@@ -18,40 +18,40 @@
       "en": "Exploration Goal"
     },
     "goal_tomb_label": {
-      "ko": "의식/무덤 공간 읽기",
-      "en": "Ritual-Burial Landscape"
+      "ko": "무덤 입지 살펴보기",
+      "en": "Burial Site Review"
     },
     "goal_house_label": {
-      "ko": "주거/생활 터 구성",
-      "en": "Settlement Form (Domestic Landscape)"
+      "ko": "주거 터 살펴보기",
+      "en": "Domestic Site Review"
     },
     "goal_settlement_label": {
-      "ko": "고대 정착지 패턴",
-      "en": "Ancient Settlement Pattern"
+      "ko": "정착 흔적 살펴보기",
+      "en": "Settlement Pattern Review"
     },
     "goal_general_label": {
-      "ko": "일반 지형 읽기",
-      "en": "General Terrain Reading"
+      "ko": "지형 흐름 먼저 보기",
+      "en": "General Terrain Pass"
     },
     "goal_custom_label": {
       "ko": "직접 설정",
       "en": "Manual Setup"
     },
     "goal_hint_tomb": {
-      "ko": "<b>의식/무덤</b> 모드입니다. 의례·묘지·제사 공간의 형세를 읽기 위해 <b>{profile}</b> 프리셋을 자동 적용합니다.",
-      "en": "<b>Ritual-Burial mode</b>. The <b>{profile}</b> preset is applied automatically for landscapes associated with ritual or mortuary settings."
+      "ko": "<b>무덤 입지</b> 모드입니다. 무덤 관련 지형 조건을 먼저 살펴보기 위해 <b>{profile}</b> 프리셋을 자동 적용합니다.",
+      "en": "<b>Burial-site mode</b>. The <b>{profile}</b> preset is applied to inspect terrain conditions around mortuary settings."
     },
     "goal_hint_house": {
-      "ko": "<b>주거/생활</b> 모드입니다. 고대 주거지로 해석되는 장면에서 형식적 균형을 읽기 위해 <b>{profile}</b> 프리셋을 적용하고 용어 구성을 함께 봅니다.",
-      "en": "<b>Settlement Form mode</b>. Applies <b>{profile}</b> to compare terrain structures for domestic/settlement form interpretation."
+      "ko": "<b>주거 터</b> 모드입니다. 주거지 후보의 지형 균형을 비교해 보기 위해 <b>{profile}</b> 프리셋을 적용합니다.",
+      "en": "<b>Domestic-site mode</b>. Applies <b>{profile}</b> to compare terrain balance around candidate dwelling areas."
     },
     "goal_hint_settlement": {
-      "ko": "<b>고대 정착지 패턴</b> 모드입니다. 성곽·도로축·마을 분포를 설명하는 공간 구조를 보려는 경우 <b>{profile}</b> 프리셋을 적용하고 용어 추출을 함께 제안합니다.",
-      "en": "<b>Ancient Settlement Pattern mode</b> applies <b>{profile}</b> first and recommends term extraction for structural landscape reading."
+      "ko": "<b>정착 흔적</b> 모드입니다. 정착지 후보 주변의 능선-수계 구조를 비교해 보기 위해 <b>{profile}</b> 프리셋을 적용합니다.",
+      "en": "<b>Settlement-review mode</b> applies <b>{profile}</b> to compare ridge-hydro structure around candidate settlement areas."
     },
     "goal_hint_general": {
-      "ko": "<b>일반 지형 읽기</b> 모드입니다. 전체 산줄기와 수계 흐름을 먼저 파악하는 데 맞춰 기본 프리셋을 적용합니다. 무덤 자리를 찾는다면 음택으로 바꾸는 편이 더 낫습니다.",
-      "en": "<b>General terrain mode</b>. This keeps a neutral preset for reading broad ridge and hydro patterns first. If you are looking for burial sites, switch to the burial-site goal."
+      "ko": "<b>지형 흐름</b> 모드입니다. 전체 산줄기와 수계 흐름을 먼저 훑어보는 데 맞춰 기본 프리셋을 적용합니다.",
+      "en": "<b>General terrain mode</b>. Keeps a neutral preset for a first pass over ridge and hydro structure."
     },
     "goal_hint_custom": {
       "ko": "<b>직접 설정</b> 모드입니다. 고급 옵션에서 프리셋, 문화권, 시대를 직접 고르며 결과를 세밀하게 조정합니다. 현재 모델: <b>{profile}</b>.",
@@ -70,16 +70,16 @@
       "en": "Progress Guide"
     },
     "guide_goal_intro_tomb": {
-      "ko": "<b>이 모드가 하는 일</b><br/>무덤을 쓰기 좋아 보이는 형세를 DEM에서 먼저 찾습니다. 산줄기, 물길, 혈 후보, 명당 구조를 차례대로 읽게 도와줍니다.",
-      "en": "<b>What this mode does</b><br/>It looks for landform patterns that resemble suitable burial settings. Start by reading ridges, water flow, hyeol candidates, and supporting term structure from the DEM."
+      "ko": "<b>이 모드가 하는 일</b><br/>무덤 주변에서 자주 보일 수 있는 지형 조건을 DEM에서 먼저 살펴봅니다. 산줄기와 물길, 둘러싼 형세를 순서대로 보게 도와줍니다.",
+      "en": "<b>What this mode does</b><br/>It inspects terrain conditions that may recur around burial settings, starting with ridges, water flow, and surrounding form."
     },
     "guide_goal_intro_house": {
-      "ko": "<b>이 모드가 하는 일</b><br/>집터나 거주지 형세를 읽기 쉽게 DEM 지형과 수계의 균형을 먼저 보여줍니다. 뒤의 보호와 앞의 개방감을 함께 살펴보는 데 맞춰져 있습니다.",
-      "en": "<b>What this mode does</b><br/>It reads dwelling-site form by balancing terrain shelter and openness from DEM and hydro structure."
+      "ko": "<b>이 모드가 하는 일</b><br/>집터 후보의 뒤받침과 앞의 열림 같은 기본 지형 균형을 먼저 살펴봅니다.",
+      "en": "<b>What this mode does</b><br/>It inspects basic terrain balance around dwelling candidates, such as shelter behind and openness in front."
     },
     "guide_goal_intro_settlement": {
-      "ko": "<b>이 모드가 하는 일</b><br/>고대 정착지로 추정되는 지역의 능선-수계 결합 구조와 전후·좌우 형태를 함께 읽어 공간 조직 단서를 추출합니다.",
-      "en": "<b>What this mode does</b><br/>It reads ridge-hydro structure and front/back/side form together to reveal structural clues in historic settlement landscapes."
+      "ko": "<b>이 모드가 하는 일</b><br/>정착 흔적이 의심되는 지역에서 능선-수계 결합과 전후 형태를 함께 살펴봅니다.",
+      "en": "<b>What this mode does</b><br/>It inspects ridge-hydro structure and front/back form together in areas suspected to contain settlement traces."
     },
     "guide_goal_intro_general": {
       "ko": "<b>이 모드가 하는 일</b><br/>풍수 전공 지식이 없어도 전체 지형 흐름을 먼저 훑어볼 수 있게 기본 산줄기와 수계를 정리합니다.",
@@ -91,15 +91,15 @@
     },
     "guide_goal_steps_tomb": {
       "ko": "<b>권장 순서</b><br/>1. DEM을 고릅니다.<br/>2. 수계를 넣거나 DEM 자동 수계를 그대로 둡니다.<br/>3. 용어 추출을 켠 상태로 지형 추출을 실행합니다.<br/>4. 혈·명당 후보를 눈으로 먼저 확인합니다.<br/>5. 점 레이어가 있으면 나중에 고급 분석 탭에서 점수 계산을 합니다.",
-      "en": "<b>Recommended order</b><br/>1. Select a DEM.<br/>2. Provide a water layer or keep DEM auto-hydro on.<br/>3. Run landscape extraction with term extraction enabled.<br/>4. Inspect hyeol and myeongdang candidates first.<br/>5. If you have point data, use Advanced Analysis afterward for scoring."
+      "en": "<b>Recommended order</b><br/>1. Select a DEM.<br/>2. Provide a water layer or keep DEM auto-hydro on.<br/>3. Run landscape extraction with term extraction enabled.<br/>4. Inspect hyeol and myeongdang candidates first.<br/>5. If you have a site layer, use Advanced Analysis afterward for scoring."
     },
     "guide_goal_steps_house": {
       "ko": "<b>권장 순서</b><br/>1. DEM을 고릅니다.<br/>2. 수계를 넣거나 DEM 자동 수계를 사용합니다.<br/>3. 지형 추출로 뒤의 받침과 앞의 개방 구조를 먼저 봅니다.<br/>4. 후보 점이 있으면 고급 분석 탭에서 점수 계산을 합니다.",
-      "en": "<b>Recommended order</b><br/>1. Select a DEM.<br/>2. Provide a water layer or use DEM auto-hydro.<br/>3. Run landscape extraction first to inspect shelter-behind and openness-in-front.<br/>4. If you have candidate points, score them in Advanced Analysis."
+      "en": "<b>Recommended order</b><br/>1. Select a DEM.<br/>2. Provide a water layer or use DEM auto-hydro.<br/>3. Run landscape extraction first to inspect shelter-behind and openness-in-front.<br/>4. If you have a candidate site layer, score it in Advanced Analysis."
     },
     "guide_goal_steps_settlement": {
       "ko": "<b>권장 순서</b><br/>1. DEM을 고릅니다.<br/>2. 수계를 넣거나 DEM 자동 수계를 사용합니다.<br/>3. 용어 추출을 켜고 지형 추출을 실행합니다.<br/>4. 산줄기·수계 연결과 전후구조가 뚜렷한 후보를 우선 확인합니다.<br/>5. 후보 점이 있으면 고급 분석에서 점수 비교를 수행합니다.",
-      "en": "<b>Recommended order</b><br/>1. Select a DEM.<br/>2. Provide a water layer or use DEM auto-hydro.<br/>3. Enable term extraction and run landscape extraction.<br/>4. Prioritize candidates with clear ridge-hydro and front/back morphology.<br/>5. If candidate points are available, compare scores in Advanced Analysis."
+      "en": "<b>Recommended order</b><br/>1. Select a DEM.<br/>2. Provide a water layer or use DEM auto-hydro.<br/>3. Enable term extraction and run landscape extraction.<br/>4. Prioritize candidates with clear ridge-hydro and front/back morphology.<br/>5. If a candidate site layer is available, compare scores in Advanced Analysis."
     },
     "guide_goal_steps_general": {
       "ko": "<b>권장 순서</b><br/>1. DEM을 고릅니다.<br/>2. 수계를 넣거나 DEM 자동 수계를 사용합니다.<br/>3. 지형 흐름 추출을 먼저 실행합니다.<br/>4. 필요할 때만 용어 점과 고급 분석으로 넘어갑니다.",
@@ -178,8 +178,8 @@
       "en": "Select DEM layer"
     },
     "workflow_check_sites": {
-      "ko": "후보지 포인트 선택",
-      "en": "Select candidate point layer"
+      "ko": "후보지 레이어 선택",
+      "en": "Select candidate site layer"
     },
     "workflow_check_hydro": {
       "ko": "수계 조건 확인(수계 레이어 또는 DEM 자동 수문)",
@@ -866,12 +866,12 @@
       "en": "Context Mode"
     },
     "context_experimental_toggle_label": {
-      "ko": "탐색 지역 프로필 표시 (근거 제한)",
-      "en": "Show exploratory region profiles (limited evidence)"
+      "ko": "탐색 프리셋/지역 프로필 표시 (근거 제한)",
+      "en": "Show exploratory presets and region profiles (limited evidence)"
     },
     "context_scope_label": {
-      "ko": "프로필 범위",
-      "en": "Context Profile Scope"
+      "ko": "프리셋/지역 범위",
+      "en": "Preset / Context Scope"
     },
     "context_mode_general_short": {
       "ko": "일반",
@@ -1517,9 +1517,9 @@
         "ko": "대간·정맥",
         "en": "Major Ridge"
       },
-      "color": "#273331",
-      "width": 1.25,
-      "opacity": 0.52
+      "color": "#55645a",
+      "width": 2.3,
+      "opacity": 0.78
     },
     {
       "id": "minor",
@@ -1527,9 +1527,9 @@
         "ko": "기맥·지맥",
         "en": "Minor Ridge"
       },
-      "color": "#4b5a57",
-      "width": 0.72,
-      "opacity": 0.28
+      "color": "#74847d",
+      "width": 1.1,
+      "opacity": 0.46
     }
   ],
   "hydro_legend": [
@@ -1539,8 +1539,8 @@
         "ko": "주수계",
         "en": "Main"
       },
-      "color": "#0b3d91",
-      "width": 1.6
+      "color": "#0f4c81",
+      "width": 2.3
     },
     {
       "id": "secondary",
@@ -1548,8 +1548,8 @@
         "ko": "중간 수계",
         "en": "Secondary"
       },
-      "color": "#1456b8",
-      "width": 1.2
+      "color": "#1d67ad",
+      "width": 1.8
     },
     {
       "id": "branch",
@@ -1557,8 +1557,8 @@
         "ko": "지류",
         "en": "Branch"
       },
-      "color": "#2b7bd8",
-      "width": 0.9
+      "color": "#2e87d0",
+      "width": 1.3
     },
     {
       "id": "minor",
@@ -1566,8 +1566,8 @@
         "ko": "미소 수로",
         "en": "Minor"
       },
-      "color": "#63a5ff",
-      "width": 0.7
+      "color": "#66b4ec",
+      "width": 0.9
     }
   ],
   "help_html": {
@@ -1586,7 +1586,7 @@
         "<p><b>1) Landscape mode</b>: extract ridge flow from DEM first, and use the supplied water layer as hydro reference when available.</p>",
         "<p><b>2) If water is missing</b>: run DEM-based hydro extraction and use it as the hydro reference layer.</p>",
         "<p><b>3) Term detail</b>: create term points/links only when needed.</p>",
-        "<p><b>4) Advanced analysis</b>: compute <code>fs_score</code> when candidate point layer exists.</p>",
+        "<p><b>4) Advanced analysis</b>: compute <code>fs_score</code> when a candidate site layer exists.</p>",
         "<p><b>Click explanation</b>: inspect feature to see <code>reason_ko</code> or <code>fs_reason</code>.</p>",
         "<p><b>Recommended</b>: projected CRS in meters (UTM/TM).</p>"
       ]
@@ -1625,19 +1625,26 @@
     "symbols": {
       "ko": [
         "<h3>결과 심볼 안내</h3>",
-        "<p><b>풍수 구조 연결선</b> (중심 방사형이 아닌 구조-구조 연결)</p>",
+        "<p>모든 주요 선은 단일 스트로크가 아니라 <b>후광-몸통-중심맥</b>의 다층 리본으로 그려집니다. 산줄기는 등뼈처럼, 수계는 수맥처럼 읽히도록 설계했습니다.</p>",
+        "<p><b>혈/용어 중심점</b> (후광 + 몸체 + 중심핵)</p>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>용어</th><th>의미</th><th>기본색</th><th>기준크기</th></tr>",
+        "{point_rows}",
+        "</table>",
+        "<br>",
+        "<p><b>풍수 구조 연결선</b> (중심 방사형이 아닌 구조-구조 연결, 다층 리본 표현)</p>",
         "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
         "<tr><th>용어</th><th>의미</th><th>색</th><th>선폭</th></tr>",
         "{line_rows}",
         "</table>",
         "<br>",
-        "<p><b>능선 계층(2단계 통합)</b></p>",
+        "<p><b>능선 계층(맥 리본 표현)</b></p>",
         "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
         "<tr><th>계층</th><th>색</th><th>선폭</th><th>투명도</th></tr>",
         "{ridge_rows}",
         "</table>",
         "<br>",
-        "<p><b>수계 계층</b></p>",
+        "<p><b>수계 계층(수맥 리본 표현)</b></p>",
         "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
         "<tr><th>계층</th><th>색</th><th>선폭</th></tr>",
         "{hydro_rows}",
@@ -1645,19 +1652,26 @@
       ],
       "en": [
         "<h3>Result Symbology</h3>",
-        "<p><b>Structural links</b> (structure-to-structure, not radial spokes)</p>",
+        "<p>Major lines are rendered as layered ribbons, not single strokes: <b>aura + body + inner core</b>. Ridges should read like a spine, and water like flowing vessels.</p>",
+        "<p><b>Term centers</b> (halo + body + core)</p>",
+        "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
+        "<tr><th>Term</th><th>Meaning</th><th>Base Color</th><th>Base Size</th></tr>",
+        "{point_rows}",
+        "</table>",
+        "<br>",
+        "<p><b>Structural links</b> (structure-to-structure, not radial spokes; layered ribbon rendering)</p>",
         "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
         "<tr><th>Term</th><th>Meaning</th><th>Color</th><th>Width</th></tr>",
         "{line_rows}",
         "</table>",
         "<br>",
-        "<p><b>Ridge hierarchy</b></p>",
+        "<p><b>Ridge hierarchy</b> (vein-like ribbon rendering)</p>",
         "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
         "<tr><th>Class</th><th>Color</th><th>Width</th><th>Opacity</th></tr>",
         "{ridge_rows}",
         "</table>",
         "<br>",
-        "<p><b>Hydro hierarchy</b></p>",
+        "<p><b>Hydro hierarchy</b> (flow-ribbon rendering)</p>",
         "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
         "<tr><th>Class</th><th>Color</th><th>Width</th></tr>",
         "{hydro_rows}",

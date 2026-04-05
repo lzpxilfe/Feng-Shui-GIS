@@ -10,9 +10,15 @@ Files:
 
 These config profiles are transparent and editable, but they are not all equally evidence-backed.
 
+They are also not the first interpretive layer anymore. The plugin should explain
+`principle evidence` from terrain first, then show context/profile adjustments as
+secondary overlays.
+
 - DEM/ridge/hydro extraction parameters: reproducible algorithm settings.
 - Country/period bias fields: initial research priors.
 - Profile-level paper evidence (`profiles.json`: `paper_evidence`): additive profile overrides with citation metadata.
+- Principle-first mapping and current terrain-to-principle translation:
+  `docs/PRINCIPLES.md`
 
 See:
 - `docs/reference_audit.md`
@@ -59,15 +65,29 @@ improve held-out performance or are directly justified by the source material.
 
 ## Region Profile Stability Policy
 
-- `stable`: profile is applied by default in the UI.
-- `experimental`: shown when "Show exploratory region profiles" is enabled.
+The context catalogs now include a simple visibility tier policy:
 
-Current assignment:
+- `stable`: profile is supported by broader comparative evidence or multiple source
+  families and is shown by default in the UI.
+- `experimental`: profile is useful but limited (small sample, contested mapping
+  boundaries, or strong local scope), hidden unless the user enables
+  "Preset / Context Scope → Show exploratory presets and region profiles".
 
-- `ryukyu` and `southeast_asia` are `experimental`:
-  - direct citation coverage is concentrated in limited case studies,
-  - boundaries and historical comparability are under active discussion.
-- `east_asia`, `korea`, `china`, `japan`, and `global_apm` remain `stable`.
+Current examples:
 
-This keeps default analyses centered on broadly comparable profiles, while still
-making narrower regional priors available for explicitly exploratory workflows.
+- `ryukyu` and `southeast_asia` are marked `experimental` because the source
+  layer is still sparse and boundary definitions are under active discussion.
+- `global_apm` is now `experimental` because the cross-region baseline is useful
+  for comparison but too broad to present as a default context.
+- `korea`, `china`, `japan`, and `east_asia` remain `stable` defaults.
+
+The same conservative rule now applies to `profiles.json` as well:
+
+- `general`, `tomb`, `house`, `village`, `tomb_kr`, and `village_kr` are shown
+  by default.
+- `well`, `temple`, `urban_real_estate`, and `global_apm` are hidden unless the
+  user enables exploratory presets.
+
+This policy is meant to reduce accidental overfitting to very specific
+sub-regions while keeping them available for focused studies and future
+validation.

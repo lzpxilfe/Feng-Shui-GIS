@@ -1,87 +1,89 @@
-# 🧭 Feng-Shui GIS
+# 🧭 Feng Shui GIS
 
-> **Heuristic, terrain-first QGIS plugin for comparative landscape reading inspired by Feng Shui. Not a predictive truth model.**
+> **DEM-first QGIS plugin for terrain reading, principle-first Feng Shui interpretation, and comparative historical landscape analysis.**
 
-풍수 해석을 “자동 정답기”가 아니라  
-**지형 구조 추출 → 해석 레이어 생성 → 비교/보정 → 재현 가능한 보고**로 이어지는 연구용 GIS 워크플로로 재구성한 QGIS 플러그인입니다.
+이 저장소는 풍수를 "자동 정답기"로 만들기보다,  
+`지형 구조 추출 -> 원리 기반 해석 -> 비교/보정 -> 반복 가능한 실험`의 흐름으로 다루기 위한 GIS 도구입니다.
 
 ![QGIS](https://img.shields.io/badge/QGIS-3.28%2B-589632?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?style=flat-square)
-![Mode](https://img.shields.io/badge/Mode-Quick%20%7C%20Research%20%7C%20Developer-7A5C3E?style=flat-square)
-![Output](https://img.shields.io/badge/Outputs-Reports%20%7C%20Manifest%20%7C%20Support%20Bundle-1F6F78?style=flat-square)
+![Model](https://img.shields.io/badge/Model-Principle--first-7A5C3E?style=flat-square)
+![Visualization](https://img.shields.io/badge/Visualization-Embodied%20terrain-1F6F78?style=flat-square)
 
 ---
 
-## 🚪 Start here
+## Start Here
 
 | What you need | Where to go |
 | --- | --- |
-| Safe first run with sample data | 📦 [Sample Project](examples/sample_project/README.md) |
-| Fast setup path after install | 🛫 [First Run Guide](docs/first_run_guide.md) |
-| Tested baseline and known limits | 🧪 [Tested Versions & Known Limitations](docs/tested_versions.md) |
-| When something looks wrong | 🧯 [Troubleshooting](docs/troubleshooting.md) |
-| Repro package for maintainers | 🆘 [Support Bundle Guide](docs/support_bundle_guide.md) |
-| Issue filing template | 🐞 [Bug Report Template](docs/bug_report_template.md) |
+| Fast first run | [docs/first_run_guide.md](docs/first_run_guide.md) |
+| Principle-first interpretation model | [docs/PRINCIPLES.md](docs/PRINCIPLES.md) |
+| Visualization direction | [docs/VISUALIZATION.md](docs/VISUALIZATION.md) |
+| Research workflow | [docs/researcher_quickstart.md](docs/researcher_quickstart.md) |
+| Validation guidance | [docs/validation_protocol.md](docs/validation_protocol.md) |
 
 ---
 
-## ✨ Why this repository exists
+## What This Plugin Does
 
-이 저장소의 목표는 단순한 점수 계산기가 아니라,  
-풍수적 공간지리 인식을 GIS 위에서 더 **투명하게**, **비교 가능하게**, **재현 가능하게** 읽도록 돕는 것입니다.
+### 1. Terrain structure first
 
-우리가 다루는 핵심은 다음 네 가지입니다.
+- extracts ridge hierarchy from DEM
+- accepts a supplied water layer or derives hydro from DEM
+- builds terrain metrics needed for later interpretation
 
-- 🏔️ `DEM` 기반 지형 구조 읽기
-- 📍 후보지 점수와 이유 설명
-- 🔁 프로파일 비교와 로컬 보정
-- 🧾 리포트, manifest, support bundle을 통한 재현성 확보
+### 2. Principle-first Feng Shui reading
 
-### 🔎 At a glance
+Site scoring is no longer framed as "the profile says tomb/house/etc."
 
-- 입력: `DEM + water(optional) + candidate sites(optional)`
-- 핵심 산출물: `ridges`, `hydro`, `site scoring`, `terms`, `links`
-- 비교 기능: `profile compare`, `local calibration`
-- 운영 산출물: `JSON/Markdown report`, `run manifest`, `benchmark manifest`, `support bundle`
+It now starts from explicit terrain principles:
+
+- `배산/형국`
+- `혈 조건`
+- `사신사`
+- `장풍/감쌈`
+- `득수/수계 관계`
+
+Context and profile settings still matter, but they are treated as secondary calibration overlays rather than the first explanation.
+
+### 3. Comparative analysis, not absolute truth claims
+
+- optional site scoring with `fs_score`, `fs_note`, and `fs_reason`
+- local calibration with `ROC AUC`, `PR AUC`, `F1`, and threshold diagnostics
+- profile/context comparison for exploratory reading
+
+### 4. GIS-native visual interpretation
+
+풍수는 점 몇 개와 얇은 선 몇 개로 끝나지 않습니다.
+
+이 플러그인은 결과를 가능한 한 "몸체감" 있게 보여주도록 바꾸는 중입니다:
+
+- ridges as layered spine/vein ribbons
+- hydro as layered flow ribbons
+- term points as halo/body/core markers
+- structural links as secondary connective anatomy rather than flat wiring
+
+자세한 방향은 [docs/VISUALIZATION.md](docs/VISUALIZATION.md)에 정리했습니다.
 
 ---
 
-## 🎯 Who this is for
+## Current Real Features
 
-### 🔬 Researcher
-- 비교 가능한 해석 흐름이 필요한 연구자
-- 문화권·시대 맥락을 바꿔가며 결과를 읽고 싶은 사용자
-- calibration / compare / evidence trace를 함께 보고 싶은 사용자
+현재 코드 기준으로 실제로 쓸 수 있는 핵심 기능은 다음과 같습니다.
 
-### 🎓 Student / Learner
-- 풍수 개념을 지형 분석과 연결해 배우고 싶은 사용자
-- ridge / hydro / term extraction 중심으로 탐색하고 싶은 사용자
-
-### 🧭 Practitioner
-- 최소 입력으로 지형을 빠르게 읽고 싶은 사용자
-- 후보지를 비교하고 설명 가능한 결과를 보고 싶은 사용자
+- `DEM + water(optional)` 기반 지형 구조 추출
+- supplied water가 없을 때 `auto-hydro` 사용
+- `sites` 레이어를 `Point`뿐 아니라 `Polygon`도 입력 가능
+- optional Feng Shui term extraction and structural links
+- site scoring with principle-first reasoning text
+- stable/exploratory preset filtering in the UI
+- local calibration reports and threshold inspection fields
+- study-case bootstrap tool for repeated experiments:
+  `python3 tools/setup_study_case.py ...`
 
 ---
 
-## 🚀 Quick start
-
-### ⚡ 1-minute start
-
-1. `DEM`을 불러옵니다.
-2. 수계 레이어가 있으면 지정하고, 없으면 auto-hydro를 사용합니다.
-3. 후보지 포인트가 있으면 지정합니다.
-4. 플러그인을 열고 `Quick` 또는 `Research` 흐름으로 진입합니다.
-5. `지형 구조 추출` → `입지 분석` 순서로 실행합니다.
-
-### 🔬 5-minute research start
-
-1. 목적 프로파일을 고릅니다. 예: `tomb`, `house`, `settlement`
-2. 문화권과 시대를 선택합니다.
-3. 필요하면 `용어 추출`을 실행합니다.
-4. `캘리브레이션`으로 로컬 튜닝 진단을 확인합니다.
-5. `프로파일 비교`로 selected profile 대비 gain/drop을 읽습니다.
-
-## 🗺️ Core workflow
+## Core Workflow
 
 ```text
 DEM + Water(optional) + Sites(optional)
@@ -93,245 +95,121 @@ Interpretation layers
 Terms / Links / Site scoring
         ↓
 Comparative reading
-Compare / Calibration / Reports / Manifests
+Calibration / Compare / Reports / Repeated study cases
 ```
 
-### 🧩 Working modes
+---
 
-- ⚡ `Quick`
-  - 최소 입력
-  - 빠른 지형 읽기
-  - 연구용 옵션 최소화
+## Quick Start
 
-- 🔬 `Research`
-  - evidence / compare / calibration 중심
-  - 문화권·시대 맥락 반영
-  - 리포트와 재현성 기록 확인
+### 1-minute path
 
-- 🛠️ `Developer`
-  - diagnostics / support bundle / 상태 정보
-  - 운영 점검과 공유용 산출물 확인
+1. Load a DEM in QGIS.
+2. Add a water layer if you have one. If not, keep `auto-hydro` enabled.
+3. Add a site layer if you want scoring. Point and polygon layers are both accepted.
+4. Run terrain extraction first.
+5. Turn on term extraction only when you need structure-level reading.
+6. Run site analysis after the terrain layers look reasonable.
 
-### 🧭 Representative use cases
+### Repeated real-data workflow
 
-- ⚡ `Quick terrain reading`
-  - DEM과 water만으로 빠르게 능선/수계/기초 입지 해석층을 확인합니다.
+If you want to test multiple datasets without rebuilding everything every time:
 
-- 🔬 `Research compare / calibration`
-  - candidate points와 context를 함께 넣고 compare와 local calibration을 읽습니다.
+```bash
+python3 tools/setup_study_case.py \
+  user_cases/gongju_baekje \
+  --dem /path/to/666.tif \
+  --sites /path/to/tomb_sites.shp \
+  --water /path/to/water.shp \
+  --title "Gongju Baekje study" \
+  --profile tomb
+```
 
-- 🆘 `Support bundle repro sharing`
-  - 이상한 결과가 나오면 bundle을 내보내고 report/manifest와 함께 유지보수 맥락을 공유합니다.
+This creates a reusable case folder with:
+
+- `case.json`
+- `README.md`
+- `inputs/`
+
+It also warns when polygon site layers are being reduced to centroid-based interpretation.
 
 ---
 
-## 🌟 Main features
+## Main Outputs
 
-### 🏔️ Terrain extraction
-- 능선과 수계를 추출합니다.
-- 지형 구조 해석에 필요한 기반 레이어를 생성합니다.
-- DEM, 수계, 경사, TPI, convergence 기반 지표를 만듭니다.
+| Layer | Description |
+| --- | --- |
+| `*_fengshui_ridges` | DEM-derived ridge hierarchy |
+| `*_fengshui_hydro` | supplied or DEM-derived hydro network |
+| `*_fengshui_terms` | Feng Shui term points |
+| `*_fengshui_links` | structural link lines between terms |
+| `*_fengshui` | site scoring layer with reasoning fields |
 
-### 📘 Term extraction
-- 풍수적 구조를 읽기 위한 용어 포인트와 연결선을 생성합니다.
-- 혈 후보를 기준으로 구조 용어와 경로 해석층을 시각화합니다.
+Important site fields:
 
-### 📍 Site analysis
-- 후보지에 `fs_score`와 이유 텍스트를 부여합니다.
-- 점수만이 아니라 **왜 그렇게 읽혔는지**를 함께 보여줍니다.
-
-### 🔁 Profile compare
-- 두 프로파일 사이의 상대 변화량을 비교합니다.
-- 결과는 `better/worse` 대신 **selected profile 대비 gain/drop**으로 읽도록 설계되어 있습니다.
-
-### 🧪 Calibration
-- 로컬 양성/음성 샘플을 기준으로 튜닝 진단을 수행합니다.
-- 학습 / 선택 / 보고 지표를 분리한 payload와 리포트를 제공합니다.
-
-### 🧾 Reporting & reproducibility
-- JSON / Markdown report
-- run manifest
-- benchmark manifest
-- calibration / compare audit 정보
-
-### 🆘 Support bundle
-- 최신 report / manifest / config / UI snapshot / recent errors를 zip으로 묶습니다.
-- 원본 DEM/벡터는 넣지 않고 참조 정보만 보관합니다.
+- `fs_score`
+- `fs_note`
+- `fs_reason`
+- `fs_sashinsa`
+- `fs_enclosure`
 
 ---
 
-## 🔍 Trust model
+## Trust Model
 
-이 플러그인은 결과를 강하게 단정하지 않도록 설계되어 있습니다.
+This plugin is designed for structured interpretation, not final proof.
 
-### 🏷️ Common trust badges
+- `fs_score` is not a probability of site existence.
+- context/profile presets are not universal truth.
+- calibration is an exploratory signal unless independently validated.
+- automated output should be read with field evidence, documentary context, and local expertise.
 
-- 🟤 `General Principles`
-- 🟠 `Advanced Context`
-- 🟡 `Exploratory Context`
-- 🟢 `Local Calibration Applied`
+The most reproducible part of the stack is still:
 
-### ❗ Read results carefully
+- DEM handling
+- ridge extraction
+- hydro extraction
+- explicit metric calculation
 
-- `fs_score`는 **유적 존재 확률**이 아닙니다.
-- 이 플러그인은 **heuristic terrain interpretation tool**입니다.
-- 이 플러그인은 **predictive truth model이 아닙니다.**
-- calibration은 **독립 검증을 대체하지 않습니다.**
-- compare는 **선택한 프로파일 대비 상대 변화**입니다.
-- 결과는 문헌, 현장 조사, 추가 GIS 해석과 함께 읽어야 합니다.
+The least settled part is:
 
-더 짧은 운영 기준은 [Tested Versions & Known Limitations](docs/tested_versions.md)에서 바로 확인할 수 있습니다.
-
----
-
-## 📦 Sample project & smoke flows
-
-### 🧪 Sample project
-
-- synthetic DEM / water / sites 제공
-- example report payload 포함
-- 첫 실행용 기준선 제공
-
-핵심 파일:
-
-- [examples/sample_project/sample_project.qgz](examples/sample_project/sample_project.qgz)
-- [examples/sample_project/sample_project.qgs](examples/sample_project/sample_project.qgs)
-- [examples/sample_project/README.md](examples/sample_project/README.md)
-
-### ✅ Normal first run should give you
-
-- `fengshui_ridges` or `풍수_산줄기`
-- `fengshui_hydro` or `풍수_수계`
-- `fengshui` or `풍수_입지평가`
-- report example comparison targets from the sample project folder
-
-### 🚦 Smoke & guard scripts
-
-- [tools/run_asset_smoke.py](tools/run_asset_smoke.py)
-  - 저장소 자산과 manifest 흐름 점검
-- [tools/run_headless_smoke.py](tools/run_headless_smoke.py)
-  - QGIS Python 환경에서 analysis / compare / calibration end-to-end smoke
-- [tools/release_guard.py](tools/release_guard.py)
-  - metadata / README / sample project / fixture / support bundle guard
+- cultural translation
+- profile/context generalization
+- strong archaeological claims from score alone
 
 ---
 
-## 📂 Outputs
+## Documentation
 
-### 🗺️ QGIS layers
+### Getting started
 
-- `풍수_입지평가` / `fengshui`
-- `풍수_입지평가_변경지점` / `compare_changes`
-- `풍수_산줄기` / `fengshui_ridges`
-- `풍수_수계` / `fengshui_hydro`
-- `풍수_용어` / `fengshui_terms`
-- `풍수_구조연결` / `fengshui_links`
-- `풍수_보정` / `calibration`
+- [docs/first_run_guide.md](docs/first_run_guide.md)
+- [docs/researcher_quickstart.md](docs/researcher_quickstart.md)
 
-### 🧾 Reports & operational artifacts
+### Interpretation model
 
-- `reports/feng_shui_run_<service>_<run_id>.json`
-- `reports/feng_shui_benchmark_<service>_<run_id>.json`
-- `support_bundle_<timestamp>.zip`
+- [docs/PRINCIPLES.md](docs/PRINCIPLES.md)
+- [docs/VISUALIZATION.md](docs/VISUALIZATION.md)
+- [docs/context_profiles.md](docs/context_profiles.md)
 
----
+### Validation and references
 
-## 🧠 What this tool is not
-
-- ❌ 자동으로 “좋은 자리”를 확정하는 판정기
-- ❌ 역사적 진실을 직접 증명하는 도구
-- ❌ 현장 검증 없이 써도 되는 완결형 모델
-- ❌ `fs_score`를 확률처럼 읽어도 되는 예측기
-
-이 플러그인의 목표는  
-**풍수적 공간지리 인식을 GIS 위에서 더 투명하고, 비교 가능하고, 재현 가능하게 읽도록 돕는 것**입니다.
+- [docs/validation_protocol.md](docs/validation_protocol.md)
+- [docs/research_matrix.md](docs/research_matrix.md)
+- [docs/reference_audit.md](docs/reference_audit.md)
+- [docs/regional_period_notes.md](docs/regional_period_notes.md)
 
 ---
 
-## 🧰 Requirements
+## Requirements
 
-- 🧭 QGIS `3.28+`
-- 🐍 Python `3.8+`
-- 🗺️ 미터 단위 투영좌표계 DEM 권장
-- 🌊 선형 water layer가 있으면 더 안정적
-- 📍 후보지 포인트 레이어는 선택 입력
-
-### ✅ Recommended setup
-
-- 경위도 CRS보다 projected CRS 사용
-- DEM 품질이 낮으면 ridge / hydro / 거리 기반 결과 해석에 주의
-- auto-hydro는 보조 수단으로 사용
-- 결과는 comparative interpretation frame으로 읽고, predictive result처럼 읽지 않기
+- QGIS `3.28+`
+- Python `3.8+`
+- projected CRS in meters is strongly recommended
+- vector water layer is preferred when interpretation depends heavily on hydro
 
 ---
 
-## 📚 Documentation
-
-### 🛫 Getting started
-
-- [First Run Guide](docs/first_run_guide.md)
-- [Researcher Quickstart](docs/researcher_quickstart.md)
-- [Tested Versions & Known Limitations](docs/tested_versions.md)
-- [Troubleshooting](docs/troubleshooting.md)
-
-### 🔬 Research & validation
-
-- [Validation Protocol](docs/validation_protocol.md)
-- [Research Matrix](docs/research_matrix.md)
-- [Reference Audit](docs/reference_audit.md)
-- [Regional & Period Notes](docs/regional_period_notes.md)
-- [Context Profiles](docs/context_profiles.md)
-
-### 🆘 Support & release
-
-- [Support Bundle Guide](docs/support_bundle_guide.md)
-- [Bug Report Template](docs/bug_report_template.md)
-- [Release Checklist](docs/release_checklist.md)
-- [changelog.md](changelog.md)
-
----
-
-## 🏗️ Repository structure
-
-### Core plugin modules
-
-- `feng_shui_gis/plugin.py`
-  - QGIS entrypoint, task wiring, orchestration
-- `feng_shui_gis/dock_widget.py`
-  - workflow UI, state application, trust/status surface
-- `feng_shui_gis/analysis.py`
-  - terrain analysis orchestration engine
-
-### Service / reporting / support
-
-- `feng_shui_gis/services/analysis_service.py`
-  - analysis / compare / calibration service boundary
-- `feng_shui_gis/reporting/`
-  - compare / calibration / support bundle writers
-- `feng_shui_gis/trust_metadata.py`
-  - trust badges and shared interpretation metadata
-
-### Tests / fixtures / tools
-
-- `tests/`
-  - contract tests, fixture contracts, productization regression skeleton
-- `examples/sample_project/`
-  - synthetic baseline project
-- `tools/`
-  - smoke, benchmark, release guard helpers
-
----
-
-## 🤝 Contributing / reporting
-
-문제 제보나 재현 공유가 필요할 때는 아래 순서를 권장합니다.
-
-1. `Support Bundle`을 생성합니다.
-2. [Bug Report Template](docs/bug_report_template.md)에 맞춰 상황을 정리합니다.
-3. 가능하면 사용한 DEM / water / site 레이어의 CRS와 해상도를 함께 적어 주세요.
-
----
-
-## 🔗 Repository
+## Repository
 
 - GitHub: [lzpxilfe/Feng-Shui-GIS](https://github.com/lzpxilfe/Feng-Shui-GIS)

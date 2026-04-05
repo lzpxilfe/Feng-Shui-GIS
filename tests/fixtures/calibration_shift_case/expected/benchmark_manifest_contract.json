@@ -1,0 +1,3 @@
+{
+  "required_keys": ["service", "workflow_steps", "artifacts", "score_drift_tolerance"]
+}

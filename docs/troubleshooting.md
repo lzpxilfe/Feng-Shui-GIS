@@ -1,56 +1,23 @@
-# Troubleshooting
+# 문제 해결 가이드
 
-Updated: 2026-04-01
+## 공통 경고
 
-## CRS warning or unreliable distance behavior
+- **DEM CRS 경고(경위도 사용 중)**  
+  거리 기반 계산은 투영 CRS가 전제입니다. DEM를 미터 기반 CRS(UTM/TM 등)로 재투영한 뒤 다시 실행하세요.
 
-Cause:
+- **water 레이어 미지정**  
+  auto-hydro가 켜져 있어도 유효한 수계가 생성되지 않으면 비교/점수 단계에서 영향도가 커집니다. 가능한 경우 수계 레이어를 직접 지정하세요.
 
-- DEM or project CRS is geographic
+- **사이트 레이어 미지정**  
+  점수/비교/교정은 후보 포인트가 있어야 합니다. 점수는 `sites` 레이어를 기반으로 계산합니다.
 
-What to do:
+## 실행 실패 패턴
 
-- reproject to a meter-based CRS
-- rerun extraction and analysis
+- 긴 처리 후 중단됨 → 작업을 취소한 뒤, 입력 layer 타입/CRS를 점검하고 다시 실행
+- 리포트가 생성되지 않음 → `results` 폴더 쓰기 권한 또는 프로젝트 경로 권한 점검
+- 비교/교정 결과가 급격히 다름 → seed, split, context 설정, 평가 분할 여부를 manifest에서 재확인
 
-## Auto-hydro looks strange
+## 오류 메시지 해석
 
-Cause:
-
-- DEM artifacts
-- flat terrain
-- missing curated water input
-
-What to do:
-
-- prefer a curated water layer
-- inspect DEM quality
-- mark the run as exploratory
-
-## Calibration finished but should not be overtrusted
-
-Check:
-
-- whether held-out evaluation rows existed
-- whether the context is exploratory
-- whether the selected profile is locally calibrated
-
-Remember:
-
-- calibration is tuning plus reportable evaluation metadata
-- it is not a universal validation result
-
-## Compare says gain/drop
-
-Meaning:
-
-- scores changed relative to the selected base profile
-
-It does not mean:
-
-- the calibrated profile is historically correct
-- the plugin has proven site presence
-
-## Need help from maintainers
-
-Use the `Export Support Bundle` action first, then attach the generated zip to a bug report.
+이 플러그인은 `fail-closed`를 기본으로 하여, 예측을 “아무것도 말하지 않고 통과”시키지 않고 처리 가능한 이유를 먼저 알립니다.  
+메시지에 `validation` / `holdout` / `CRS` 키워드가 있으면 우선 순위가 높습니다.

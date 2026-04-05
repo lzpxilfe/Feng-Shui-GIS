@@ -1,0 +1,4 @@
+{
+  "required_sections": ["analysis", "compare", "calibration"],
+  "required_keys": ["site_layer_name", "profile_key", "culture_key", "period_key"]
+}

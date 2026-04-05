@@ -1,6 +1,16 @@
 {
   "case_id": "calibration_shift_case",
-  "description": "Calibration case that should surface local calibration trust metadata.",
-  "expected_calibration_badge": "Local Calibration Applied",
-  "score_drift_tolerance": 0.1
+  "title": "Calibration shift case",
+  "workflow": ["analysis", "compare", "calibration"],
+  "inputs": {
+    "dem": "inputs/sample_dem.tif",
+    "water": "inputs/sample_water.shp",
+    "sites": "inputs/sample_sites.shp"
+  },
+  "expected": {
+    "report_contract": "expected/report_contract.json",
+    "run_manifest_contract": "expected/run_manifest_contract.json",
+    "benchmark_manifest_contract": "expected/benchmark_manifest_contract.json"
+  },
+  "score_drift_tolerance": 0.04
 }

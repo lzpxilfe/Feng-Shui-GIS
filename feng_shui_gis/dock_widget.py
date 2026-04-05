@@ -37,6 +37,7 @@ from .mountain_options import mountain_options
 from .profile_catalog import (
     available_profiles,
     line_styles,
+    point_styles,
     profile_label,
     term_label,
     term_label_ko,
@@ -181,6 +182,25 @@ class FengShuiHelpDialog(QDialog):
         return "".join(rows)
 
     @staticmethod
+    def _point_legend_rows(language=None):
+        lang = language if language else language_code()
+        meanings = ui_term_meanings(lang)
+        rows = []
+        for term_id, style in point_styles().items():
+            fill_color, size, _stroke_color, _stroke_width = style
+            rows.append(
+                (
+                    "<tr>"
+                    f"<td>{escape(term_label(term_id, lang))}</td>"
+                    f"<td>{escape(str(meanings.get(term_id, '')))}</td>"
+                    f"<td><code>{escape(fill_color)}</code></td>"
+                    f"<td>{float(size):.1f}</td>"
+                    "</tr>"
+                )
+            )
+        return "".join(rows)
+
+    @staticmethod
     def _ridge_legend_rows(language=None):
         lang = language if language else language_code()
         rows = []
@@ -223,11 +243,13 @@ class FengShuiHelpDialog(QDialog):
 
     def _symbols_html(self):
         lang = language_code()
+        point_rows = self._point_legend_rows(lang)
         line_rows = self._line_legend_rows(lang)
         ridge_rows = self._ridge_legend_rows(lang)
         hydro_rows = self._hydro_legend_rows(lang)
         return ui_help_html(
             "symbols",
+            point_rows=point_rows,
             line_rows=line_rows,
             ridge_rows=ridge_rows,
             hydro_rows=hydro_rows,
@@ -565,20 +587,9 @@ class FengShuiDockWidget(QWidget):
             "house",
         )
         self.purpose_combo.addItem(
-            ui_text("goal_settlement_label", default="고대 정착지 패턴"),
-            "settlement",
-        )
-        self.purpose_combo.addItem(
             ui_text("goal_general_label", default="일반 지형 읽기"),
             "general",
         )
-        for profile_key in available_profiles():
-            if profile_key in ("tomb", "house", "village", "general"):
-                continue
-            self.purpose_combo.addItem(
-                profile_label(profile_key, language_code()),
-                profile_key,
-            )
         self.purpose_combo.addItem(
             ui_text("goal_custom_label", default="직접 설정"),
             "custom",
@@ -586,7 +597,9 @@ class FengShuiDockWidget(QWidget):
         form.addRow(ui_text("goal_label", default="탐색 목적"), self.purpose_combo)
 
         self.sites_combo = QgsMapLayerComboBox(self)
-        self.sites_combo.setFilters(QgsMapLayerProxyModel.PointLayer)
+        self.sites_combo.setFilters(
+            QgsMapLayerProxyModel.PointLayer | QgsMapLayerProxyModel.PolygonLayer
+        )
         form.addRow(tr("sites_label"), self.sites_combo)
 
         self.dem_combo = QgsMapLayerComboBox(self)
@@ -752,13 +765,7 @@ class FengShuiDockWidget(QWidget):
         self.advanced_context_checkbox.toggled.connect(self._update_profile_recommendation_hint)
         self.advanced_context_checkbox.toggled.connect(self._toggle_advanced_context_controls)
         self.show_experimental_context_checkbox.toggled.connect(
-            self._rebuild_culture_combo
-        )
-        self.show_experimental_context_checkbox.toggled.connect(
-            self._update_profile_recommendation_hint
-        )
-        self.show_experimental_context_checkbox.toggled.connect(
-            self._update_context_evidence_hint
+            self._reload_profile_options
         )
         self.advanced_options_button.toggled.connect(self._toggle_advanced_options_panel)
         self.advanced_options_button.toggled.connect(self._refresh_progress_guide)
@@ -816,11 +823,11 @@ class FengShuiDockWidget(QWidget):
         self._toggle_advanced_options_panel(False)
         self._toggle_advanced_context_controls()
         self._toggle_web_mountain_controls()
-        default_goal_index = self.purpose_combo.findData("settlement")
-        if default_goal_index < 0:
-            default_goal_index = max(0, self.purpose_combo.findData("house"))
+        default_goal_index = self.purpose_combo.findData("general")
         if default_goal_index < 0:
             default_goal_index = max(0, self.purpose_combo.findData("tomb"))
+        if default_goal_index < 0:
+            default_goal_index = max(0, self.purpose_combo.findData("house"))
         self.purpose_combo.setCurrentIndex(default_goal_index)
         self._apply_usage_goal_presets()
         self._update_metric_help_hint()

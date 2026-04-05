@@ -64,3 +64,11 @@ This audit keeps only verified DOI-backed sources for Feng Shui + spatial analys
 
 - Stronger evidence exists for geomorphic pattern reading and selected case studies.
 - Evidence for country/period parameter magnitudes is still partial and requires calibration with local archaeological ground-truth data.
+
+## Tool chain used in implementation
+
+- `FengShuiAnalyzer` combines raster processing and custom spatial scoring:
+  - `qgis:slope`, `qgis:aspect`, and `qgis:rastersampling` for terrain and local elevation proxies.
+  - Custom ridge/hydro graphing logic in `analysis.py` for `build_ridge_network` and `build_hydro_network`.
+  - Metric scoring with profile parameters and paper-informed evidence weights, then calibration metrics (`ROC AUC`, `PR AUC`, `F1`, `Youden J`) from internal evaluation routines.
+- The literature entries in this file provide conceptual anchors for indicators (water, slope/aspect, term geometry, settlement context); they are not always direct one-to-one software recipes.

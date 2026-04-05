@@ -1,13 +1,13 @@
 [general]
 name=Feng Shui GIS
 qgisMinimumVersion=3.28
-description=DEM-first terrain interpretation workflow for archaeology and historical landscape reading. Heuristic, non-predictive workflow, not a predictive truth model.
+description=DEM-first terrain and hydro interpretation for East Asian historical landscape and archaeological research.
 version=0.1.2
 author=Feng Shui GIS contributors
 email=
-about=This plugin is a heuristic terrain interpretation tool. It is not a predictive truth model and provides exploratory, comparative context-aware scoring. Calibration is explicitly exploratory and is not a standalone validation. A projected CRS in meters is strongly recommended before interpretation.
+about=This is a terrain-first heuristic interpretation tool for exploratory interpretation workflows. It is not a predictive truth model. Calibration and local tuning are exploratory signals, not standalone validation. A projected, meter-based CRS is strongly recommended (especially for distance/radius calculations).
 icon=yingyang.png
-tracker=https://github.com/lzpxilfe/Feng-Shui-GIS/issues
+tracker=
 repository=https://github.com/lzpxilfe/Feng-Shui-GIS
 category=Analysis
 tags=feng shui,geomancy,terrain,water,cultural landscape,archaeology,historical geography,asian landscapes

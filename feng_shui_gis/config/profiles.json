@@ -7,6 +7,7 @@
       "zh": "通用",
       "ja": "一般"
     },
+    "visibility_tier": "stable",
     "weights": {
       "slope": 0.2,
       "aspect": 0.15,
@@ -26,6 +27,7 @@
       "zh": "墓葬",
       "ja": "墳墓"
     },
+    "visibility_tier": "stable",
     "weights": {
       "long": 0.32,
       "form": 0.24,
@@ -48,6 +50,7 @@
       "zh": "居住",
       "ja": "住居"
     },
+    "visibility_tier": "stable",
     "weights": {
       "slope": 0.2,
       "aspect": 0.24,
@@ -68,6 +71,7 @@
       "zh": "村落",
       "ja": "集落"
     },
+    "visibility_tier": "stable",
     "weights": {
       "slope": 0.2,
       "water": 0.22,
@@ -90,6 +94,7 @@
       "zh": "水井",
       "ja": "井戸"
     },
+    "visibility_tier": "experimental",
     "weights": {
       "conv": 0.38,
       "water": 0.2,
@@ -109,6 +114,7 @@
       "zh": "寺庙",
       "ja": "寺院"
     },
+    "visibility_tier": "experimental",
     "weights": {
       "long": 0.26,
       "form": 0.25,
@@ -161,6 +167,7 @@
       "zh": "城市不动产",
       "ja": "都市不動産"
     },
+    "visibility_tier": "experimental",
     "weights": {
       "aspect": 0.28,
       "water": 0.24,
@@ -211,6 +218,7 @@
       "zh": "全球预测模型",
       "ja": "グローバル予測モデル"
     },
+    "visibility_tier": "experimental",
     "weights": {
       "water": 0.28,
       "slope": 0.22,
@@ -231,6 +239,7 @@
       "zh": "韩国墓葬(风水)",
       "ja": "韓国墓葬(風水)"
     },
+    "visibility_tier": "stable",
     "weights": {
       "long": 0.26,
       "sashinsa": 0.20,
@@ -309,6 +318,7 @@
       "zh": "韩国村落(背山临水)",
       "ja": "韓国集落(背山臨水)"
     },
+    "visibility_tier": "stable",
     "weights": {
       "enclosure": 0.22,
       "sashinsa": 0.18,

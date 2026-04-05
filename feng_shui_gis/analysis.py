@@ -78,6 +78,11 @@ from .analysis_networks import (
     stream_class,
     trace_downstream_path,
 )
+from .analysis_principles import (
+    build_principle_note,
+    build_principle_records,
+    build_principle_summary,
+)
 from .analysis_reasoning import (
     compose_hyeol_reason,
     compose_term_reason,
@@ -157,6 +162,12 @@ from .profile_catalog import (
     term_specs,
 )
 from .reference_catalog import reference_display_text
+from .visualization_specs import (
+    hydro_symbol_profiles,
+    ridge_symbol_profiles,
+    term_link_symbol_layers,
+    term_point_symbol_layers,
+)
 
 RIDGE_CLASS_LABELS = {
     "major": {"ko": "대간·정맥", "en": "Daegan+Jeongmaek"},
@@ -1148,7 +1159,14 @@ class FengShuiAnalyzer:
 
                 total_score = self._profile_weighted_score(indicators, profile)
                 confidence = self._profile_confidence(indicators, profile)
-                note = self._explain_top_factors(indicators, profile)
+                principle_records = build_principle_records(
+                    indicators=indicators,
+                    dem_metrics=dem_metrics,
+                    water_distance=water_distance,
+                )
+                principle_note = build_principle_note(principle_records)
+                principle_summary = build_principle_summary(principle_records)
+                weight_note = self._explain_top_factors(indicators, profile)
                 reason_ko = self._compose_site_reason(
                     profile_key=profile_key,
                     context=context,
@@ -1159,14 +1177,15 @@ class FengShuiAnalyzer:
                     slope_value=slope_value,
                     aspect_value=aspect_value,
                     total_score=total_score,
-                    note=note,
+                    principle_summary=principle_summary,
+                    weight_note=weight_note,
                 )
 
                 feature["fs_culture"] = context["culture_key"]
                 feature["fs_period"] = context["period_key"]
                 feature["fs_model"] = profile_key
                 feature["fs_conf"] = confidence
-                feature["fs_note"] = note
+                feature["fs_note"] = principle_note
                 feature["fs_reason"] = reason_ko
                 feature["fs_water_m"] = water_distance
                 feature["fs_slope"] = indicators["slope"]
@@ -2536,41 +2555,15 @@ class FengShuiAnalyzer:
         categories = []
         display_language = label_language if label_language in ("ko", "en") else "ko"
         for term_id, style in style_map.items():
-            fill_color, size, stroke_color, stroke_width = style
-            if term_id == "hyeol":
-                size_scale = 0.92
-                opacity = 0.95
-            elif term_id == "myeongdang":
-                size_scale = 0.86
-                opacity = 0.88
-            else:
-                size_scale = 0.70
-                opacity = 0.68
-            symbol = QgsMarkerSymbol.createSimple(
-                {
-                    "name": "circle",
-                    "color": fill_color,
-                    "size": str(max(1.8, float(size) * size_scale)),
-                    "outline_color": stroke_color,
-                    "outline_width": str(max(0.35, float(stroke_width) * 0.75)),
-                }
-            )
-            symbol.setOpacity(opacity)
+            symbol = self._build_stacked_marker_symbol(term_point_symbol_layers(term_id, style))
             categories.append(
                 QgsRendererCategory(term_id, symbol, term_label(term_id, display_language))
             )
 
         renderer = QgsCategorizedSymbolRenderer("term_id", categories)
-        fallback = QgsMarkerSymbol.createSimple(
-            {
-                "name": "circle",
-                "color": "#cccccc",
-                "size": "2.1",
-                "outline_color": "#555555",
-                "outline_width": "0.35",
-            }
+        fallback = self._build_stacked_marker_symbol(
+            term_point_symbol_layers("default", ("#b9b9b9", 3.0, "#5c5c5c", 0.45))
         )
-        fallback.setOpacity(0.60)
         renderer.setSourceSymbol(fallback)
         term_layer.setRenderer(renderer)
         term_layer.triggerRepaint()
@@ -2580,32 +2573,15 @@ class FengShuiAnalyzer:
         categories = []
         display_language = label_language if label_language in ("ko", "en") else "ko"
         for term_id, style in style_map.items():
-            color, width = style
-            symbol = QgsLineSymbol.createSimple(
-                {
-                    "line_color": color,
-                    "line_width": str(max(0.38, float(width) * 0.42)),
-                    "line_style": "solid",
-                    "capstyle": "round",
-                    "joinstyle": "round",
-                }
-            )
-            symbol.setOpacity(0.32)
+            symbol = self._build_stacked_line_symbol(term_link_symbol_layers(term_id, style))
             categories.append(
                 QgsRendererCategory(term_id, symbol, term_label(term_id, display_language))
             )
 
         renderer = QgsCategorizedSymbolRenderer("term_id", categories)
-        default_symbol = QgsLineSymbol.createSimple(
-            {
-                "line_color": "#777777",
-                "line_width": "0.50",
-                "line_style": "solid",
-                "capstyle": "round",
-                "joinstyle": "round",
-            }
+        default_symbol = self._build_stacked_line_symbol(
+            term_link_symbol_layers("default", ("#777777", 0.9))
         )
-        default_symbol.setOpacity(0.20)
         renderer.setSourceSymbol(default_symbol)
         link_layer.setRenderer(renderer)
         link_layer.triggerRepaint()
@@ -2877,35 +2853,16 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def style_hydro_network(hydro_layer):
-        class_styles = {
-            "main": ("#0b3d91", 1.7, 0.62),
-            "secondary": ("#1456b8", 1.35, 0.54),
-            "branch": ("#2b7bd8", 1.0, 0.44),
-            "minor": ("#63a5ff", 0.8, 0.34),
-        }
+        class_styles = hydro_symbol_profiles()
         categories = []
-        for class_id, (color, width, opacity) in class_styles.items():
-            symbol = QgsLineSymbol.createSimple(
-                {
-                    "line_color": color,
-                    "line_width": str(width),
-                    "line_style": "solid",
-                    "capstyle": "round",
-                    "joinstyle": "round",
-                }
-            )
-            symbol.setOpacity(opacity)
+        for class_id, spec in class_styles.items():
+            symbol = FengShuiAnalyzer._build_stacked_line_symbol(spec.get("layers", []))
             categories.append(QgsRendererCategory(class_id, symbol, class_id))
 
         renderer = QgsCategorizedSymbolRenderer("stream_class", categories)
-        fallback = QgsLineSymbol.createSimple(
-            {
-                "line_color": "#5f93d2",
-                "line_width": "0.6",
-                "line_style": "solid",
-            }
+        fallback = FengShuiAnalyzer._build_stacked_line_symbol(
+            hydro_symbol_profiles()["minor"].get("layers", [])
         )
-        fallback.setOpacity(0.26)
         renderer.setSourceSymbol(fallback)
         hydro_layer.setRenderer(renderer)
         hydro_layer.triggerRepaint()
@@ -3205,22 +3162,10 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def style_ridge_network(ridge_layer):
-        class_styles = {
-            "major": ("#22302e", 1.55, 0.78),
-            "minor": ("#54615f", 0.65, 0.24),
-        }
+        class_styles = ridge_symbol_profiles()
         categories = []
-        for class_id, (color, width, opacity) in class_styles.items():
-            symbol = QgsLineSymbol.createSimple(
-                {
-                    "line_color": color,
-                    "line_width": str(width),
-                    "line_style": "solid",
-                    "capstyle": "round",
-                    "joinstyle": "round",
-                }
-            )
-            symbol.setOpacity(opacity)
+        for class_id, spec in class_styles.items():
+            symbol = FengShuiAnalyzer._build_stacked_line_symbol(spec.get("layers", []))
             categories.append(
                 QgsRendererCategory(
                     class_id,
@@ -3230,17 +3175,76 @@ class FengShuiAnalyzer:
             )
 
         renderer = QgsCategorizedSymbolRenderer("ridge_class", categories)
-        fallback = QgsLineSymbol.createSimple(
-            {
-                "line_color": "#3d3d3d",
-                "line_width": "0.70",
-                "line_style": "solid",
-            }
+        fallback = FengShuiAnalyzer._build_stacked_line_symbol(
+            ridge_symbol_profiles()["minor"].get("layers", [])
         )
-        fallback.setOpacity(0.25)
         renderer.setSourceSymbol(fallback)
         ridge_layer.setRenderer(renderer)
         ridge_layer.triggerRepaint()
+
+    @staticmethod
+    def _build_stacked_line_symbol(layer_specs):
+        specs = list(layer_specs or [])
+        if not specs:
+            specs = [{"color": "110,110,110,180", "width": 0.8}]
+        first = specs[0]
+        symbol = QgsLineSymbol.createSimple(
+            {
+                "line_color": str(first.get("color", "110,110,110,180")),
+                "line_width": str(max(0.12, float(first.get("width", 0.8)))),
+                "line_style": str(first.get("line_style", "solid")),
+                "capstyle": str(first.get("capstyle", "round")),
+                "joinstyle": str(first.get("joinstyle", "round")),
+            }
+        )
+        for spec in specs[1:]:
+            layer_symbol = QgsLineSymbol.createSimple(
+                {
+                    "line_color": str(spec.get("color", "110,110,110,180")),
+                    "line_width": str(max(0.12, float(spec.get("width", 0.8)))),
+                    "line_style": str(spec.get("line_style", "solid")),
+                    "capstyle": str(spec.get("capstyle", "round")),
+                    "joinstyle": str(spec.get("joinstyle", "round")),
+                }
+            )
+            symbol.appendSymbolLayer(layer_symbol.symbolLayer(0).clone())
+        return symbol
+
+    @staticmethod
+    def _build_stacked_marker_symbol(layer_specs):
+        specs = list(layer_specs or [])
+        if not specs:
+            specs = [
+                {
+                    "name": "circle",
+                    "color": "180,180,180,200",
+                    "size": 2.5,
+                    "outline_color": "80,80,80,180",
+                    "outline_width": 0.3,
+                }
+            ]
+        first = specs[0]
+        symbol = QgsMarkerSymbol.createSimple(
+            {
+                "name": str(first.get("name", "circle")),
+                "color": str(first.get("color", "180,180,180,200")),
+                "size": str(max(0.4, float(first.get("size", 2.5)))),
+                "outline_color": str(first.get("outline_color", "80,80,80,180")),
+                "outline_width": str(max(0.0, float(first.get("outline_width", 0.3)))),
+            }
+        )
+        for spec in specs[1:]:
+            layer_symbol = QgsMarkerSymbol.createSimple(
+                {
+                    "name": str(spec.get("name", "circle")),
+                    "color": str(spec.get("color", "180,180,180,200")),
+                    "size": str(max(0.4, float(spec.get("size", 2.5)))),
+                    "outline_color": str(spec.get("outline_color", "80,80,80,180")),
+                    "outline_width": str(max(0.0, float(spec.get("outline_width", 0.3)))),
+                }
+            )
+            symbol.appendSymbolLayer(layer_symbol.symbolLayer(0).clone())
+        return symbol
 
     def _ridge_spacing(self, dem_layer, dem_step):
         rules = self._rules_section("ridge_network")
@@ -4121,7 +4125,8 @@ class FengShuiAnalyzer:
         slope_value,
         aspect_value,
         total_score,
-        note,
+        principle_summary,
+        weight_note,
     ):
         contributions = self._indicator_contributions(indicators, profile)
         top_rows = contributions[:3]
@@ -4161,34 +4166,26 @@ class FengShuiAnalyzer:
             dem_metrics.get("large_tpi_norm"),
         )
         metric_text = (
-            f"형국 {self._fmt_num(dem_metrics.get('form_score'), 3)}, "
-            f"종심 {self._fmt_num(dem_metrics.get('long_score'), 3)}, "
-            f"수렴습윤 {self._fmt_num(dem_metrics.get('dem_water_score'), 3)}, "
             f"수렴도 {self._fmt_num(dem_metrics.get('convergence'), 3)}, "
-            f"TPI {self._fmt_num(dem_metrics.get('tpi_norm'), 4)}"
-            f"({self._tpi_hint(dem_metrics.get('tpi_norm'))}), "
-            f"사신사 {self._fmt_num(dem_metrics.get('sashinsa_score'), 3)}"
-            f"({self._sashinsa_hint(dem_metrics.get('sashinsa_score'))}), "
-            f"장풍 {self._fmt_num(dem_metrics.get('enclosure_index'), 3)}"
-            f"({self._enclosure_hint(dem_metrics.get('enclosure_index'))}), "
             f"대TPI {self._fmt_num(dem_metrics.get('large_tpi_norm'), 4)}({tpi_class}), "
             f"표면조도 {self._fmt_num(dem_metrics.get('roughness'), 3)}, "
             f"절개깊이 {self._fmt_num(dem_metrics.get('cut_depth'), 3)}"
         )
         context_text = (
-            f"컨텍스트={context.get('culture_key')}/{context.get('period_key')}, "
-            f"모델={profile_key}"
+            f"보정층=컨텍스트 {context.get('culture_key')}/{context.get('period_key')}, "
+            f"프로파일 {profile_key}"
         )
         paper_evidence_summary = self._paper_evidence_summary(profile)
         parts = [
+            f"원리판독: {principle_summary}" if principle_summary else "",
             f"적합도 {score_text} ({grade}, {percent_text}/100 환산)",
-            f"상위기여: {top_text}" if top_text else "상위기여: n/a",
+            f"가중기여: {top_text}" if top_text else "가중기여: n/a",
             f"보완요인: {weak_text}" if weak_text else "보완요인: n/a",
             f"현장값: 경사 {slope_text}, 향 {aspect_text}, 수계거리 {water_text} (목표 {target_text}±{sigma_text}m)",
-            f"세부지표: {metric_text}",
+            f"보조지형: {metric_text}",
             context_text,
-            f"가중요약: {note}" if note else "",
-            f"논문근거: {paper_evidence_summary}" if paper_evidence_summary else "",
+            f"프로파일 가중요약: {weight_note}" if weight_note else "",
+            f"문헌검증: {paper_evidence_summary}" if paper_evidence_summary else "",
         ]
         reason = " | ".join(part for part in parts if part)
         if len(reason) > 1000:
