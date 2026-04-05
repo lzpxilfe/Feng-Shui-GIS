@@ -110,6 +110,7 @@ class ServiceContractTests(unittest.TestCase):
             manifest=manifest,
             context={"culture": "korea"},
             term_layer_names=["t1"],
+            field_layer_names=["f1", "f2"],
             link_layer_names=["l1"],
             metrics={},
             report={},
@@ -119,6 +120,7 @@ class ServiceContractTests(unittest.TestCase):
         self.assertIn("top_changes", asdict(comparison_output))
         self.assertIn("calibration_applied", asdict(calibration_output))
         self.assertIn("term_layer_names", asdict(term_output))
+        self.assertIn("field_layer_names", asdict(term_output))
 
 
 if __name__ == "__main__":

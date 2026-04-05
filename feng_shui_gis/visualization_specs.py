@@ -246,3 +246,71 @@ def term_point_symbol_layers(term_id, base_style):
         body_alpha=0.70,
         core_alpha=0.92,
     )
+
+
+def hyeol_field_symbol_layers(base_color="#c86a52"):
+    edge_color = mix_hex(base_color, "#41211a", 0.46)
+    glow_color = mix_hex(base_color, "#fff3dd", 0.58)
+    return [
+        {
+            "color": rgba_from_hex(glow_color, 0.08),
+            "outline_color": rgba_from_hex(edge_color, 0.18),
+            "outline_width": 1.6,
+        },
+        {
+            "color": rgba_from_hex(base_color, 0.20),
+            "outline_color": rgba_from_hex(edge_color, 0.44),
+            "outline_width": 0.9,
+        },
+        {
+            "color": rgba_from_hex(mix_hex(base_color, "#ffd7b5", 0.36), 0.06),
+            "outline_color": rgba_from_hex(glow_color, 0.56),
+            "outline_width": 0.32,
+        },
+    ]
+
+
+def support_field_symbol_layers(term_id):
+    emphasis = str(term_id or "")
+    if emphasis == "sashinsa":
+        base_color = "#5d8b63"
+        edge_color = mix_hex(base_color, "#18301d", 0.50)
+        glow_color = mix_hex(base_color, "#eef7e6", 0.60)
+        return [
+            {
+                "color": rgba_from_hex(glow_color, 0.06),
+                "outline_color": rgba_from_hex(edge_color, 0.12),
+                "outline_width": 1.8,
+            },
+            {
+                "color": rgba_from_hex(base_color, 0.13),
+                "outline_color": rgba_from_hex(edge_color, 0.28),
+                "outline_width": 0.85,
+            },
+            {
+                "color": rgba_from_hex(mix_hex(base_color, "#d9ead1", 0.34), 0.04),
+                "outline_color": rgba_from_hex(glow_color, 0.42),
+                "outline_width": 0.26,
+            },
+        ]
+
+    base_color = "#b9844d"
+    edge_color = mix_hex(base_color, "#3d2414", 0.46)
+    glow_color = mix_hex(base_color, "#fff0db", 0.54)
+    return [
+        {
+            "color": rgba_from_hex(glow_color, 0.07),
+            "outline_color": rgba_from_hex(edge_color, 0.14),
+            "outline_width": 1.4,
+        },
+        {
+            "color": rgba_from_hex(base_color, 0.15),
+            "outline_color": rgba_from_hex(edge_color, 0.34),
+            "outline_width": 0.72,
+        },
+        {
+            "color": rgba_from_hex(mix_hex(base_color, "#ffdcb2", 0.34), 0.05),
+            "outline_color": rgba_from_hex(glow_color, 0.50),
+            "outline_width": 0.24,
+        },
+    ]

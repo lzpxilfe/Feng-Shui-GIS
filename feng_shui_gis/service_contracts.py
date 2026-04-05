@@ -173,6 +173,7 @@ class TermExtractionOutput:
     manifest: RunManifest
     context: Dict[str, str]
     term_layer_names: List[str]
+    field_layer_names: List[str]
     link_layer_names: List[str]
     metrics: Dict[str, Any]
     report: Dict[str, Any]

@@ -284,6 +284,8 @@ def run_term_extraction_service(
                 hydro_layer = None
 
         terms_layer = None
+        hyeol_field_layer = None
+        support_field_layer = None
         line_layer = None
         if request.include_terms:
             terms_layer = analyzer.extract_terms(
@@ -303,6 +305,30 @@ def run_term_extraction_service(
                         request.label_language,
                     )
                 )
+                hyeol_field_layer = analyzer.build_hyeol_field_layer(
+                    terms_layer,
+                    label_language=request.label_language,
+                )
+                if hyeol_field_layer is not None:
+                    hyeol_field_layer.setName(
+                        plugin._output_layer_name(
+                            request.dem_layer.name(),
+                            "hyeol_fields",
+                            request.label_language,
+                        )
+                    )
+                support_field_layer = analyzer.build_support_field_layer(
+                    terms_layer,
+                    label_language=request.label_language,
+                )
+                if support_field_layer is not None:
+                    support_field_layer.setName(
+                        plugin._output_layer_name(
+                            request.dem_layer.name(),
+                            "support_fields",
+                            request.label_language,
+                        )
+                    )
                 line_layer = analyzer.build_term_links(
                     terms_layer,
                     label_language=request.label_language,
@@ -319,6 +345,13 @@ def run_term_extraction_service(
                     terms_layer,
                     label_language=request.label_language,
                 )
+                if hyeol_field_layer is not None:
+                    analyzer.style_hyeol_fields(hyeol_field_layer)
+                if support_field_layer is not None:
+                    analyzer.style_support_fields(
+                        support_field_layer,
+                        label_language=request.label_language,
+                    )
                 if line_layer is not None:
                     analyzer.style_term_links(
                         line_layer,
@@ -330,6 +363,10 @@ def run_term_extraction_service(
             layers_top_to_bottom.append(terms_layer)
         if request.include_terms and line_layer:
             layers_top_to_bottom.append(line_layer)
+        if request.include_terms and hyeol_field_layer:
+            layers_top_to_bottom.append(hyeol_field_layer)
+        if request.include_terms and support_field_layer:
+            layers_top_to_bottom.append(support_field_layer)
         if hydro_layer:
             layers_top_to_bottom.append(hydro_layer)
         layers_top_to_bottom.append(ridge_layer)
@@ -351,14 +388,30 @@ def run_term_extraction_service(
         created = [f"{ridge_layer.name()} ({ridge_layer.featureCount()})"]
         if hydro_layer:
             created.insert(0, f"{hydro_layer.name()} ({hydro_layer.featureCount()})")
-        if request.include_terms and line_layer and terms_layer:
+        if request.include_terms and line_layer:
             created.insert(0, f"{line_layer.name()} ({line_layer.featureCount()})")
+        if request.include_terms and hyeol_field_layer:
+            created.insert(
+                0,
+                f"{hyeol_field_layer.name()} ({hyeol_field_layer.featureCount()})",
+            )
+        if request.include_terms and support_field_layer:
+            created.insert(
+                0,
+                f"{support_field_layer.name()} ({support_field_layer.featureCount()})",
+            )
+        if request.include_terms and terms_layer:
             created.insert(0, f"{terms_layer.name()} ({terms_layer.featureCount()})")
 
         return {
             "ok": True,
             "manifest": manifest.as_dict(),
             "created_layers": created,
+            "field_layer_names": [
+                layer.name()
+                for layer in (hyeol_field_layer, support_field_layer)
+                if layer is not None
+            ],
             "mountain_updated": mountain_updated,
         }
     except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:

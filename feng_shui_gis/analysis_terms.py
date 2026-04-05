@@ -83,6 +83,52 @@ def adjusted_term_score(score, *, term_id, term_bias, term_min_score, mandatory=
     return adjusted_score
 
 
+def _populate_term_feature(
+    feature,
+    *,
+    term_id,
+    term_name,
+    parent_id,
+    rank,
+    score,
+    elev,
+    note,
+    base_sc=None,
+    delta_rel=None,
+    target_rel=None,
+    fit_sc=None,
+    radius_m=None,
+    azimuth=None,
+    mode=None,
+    relief_m=None,
+    term_ko=None,
+    culture=None,
+    period=None,
+    profile=None,
+    reason_ko=None,
+):
+    feature["term_id"] = term_id
+    feature["term_ko"] = term_ko if term_ko else term_id
+    feature["term_name"] = term_name
+    feature["culture"] = culture if culture else ""
+    feature["period"] = period if period else ""
+    feature["profile"] = profile if profile else ""
+    feature["parent_id"] = parent_id
+    feature["rank"] = rank
+    feature["score"] = score
+    feature["elev"] = elev
+    feature["base_sc"] = base_sc
+    feature["delta_rel"] = delta_rel
+    feature["target_rel"] = target_rel
+    feature["fit_sc"] = fit_sc
+    feature["radius_m"] = radius_m
+    feature["azimuth"] = azimuth
+    feature["mode"] = mode if mode else ""
+    feature["relief_m"] = relief_m
+    feature["note"] = note
+    feature["reason_ko"] = reason_ko if reason_ko else ""
+
+
 def append_term_feature(
     layer,
     *,
@@ -110,25 +156,80 @@ def append_term_feature(
 ):
     feature = QgsFeature(layer.fields())
     feature.setGeometry(QgsGeometry.fromPointXY(point))
-    feature["term_id"] = term_id
-    feature["term_ko"] = term_ko if term_ko else term_id
-    feature["term_name"] = term_name
-    feature["culture"] = culture if culture else ""
-    feature["period"] = period if period else ""
-    feature["profile"] = profile if profile else ""
-    feature["parent_id"] = parent_id
-    feature["rank"] = rank
-    feature["score"] = score
-    feature["elev"] = elev
-    feature["base_sc"] = base_sc
-    feature["delta_rel"] = delta_rel
-    feature["target_rel"] = target_rel
-    feature["fit_sc"] = fit_sc
-    feature["radius_m"] = radius_m
-    feature["azimuth"] = azimuth
-    feature["mode"] = mode if mode else ""
-    feature["relief_m"] = relief_m
-    feature["note"] = note
-    feature["reason_ko"] = reason_ko if reason_ko else ""
+    _populate_term_feature(
+        feature,
+        term_id=term_id,
+        term_name=term_name,
+        parent_id=parent_id,
+        rank=rank,
+        score=score,
+        elev=elev,
+        note=note,
+        base_sc=base_sc,
+        delta_rel=delta_rel,
+        target_rel=target_rel,
+        fit_sc=fit_sc,
+        radius_m=radius_m,
+        azimuth=azimuth,
+        mode=mode,
+        relief_m=relief_m,
+        term_ko=term_ko,
+        culture=culture,
+        period=period,
+        profile=profile,
+        reason_ko=reason_ko,
+    )
     layer.dataProvider().addFeature(feature)
 
+
+def append_term_polygon_feature(
+    layer,
+    *,
+    ring_points,
+    term_id,
+    term_name,
+    parent_id,
+    rank,
+    score,
+    elev,
+    note,
+    base_sc=None,
+    delta_rel=None,
+    target_rel=None,
+    fit_sc=None,
+    radius_m=None,
+    azimuth=None,
+    mode=None,
+    relief_m=None,
+    term_ko=None,
+    culture=None,
+    period=None,
+    profile=None,
+    reason_ko=None,
+):
+    feature = QgsFeature(layer.fields())
+    feature.setGeometry(QgsGeometry.fromPolygonXY([list(ring_points)]))
+    _populate_term_feature(
+        feature,
+        term_id=term_id,
+        term_name=term_name,
+        parent_id=parent_id,
+        rank=rank,
+        score=score,
+        elev=elev,
+        note=note,
+        base_sc=base_sc,
+        delta_rel=delta_rel,
+        target_rel=target_rel,
+        fit_sc=fit_sc,
+        radius_m=radius_m,
+        azimuth=azimuth,
+        mode=mode,
+        relief_m=relief_m,
+        term_ko=term_ko,
+        culture=culture,
+        period=period,
+        profile=profile,
+        reason_ko=reason_ko,
+    )
+    layer.dataProvider().addFeature(feature)

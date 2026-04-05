@@ -23,6 +23,8 @@ This is now applied to:
 - hydro hierarchy
 - structural term links
 - term points as halo/body/core markers
+- hyeol fields as translucent held-basin polygons
+- sashinsa and jangpung as translucent enclosure fields
 
 ## Why This Matters
 
@@ -38,16 +40,14 @@ If the map only shows isolated points and uniform strokes, much of the logic dis
 
 ## Next Visual Steps
 
-The next upgrades should move from point-and-line emphasis toward field visualization:
+The next upgrades should continue moving from point-and-line emphasis toward dynamic field visualization:
 
-1. `혈장 polygon`
-   show the held/open basin around hyeol rather than only the central point
-2. `사신사 enclosure fields`
-   display left-right-back-front support as translucent directional lobes
-3. `ridge thickness from hierarchy`
+1. `ridge thickness from hierarchy`
    vary ribbon width from rank, continuity, and relief
-4. `hydro pulsation from accumulation`
+2. `hydro pulsation from accumulation`
    vary flow ribbon width from drainage support and confluence
+3. `field blending and masks`
+   soften overlaps between hyeol field, jangpung field, and sashinsa field
 
 ## Design Rule
 

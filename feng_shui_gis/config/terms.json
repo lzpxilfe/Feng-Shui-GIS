@@ -2,6 +2,8 @@
   "schema_version": "1.0.0",
   "term_labels": {
     "hyeol": { "en": "Hyeol", "ko": "혈" },
+    "jangpung": { "en": "Jangpung Field", "ko": "장풍장" },
+    "sashinsa": { "en": "Sashinsa Field", "ko": "사신사장" },
     "myeongdang": { "en": "Myeongdang", "ko": "명당" },
     "jusan": { "en": "Jusan", "ko": "주산" },
     "jojongsan": { "en": "Jojongsan", "ko": "조종산" },

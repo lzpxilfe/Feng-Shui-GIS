@@ -1626,6 +1626,8 @@
       "ko": [
         "<h3>결과 심볼 안내</h3>",
         "<p>모든 주요 선은 단일 스트로크가 아니라 <b>후광-몸통-중심맥</b>의 다층 리본으로 그려집니다. 산줄기는 등뼈처럼, 수계는 수맥처럼 읽히도록 설계했습니다.</p>",
+        "<p>혈은 중심점만 찍지 않고, 전면으로 열리고 좌우로 감싸는 <b>반투명 혈장 polygon</b>을 함께 그립니다.</p>",
+        "<p>사신사와 장풍은 가는 연결선보다 먼저 읽히도록, 혈 바깥에 넓게 감도는 <b>감쌈장(field)</b>으로 겹쳐 표시합니다.</p>",
         "<p><b>혈/용어 중심점</b> (후광 + 몸체 + 중심핵)</p>",
         "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
         "<tr><th>용어</th><th>의미</th><th>기본색</th><th>기준크기</th></tr>",
@@ -1653,6 +1655,8 @@
       "en": [
         "<h3>Result Symbology</h3>",
         "<p>Major lines are rendered as layered ribbons, not single strokes: <b>aura + body + inner core</b>. Ridges should read like a spine, and water like flowing vessels.</p>",
+        "<p>Hyeol is rendered not only as a point marker but also as a translucent held-basin polygon that opens forward and gathers at the sides.</p>",
+        "<p>Sashinsa and jangpung are rendered as enclosure fields rather than thin connective lines, so the embrace reads before the diagram.</p>",
         "<p><b>Term centers</b> (halo + body + core)</p>",
         "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">",
         "<tr><th>Term</th><th>Meaning</th><th>Base Color</th><th>Base Size</th></tr>",

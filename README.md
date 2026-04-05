@@ -133,6 +133,8 @@ flowchart TD
 ### 🎨 Visualization upgrade
 
 - ridge / hydro / term / link 심볼을 다층 리본/핵 구조로 재정의
+- 혈을 점핀으로만 두지 않고 `혈장 polygon`으로 함께 보여줌
+- 사신사와 장풍을 구조선보다 먼저 읽히는 `반투명 감쌈장(field)`으로 겹쳐 표현
 - GitHub README용 문서와 QGIS 도움말 텍스트도 같이 정리
 
 ---

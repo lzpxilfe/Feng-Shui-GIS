@@ -9,6 +9,7 @@ from qgis.core import (
     QgsCategorizedSymbolRenderer,
     QgsFeature,
     QgsField,
+    QgsFillSymbol,
     QgsFields,
     QgsGeometry,
     QgsLineSymbol,
@@ -20,6 +21,7 @@ from qgis.core import (
     QgsProject,
     QgsRasterLayer,
     QgsRendererCategory,
+    QgsSingleSymbolRenderer,
     QgsVectorLayer,
     edit,
 )
@@ -99,6 +101,11 @@ from .analysis_hyeol import (
     grid_points,
     recommended_hyeol_count,
 )
+from .analysis_hyeol_fields import hyeol_field_shape
+from .analysis_support_fields import (
+    field_replaced_link_types,
+    support_field_shapes,
+)
 from .analysis_scoring import (
     explain_top_factors,
     indicator_contributions,
@@ -124,6 +131,7 @@ from .analysis_terrain_rules import (
 from .analysis_terms import (
     adjusted_term_score,
     append_term_feature,
+    append_term_polygon_feature,
     term_layer_fields,
     term_runtime_state,
 )
@@ -163,8 +171,10 @@ from .profile_catalog import (
 )
 from .reference_catalog import reference_display_text
 from .visualization_specs import (
+    hyeol_field_symbol_layers,
     hydro_symbol_profiles,
     ridge_symbol_profiles,
+    support_field_symbol_layers,
     term_link_symbol_layers,
     term_point_symbol_layers,
 )
@@ -2291,6 +2301,265 @@ class FengShuiAnalyzer:
         term_layer.updateExtents()
         return term_layer
 
+    def build_hyeol_field_layer(self, term_layer, label_language="ko"):
+        if term_layer is None:
+            return None
+
+        layer_name = f"{term_layer.name()}_hyeol_field"
+        field_layer = QgsVectorLayer(
+            f"Polygon?crs={term_layer.crs().authid()}",
+            layer_name,
+            "memory",
+        )
+        data = field_layer.dataProvider()
+        data.addAttributes(term_layer_fields())
+        field_layer.updateFields()
+
+        grouped_terms = defaultdict(dict)
+        for feature in term_layer.getFeatures():
+            term_id = str(feature["term_id"] or "").strip()
+            parent_id = feature["parent_id"]
+            if term_id == "hyeol":
+                grouped_terms[parent_id]["hyeol"] = feature
+            elif term_id == "myeongdang":
+                grouped_terms[parent_id]["myeongdang"] = feature
+
+        display_language = label_language if label_language in ("ko", "en") else "ko"
+        field_name = "혈장" if display_language == "ko" else "Hyeol Field"
+        for parent_id in sorted(grouped_terms):
+            terms = grouped_terms[parent_id]
+            hyeol_feature = terms.get("hyeol")
+            if hyeol_feature is None:
+                continue
+            geometry = hyeol_feature.geometry()
+            if geometry is None or geometry.isEmpty():
+                continue
+            center_point = geometry.asPoint()
+
+            myeongdang_feature = terms.get("myeongdang")
+            front_point = None
+            azimuth = self._to_float(hyeol_feature["azimuth"])
+            radius_m = self._to_float(hyeol_feature["radius_m"])
+            if myeongdang_feature is not None:
+                myeongdang_geometry = myeongdang_feature.geometry()
+                if myeongdang_geometry is not None and not myeongdang_geometry.isEmpty():
+                    front_point = myeongdang_geometry.asPoint()
+                azimuth = self._to_float(myeongdang_feature["azimuth"]) or azimuth
+                radius_m = self._to_float(myeongdang_feature["radius_m"]) or radius_m
+
+            relief_m = self._to_float(hyeol_feature["relief_m"])
+            score = self._to_float(hyeol_feature["score"])
+            shape = hyeol_field_shape(
+                center_point,
+                front_point=front_point,
+                radius_m=radius_m,
+                relief_m=relief_m,
+                score=score,
+                azimuth=azimuth,
+            )
+            if not shape:
+                continue
+
+            ring_points = [QgsPointXY(x_value, y_value) for x_value, y_value in shape["ring"]]
+            note = (
+                f"혈장 폭 {shape['field_width']:.1f}m"
+                if display_language == "ko"
+                else f"field width {shape['field_width']:.1f}m"
+            )
+            reason_prefix = str(hyeol_feature["reason_ko"] or "").strip()
+            if display_language == "ko":
+                field_reason = (
+                    f"{reason_prefix} 혈 중심점을 점이 아니라 전면으로 열리고 좌우로 감싸는 "
+                    f"혈장 면으로 펼쳤습니다. 전면 길이 {shape['front_length']:.1f}m, "
+                    f"배후 길이 {shape['rear_length']:.1f}m, 폭 {shape['field_width']:.1f}m."
+                ).strip()
+            else:
+                field_reason = (
+                    f"{reason_prefix} Rendered as a held hyeol field rather than a pin. "
+                    f"Front reach {shape['front_length']:.1f} m, rear support "
+                    f"{shape['rear_length']:.1f} m, width {shape['field_width']:.1f} m."
+                ).strip()
+            append_term_polygon_feature(
+                layer=field_layer,
+                ring_points=ring_points,
+                term_id="hyeol",
+                term_name=field_name,
+                term_ko="혈장",
+                culture=hyeol_feature["culture"],
+                period=hyeol_feature["period"],
+                profile=hyeol_feature["profile"],
+                parent_id=parent_id,
+                rank=hyeol_feature["rank"],
+                score=score,
+                elev=self._to_float(hyeol_feature["elev"]),
+                note=note,
+                base_sc=self._to_float(hyeol_feature["base_sc"]),
+                delta_rel=self._to_float(hyeol_feature["delta_rel"]),
+                target_rel=self._to_float(hyeol_feature["target_rel"]),
+                fit_sc=self._to_float(hyeol_feature["fit_sc"]),
+                radius_m=shape["front_length"],
+                azimuth=shape["azimuth"],
+                mode="field",
+                relief_m=relief_m,
+                reason_ko=field_reason,
+            )
+
+        field_layer.updateExtents()
+        if field_layer.featureCount() <= 0:
+            return None
+        return field_layer
+
+    def build_support_field_layer(self, term_layer, label_language="ko"):
+        if term_layer is None:
+            return None
+
+        layer_name = f"{term_layer.name()}_support_fields"
+        field_layer = QgsVectorLayer(
+            f"Polygon?crs={term_layer.crs().authid()}",
+            layer_name,
+            "memory",
+        )
+        data = field_layer.dataProvider()
+        data.addAttributes(term_layer_fields())
+        field_layer.updateFields()
+
+        grouped_terms = defaultdict(dict)
+        for feature in term_layer.getFeatures():
+            term_id = str(feature["term_id"] or "").strip()
+            parent_id = feature["parent_id"]
+            if term_id and parent_id is not None:
+                grouped_terms[parent_id][term_id] = feature
+
+        display_language = label_language if label_language in ("ko", "en") else "ko"
+        for parent_id in sorted(grouped_terms):
+            terms = grouped_terms[parent_id]
+            hyeol_feature = terms.get("hyeol")
+            if hyeol_feature is None:
+                continue
+            geometry = hyeol_feature.geometry()
+            if geometry is None or geometry.isEmpty():
+                continue
+            center_point = geometry.asPoint()
+
+            front_feature = terms.get("ansan") or terms.get("myeongdang")
+            rear_feature = terms.get("jusan") or terms.get("dunoe") or terms.get("jojongsan")
+            left_inner_feature = terms.get("naecheongnyong")
+            right_inner_feature = terms.get("naebaekho")
+            left_outer_feature = terms.get("oecheongnyong") or left_inner_feature
+            right_outer_feature = terms.get("oebaekho") or right_inner_feature
+
+            def _feature_point(feature):
+                if feature is None:
+                    return None
+                feature_geometry = feature.geometry()
+                if feature_geometry is None or feature_geometry.isEmpty():
+                    return None
+                return feature_geometry.asPoint()
+
+            score_nodes = [
+                feature
+                for feature in (
+                    hyeol_feature,
+                    front_feature,
+                    rear_feature,
+                    left_inner_feature,
+                    right_inner_feature,
+                    left_outer_feature,
+                    right_outer_feature,
+                )
+                if feature is not None
+            ]
+            shapes = support_field_shapes(
+                center_point,
+                front_point=_feature_point(front_feature),
+                rear_point=_feature_point(rear_feature),
+                left_inner_point=_feature_point(left_inner_feature),
+                right_inner_point=_feature_point(right_inner_feature),
+                left_outer_point=_feature_point(left_outer_feature),
+                right_outer_point=_feature_point(right_outer_feature),
+                score=self._path_mean_score(score_nodes),
+                azimuth=(
+                    self._to_float(front_feature["azimuth"])
+                    if front_feature is not None
+                    else None
+                ),
+            )
+            if not shapes:
+                continue
+
+            culture = hyeol_feature["culture"]
+            period = hyeol_feature["period"]
+            profile = hyeol_feature["profile"]
+            rank_value = hyeol_feature["rank"]
+            elev = self._to_float(hyeol_feature["elev"])
+            base_sc = self._to_float(hyeol_feature["base_sc"])
+            relief_m = self._to_float(hyeol_feature["relief_m"])
+            score = self._path_mean_score(score_nodes)
+
+            for term_id in ("sashinsa", "jangpung"):
+                shape = shapes[term_id]
+                ring_points = [
+                    QgsPointXY(x_value, y_value) for x_value, y_value in shape["ring"]
+                ]
+                if display_language == "ko":
+                    note = f"{term_label_ko(term_id)} 폭 {shape['field_width']:.1f}m"
+                    if term_id == "sashinsa":
+                        reason_ko = (
+                            "주산과 청룡·백호, 전면 받침을 하나의 감쌈장으로 연결했습니다. "
+                            f"배후 {shape['rear_length']:.1f}m로 받치고 좌우 폭 {shape['field_width']:.1f}m로 "
+                            "감싸며, 전면은 좁게 남겨 사신사의 포옹 구조가 먼저 읽히도록 했습니다."
+                        )
+                    else:
+                        reason_ko = (
+                            "내청룡·내백호와 배후 받침을 중심으로 혈 바로 둘레의 장풍장을 만들었습니다. "
+                            f"배후 {shape['rear_length']:.1f}m, 전면 개구 {shape['front_length']:.1f}m, "
+                            f"좌우 폭 {shape['field_width']:.1f}m의 반투명 장입니다."
+                        )
+                else:
+                    note = f"{term_label(term_id, display_language)} width {shape['field_width']:.1f}m"
+                    if term_id == "sashinsa":
+                        reason_ko = (
+                            "Connected rear support, left-right guardians, and the frontal hold as a single enclosure field. "
+                            f"Rear reach {shape['rear_length']:.1f} m and width {shape['field_width']:.1f} m, "
+                            "with a narrowed front gate so the embrace stays legible."
+                        )
+                    else:
+                        reason_ko = (
+                            "Built an inner wind-holding field around the hyeol using the inner blue-dragon/white-tiger and rear support. "
+                            f"Rear reach {shape['rear_length']:.1f} m, front opening {shape['front_length']:.1f} m, "
+                            f"width {shape['field_width']:.1f} m."
+                        )
+
+                append_term_polygon_feature(
+                    layer=field_layer,
+                    ring_points=ring_points,
+                    term_id=term_id,
+                    term_name=term_label(term_id, display_language),
+                    term_ko=term_label_ko(term_id),
+                    culture=culture,
+                    period=period,
+                    profile=profile,
+                    parent_id=parent_id,
+                    rank=rank_value,
+                    score=score,
+                    elev=elev,
+                    note=note,
+                    base_sc=base_sc,
+                    delta_rel=None,
+                    target_rel=None,
+                    fit_sc=None,
+                    radius_m=max(shape["front_length"], shape["rear_length"]),
+                    azimuth=shape["azimuth"],
+                    mode="field",
+                    relief_m=relief_m,
+                    reason_ko=reason_ko,
+                )
+
+        field_layer.updateExtents()
+        if field_layer.featureCount() <= 0:
+            return None
+        return field_layer
+
     @staticmethod
     def _append_term_feature(
         layer,
@@ -2363,8 +2632,11 @@ class FengShuiAnalyzer:
             link_rules, "distinct_min_distance", 0.2, min_value=0.01
         )
         smooth_passes = self._rule_int(link_rules, "smooth_passes", 2, min_value=0)
+        replaced_link_types = field_replaced_link_types()
         for parent_id, terms in grouped.items():
             for spec in path_plan:
+                if spec["link_type"] in replaced_link_types:
+                    continue
                 nodes = []
                 points = []
                 missing = False
@@ -2567,6 +2839,26 @@ class FengShuiAnalyzer:
         renderer.setSourceSymbol(fallback)
         term_layer.setRenderer(renderer)
         term_layer.triggerRepaint()
+
+    def style_hyeol_fields(self, field_layer):
+        symbol = self._build_stacked_fill_symbol(hyeol_field_symbol_layers())
+        field_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+        field_layer.triggerRepaint()
+
+    def style_support_fields(self, field_layer, label_language="ko"):
+        categories = []
+        display_language = label_language if label_language in ("ko", "en") else "ko"
+        for term_id in ("sashinsa", "jangpung"):
+            symbol = self._build_stacked_fill_symbol(support_field_symbol_layers(term_id))
+            categories.append(
+                QgsRendererCategory(term_id, symbol, term_label(term_id, display_language))
+            )
+        renderer = QgsCategorizedSymbolRenderer("term_id", categories)
+        renderer.setSourceSymbol(
+            self._build_stacked_fill_symbol(support_field_symbol_layers("jangpung"))
+        )
+        field_layer.setRenderer(renderer)
+        field_layer.triggerRepaint()
 
     def style_term_links(self, link_layer, label_language="ko"):
         style_map = line_styles()
@@ -3241,6 +3533,40 @@ class FengShuiAnalyzer:
                     "size": str(max(0.4, float(spec.get("size", 2.5)))),
                     "outline_color": str(spec.get("outline_color", "80,80,80,180")),
                     "outline_width": str(max(0.0, float(spec.get("outline_width", 0.3)))),
+                }
+            )
+            symbol.appendSymbolLayer(layer_symbol.symbolLayer(0).clone())
+        return symbol
+
+    @staticmethod
+    def _build_stacked_fill_symbol(layer_specs):
+        specs = list(layer_specs or [])
+        if not specs:
+            specs = [
+                {
+                    "color": "200,120,90,40",
+                    "outline_color": "110,70,55,110",
+                    "outline_width": 0.8,
+                }
+            ]
+        first = specs[0]
+        symbol = QgsFillSymbol.createSimple(
+            {
+                "color": str(first.get("color", "200,120,90,40")),
+                "outline_color": str(first.get("outline_color", "110,70,55,110")),
+                "outline_width": str(max(0.0, float(first.get("outline_width", 0.8)))),
+                "style": str(first.get("style", "solid")),
+            }
+        )
+        for spec in specs[1:]:
+            layer_symbol = QgsFillSymbol.createSimple(
+                {
+                    "color": str(spec.get("color", "200,120,90,40")),
+                    "outline_color": str(spec.get("outline_color", "110,70,55,110")),
+                    "outline_width": str(
+                        max(0.0, float(spec.get("outline_width", 0.8)))
+                    ),
+                    "style": str(spec.get("style", "solid")),
                 }
             )
             symbol.appendSymbolLayer(layer_symbol.symbolLayer(0).clone())
