@@ -269,3 +269,13 @@ python3 tools/setup_study_case.py \
 ## 🔗 Repository
 
 - GitHub: [lzpxilfe/Feng-Shui-GIS](https://github.com/lzpxilfe/Feng-Shui-GIS)
+
+## Citation
+
+이 저장소가 연구, 수업, 현장 업무에 도움이 되었다면 GitHub의 **Cite this repository** 버튼으로 인용해 주세요.
+
+[![Cite this repository](https://img.shields.io/badge/Cite_this-repository-2ea44f?logo=github)](https://github.com/lzpxilfe/Feng-Shui-GIS)
+[![Star this repository](https://img.shields.io/github/stars/lzpxilfe/Feng-Shui-GIS?style=social)](https://github.com/lzpxilfe/Feng-Shui-GIS)
+
+인용 메타데이터는 [CITATION.cff](CITATION.cff)에 보관합니다.
+
