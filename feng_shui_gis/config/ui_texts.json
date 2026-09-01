@@ -209,6 +209,18 @@
       "ko": "English",
       "en": "English"
     },
+    "workflow_lang_zh": {
+      "ko": "중국어 간체",
+      "en": "Chinese (Simplified)"
+    },
+    "workflow_lang_zh_hant": {
+      "ko": "중국어 번체",
+      "en": "Chinese (Traditional)"
+    },
+    "workflow_lang_pinyin": {
+      "ko": "병음",
+      "en": "Pinyin"
+    },
     "workflow_summary_template": {
       "ko": "목적: {goal} | 현재 탭: {mode} | 모델: {profile} | 용어 언어: {lang} | 컨텍스트: {context_mode} | 산 이름(web): {mountain_mode}/{mountain_lang} | 준비도 {percent}%",
       "en": "Goal: {goal} | Tab: {mode} | Model: {profile} | Label language: {lang} | Context: {context_mode} | Mountain names(web): {mountain_mode}/{mountain_lang} | Readiness {percent}%"
@@ -1446,6 +1458,38 @@
       "ipsu": "Inflow point",
       "myeongdang": "Core gentle flat zone",
       "misa": "Front gentle slope area"
+    },
+    "zh": {
+      "jusan": "主山：穴后的中心山体",
+      "jojongsan": "祖山：来龙上位的干脉（中文形势派另分太祖山与少祖山）",
+      "dunoe": "父母山：主山与穴之间的过渡节段（与韩国「头脑」为近似对应）",
+      "naecheongnyong": "内青龙：左侧近身的护卫山脉",
+      "oecheongnyong": "外青龙：左侧外围的护卫山脉",
+      "naebaekho": "内白虎：右侧近身的护卫山脉",
+      "oebaekho": "外白虎：右侧外围的护卫山脉",
+      "ansan": "案山：穴前近处的低矮朝对之山",
+      "josan": "朝山：穴前远处的高耸朝对之山",
+      "naesugu": "内水口：明堂前近处的水流出口",
+      "oesugu": "外水口：外围远处的水流出口",
+      "ipsu": "入首：龙脉入穴的一段（中文用法较韩国「입수」为宽）",
+      "myeongdang": "明堂：穴前平缓开阔的核心地带",
+      "misa": "毡唇：穴前缓坡余气（与韩国「眉砂」并非公认等价，属存疑对应）"
+    },
+    "zh_hant": {
+      "jusan": "主山：穴後的中心山體",
+      "jojongsan": "祖山：來龍上位的幹脈（中文形勢派另分太祖山與少祖山）",
+      "dunoe": "父母山：主山與穴之間的過渡節段（與韓國「頭腦」為近似對應）",
+      "naecheongnyong": "內青龍：左側近身的護衛山脈",
+      "oecheongnyong": "外青龍：左側外圍的護衛山脈",
+      "naebaekho": "內白虎：右側近身的護衛山脈",
+      "oebaekho": "外白虎：右側外圍的護衛山脈",
+      "ansan": "案山：穴前近處的低矮朝對之山",
+      "josan": "朝山：穴前遠處的高聳朝對之山",
+      "naesugu": "內水口：明堂前近處的水流出口",
+      "oesugu": "外水口：外圍遠處的水流出口",
+      "ipsu": "入首：龍脈入穴的一段（中文用法較韓國「입수」為寬）",
+      "myeongdang": "明堂：穴前平緩開闊的核心地帶",
+      "misa": "氈唇：穴前緩坡餘氣（與韓國「眉砂」並非公認等價，屬存疑對應）"
     }
   },
   "metric_help_items": {

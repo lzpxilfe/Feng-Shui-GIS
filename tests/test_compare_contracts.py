@@ -126,9 +126,37 @@ def _install_plugin_stubs():
     sys.modules["feng_shui_gis.ui_catalog"] = ui_catalog_module
 
 
-_install_plugin_stubs()
+_STUBBED_PLUGIN_MODULES = (
+    "feng_shui_gis.dock_widget",
+    "feng_shui_gis.service_contracts",
+    "feng_shui_gis.services",
+    "feng_shui_gis.services.analysis_service",
+    "feng_shui_gis.locale",
+    "feng_shui_gis.mountain_lookup",
+    "feng_shui_gis.mountain_options",
+    "feng_shui_gis.profile_catalog",
+    "feng_shui_gis.reference_catalog",
+    "feng_shui_gis.ui_catalog",
+)
 
-from feng_shui_gis.plugin import FengShuiGisPlugin  # noqa: E402
+
+def _remove_plugin_stubs():
+    """Drop the stubs once plugin.py has bound them.
+
+    Unittest discovery imports every test module before running any of them, so
+    leaving these in sys.modules makes every later module import the stub
+    instead of the real one.
+    """
+    for name in _STUBBED_PLUGIN_MODULES:
+        sys.modules.pop(name, None)
+
+
+_install_plugin_stubs()
+try:
+    from feng_shui_gis.plugin import FengShuiGisPlugin  # noqa: E402
+finally:
+    # Even when the import above fails, the stubs must not survive it.
+    _remove_plugin_stubs()
 
 
 class _FakeFields:

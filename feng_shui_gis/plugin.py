@@ -99,7 +99,7 @@ from .service_contracts import (
     CompareRequest,
     TermExtractionRequest,
 )
-from .profile_catalog import analysis_rules
+from .profile_catalog import analysis_rules, normalize_label_language
 from .ui_catalog import ui_text
 
 
@@ -1434,7 +1434,9 @@ class FengShuiGisPlugin:
         if "reason_ko" not in field_names and "fs_reason" not in field_names:
             return
 
-        text_lang = label_lang if label_lang in ("ko", "en") else "ko"
+        # ui_text falls back to English for keys without a translation, which
+        # is a better default for a Chinese label run than silently using Korean.
+        text_lang = normalize_label_language(label_lang)
         reason_alias = ui_text("reason_alias", text_lang, default="Reason")
         fs_reason_alias = ui_text("fs_reason_alias", text_lang, default="Site Reason")
         reason_label = ui_text("reason_label", text_lang, default="Reason")

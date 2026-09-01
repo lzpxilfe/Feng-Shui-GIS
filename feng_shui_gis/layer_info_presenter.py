@@ -4,6 +4,21 @@
 from __future__ import annotations
 
 
+def _display_field(field_names, label_lang, *, generalized, korean, english, fallback):
+    """Pick the label column that actually carries the requested language.
+
+    Layers written before the generalized ``*_lbl`` columns existed only carry
+    Korean and English, so those stay the fallback rather than exposing raw ids.
+    """
+    if label_lang == "ko":
+        return korean if korean in field_names else fallback
+    if generalized in field_names:
+        return generalized
+    if label_lang == "en" and english in field_names:
+        return english
+    return korean if korean in field_names else fallback
+
+
 def mountain_tip_html(field_names, *, maptip_mountain, maptip_mountain_dist, maptip_mountain_lang):
     if "mt_name" not in field_names:
         return ""
@@ -35,16 +50,30 @@ def link_layer_info_config(
 ):
     if not {"src_id", "dst_id"} <= field_names:
         return None
-    term_field = "term_ko"
-    src_field = "src_ko" if "src_ko" in field_names else "src_id"
-    dst_field = "dst_ko" if "dst_ko" in field_names else "dst_id"
-    if label_lang == "en":
-        if "term_en" in field_names:
-            term_field = "term_en"
-        if "src_en" in field_names:
-            src_field = "src_en"
-        if "dst_en" in field_names:
-            dst_field = "dst_en"
+    term_field = _display_field(
+        field_names,
+        label_lang,
+        generalized="term_lbl",
+        korean="term_ko",
+        english="term_en",
+        fallback="term_id",
+    )
+    src_field = _display_field(
+        field_names,
+        label_lang,
+        generalized="src_lbl",
+        korean="src_ko",
+        english="src_en",
+        fallback="src_id",
+    )
+    dst_field = _display_field(
+        field_names,
+        label_lang,
+        generalized="dst_lbl",
+        korean="dst_ko",
+        english="dst_en",
+        fallback="dst_id",
+    )
     return {
         "aliases": {
             "score": link_alias_score,
@@ -91,7 +120,10 @@ def term_layer_info_config(
 ):
     if "term_ko" not in field_names:
         return None
-    term_field = "term_name" if label_lang == "en" and "term_name" in field_names else "term_ko"
+    # term_name already carries the label in whichever language the run selected.
+    term_field = (
+        "term_name" if label_lang != "ko" and "term_name" in field_names else "term_ko"
+    )
     if "fit_sc" in field_names:
         map_tip_template = (
             f"<h3>[% \"{term_field}\" %]</h3>"

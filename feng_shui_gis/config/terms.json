@@ -1,24 +1,32 @@
 {
   "schema_version": "1.0.0",
   "term_labels": {
-    "hyeol": { "en": "Hyeol", "ko": "혈" },
-    "jangpung": { "en": "Jangpung Field", "ko": "장풍장" },
-    "sashinsa": { "en": "Sashinsa Field", "ko": "사신사장" },
-    "myeongdang": { "en": "Myeongdang", "ko": "명당" },
-    "jusan": { "en": "Jusan", "ko": "주산" },
-    "jojongsan": { "en": "Jojongsan", "ko": "조종산" },
-    "dunoe": { "en": "Dunoe", "ko": "두뇌" },
-    "naecheongnyong": { "en": "InnerCheongnyong", "ko": "내청룡" },
-    "oecheongnyong": { "en": "OuterCheongnyong", "ko": "외청룡" },
-    "naebaekho": { "en": "InnerBaekho", "ko": "내백호" },
-    "oebaekho": { "en": "OuterBaekho", "ko": "외백호" },
-    "ansan": { "en": "Ansan", "ko": "안산" },
-    "josan": { "en": "Josan", "ko": "조산" },
-    "naesugu": { "en": "InnerSugu", "ko": "내수구" },
-    "oesugu": { "en": "OuterSugu", "ko": "외수구" },
-    "ipsu": { "en": "Ipsu", "ko": "입수" },
-    "misa": { "en": "Misa", "ko": "미사" }
+    "hyeol": { "en": "Hyeol", "ko": "혈", "zh": "穴", "zh_hant": "穴", "pinyin": "xue" },
+    "hyeoljang": { "en": "Hyeol Field", "ko": "혈장", "zh": "穴场", "zh_hant": "穴場", "pinyin": "xuechang" },
+    "jangpung": { "en": "Jangpung Field", "ko": "장풍장", "zh": "藏风场", "zh_hant": "藏風場", "pinyin": "zangfeng chang" },
+    "sashinsa": { "en": "Sashinsa Field", "ko": "사신사장", "zh": "四神砂场", "zh_hant": "四神砂場", "pinyin": "sishensha chang" },
+    "myeongdang": { "en": "Myeongdang", "ko": "명당", "zh": "明堂", "zh_hant": "明堂", "pinyin": "mingtang" },
+    "jusan": { "en": "Jusan", "ko": "주산", "zh": "主山", "zh_hant": "主山", "pinyin": "zhushan" },
+    "jojongsan": { "en": "Jojongsan", "ko": "조종산", "zh": "祖山", "zh_hant": "祖山", "pinyin": "zushan" },
+    "dunoe": { "en": "Dunoe", "ko": "두뇌", "zh": "父母山", "zh_hant": "父母山", "pinyin": "fumushan" },
+    "naecheongnyong": { "en": "InnerCheongnyong", "ko": "내청룡", "zh": "内青龙", "zh_hant": "內青龍", "pinyin": "nei qinglong" },
+    "oecheongnyong": { "en": "OuterCheongnyong", "ko": "외청룡", "zh": "外青龙", "zh_hant": "外青龍", "pinyin": "wai qinglong" },
+    "naebaekho": { "en": "InnerBaekho", "ko": "내백호", "zh": "内白虎", "zh_hant": "內白虎", "pinyin": "nei baihu" },
+    "oebaekho": { "en": "OuterBaekho", "ko": "외백호", "zh": "外白虎", "zh_hant": "外白虎", "pinyin": "wai baihu" },
+    "ansan": { "en": "Ansan", "ko": "안산", "zh": "案山", "zh_hant": "案山", "pinyin": "anshan" },
+    "josan": { "en": "Josan", "ko": "조산", "zh": "朝山", "zh_hant": "朝山", "pinyin": "chaoshan" },
+    "naesugu": { "en": "InnerSugu", "ko": "내수구", "zh": "内水口", "zh_hant": "內水口", "pinyin": "nei shuikou" },
+    "oesugu": { "en": "OuterSugu", "ko": "외수구", "zh": "外水口", "zh_hant": "外水口", "pinyin": "wai shuikou" },
+    "ipsu": { "en": "Ipsu", "ko": "입수", "zh": "入首", "zh_hant": "入首", "pinyin": "rushou" },
+    "misa": { "en": "Misa", "ko": "미사", "zh": "毡唇", "zh_hant": "氈唇", "pinyin": "zhanchun" }
   },
+  "label_languages": [
+    { "code": "ko", "label": { "ko": "한국어", "en": "Korean", "zh": "韩语" } },
+    { "code": "en", "label": { "ko": "영어", "en": "English", "zh": "英语" } },
+    { "code": "zh", "label": { "ko": "중국어 간체", "en": "Chinese (Simplified)", "zh": "简体中文" } },
+    { "code": "zh_hant", "label": { "ko": "중국어 번체", "en": "Chinese (Traditional)", "zh": "繁體中文" } },
+    { "code": "pinyin", "label": { "ko": "병음", "en": "Pinyin", "zh": "拼音" } }
+  ],
   "radius_scales": {
     "inner": 18.0,
     "outer": 38.0,
@@ -92,5 +100,148 @@
     "ipsu": ["#0284c7", 2.6],
     "myeongdang": ["#f59e0b", 1.6],
     "misa": ["#f97316", 1.8]
+  }
+  ,
+  "term_ontology": {
+    "_comment": "Cross-language term ontology. The plugin models only landform-school (形勢派 / 巒頭派) concepts, because those are the ones a DEM can carry. Compass-school (理氣派) constructs are declared out of scope, not merely unimplemented.",
+    "scope": {
+      "in_scope_schools": ["xingshi"],
+      "out_of_scope_schools": ["liqi"],
+      "note": {
+        "ko": "이 플러그인은 DEM에서 관측 가능한 형세(形勢) 계열 개념만 다룹니다. 24산 좌향, 삼원구운, 현공비성 등 이기(理氣) 계열은 지형 데이터로 검증할 수 없으므로 구현 대상이 아닙니다.",
+        "en": "Only landform-school concepts that a DEM can actually carry are modelled. Compass-school constructs (24-mountain orientation, Three Cycles/Nine Periods, Flying Star) are not verifiable from terrain data and are therefore out of scope, not pending.",
+        "zh": "本插件仅处理可由 DEM 观测的形势派概念。二十四山坐向、三元九运、玄空飞星等理气派内容无法用地形数据验证，故不在实现范围内。",
+        "zh_hant": "本插件僅處理可由 DEM 觀測的形勢派概念。二十四山坐向、三元九運、玄空飛星等理氣派內容無法用地形資料驗證，故不在實現範圍內。"
+      }
+    },
+    "schools": {
+      "xingshi": {
+        "label": { "ko": "형세파(形勢派)", "en": "Landform School (Xingshi pai)", "zh": "形势派", "zh_hant": "形勢派" },
+        "in_scope": true,
+        "note": {
+          "ko": "산줄기 형태, 물길, 사방 위요를 눈으로 읽는 계열. 한국 풍수의 지형 해석 전통과 계보를 공유합니다.",
+          "en": "Reads ridge form, watercourses, and enclosure directly from landscape shape. Shares a lineage with the Korean pungsu terrain-reading tradition.",
+          "zh": "以山形、水势、四方围合的形态判读为主，与韩国风水地形解读传统同源。"
+        }
+      },
+      "liqi": {
+        "label": { "ko": "이기파(理氣派)", "en": "Compass School (Liqi pai)", "zh": "理气派", "zh_hant": "理氣派" },
+        "in_scope": false,
+        "note": {
+          "ko": "나경 좌향, 방위 배속, 시간 주기를 다루는 계열. DEM으로는 검증할 수 없으며 이 플러그인의 산출물은 이기 판단을 대신하지 않습니다.",
+          "en": "Concerns compass orientation, directional assignment, and temporal cycles. Not derivable from a DEM; nothing this plugin outputs substitutes for a compass-school reading.",
+          "zh": "涉及罗盘坐向、方位配属与时间周期，无法由 DEM 推导；本插件输出不能替代理气派判断。"
+        }
+      }
+    },
+    "correspondence_levels": {
+      "direct": {
+        "label": { "ko": "직접 대응", "en": "Direct", "zh": "直接对应", "zh_hant": "直接對應" },
+        "note": {
+          "ko": "한국 용어와 중국 용어가 같은 한자어이며 형세상 지시 대상도 사실상 같습니다.",
+          "en": "Korean and Chinese terms share the same Sinographic root and point to effectively the same landform element.",
+          "zh": "韩中术语同源同字，所指地形要素基本一致。"
+        }
+      },
+      "approximate": {
+        "label": { "ko": "근사 대응", "en": "Approximate", "zh": "近似对应", "zh_hant": "近似對應" },
+        "note": {
+          "ko": "지시 대상은 겹치지만 두 전통에서 세분 방식이 다릅니다. 결과 해석 시 원문 용어를 함께 확인해야 합니다.",
+          "en": "The referents overlap but the two traditions subdivide the concept differently. Read outputs alongside the source-language term.",
+          "zh": "所指范围有重叠，但两个传统的细分方式不同，解读时须对照原文术语。"
+        }
+      },
+      "contested": {
+        "label": { "ko": "논쟁적 대응", "en": "Contested", "zh": "存疑对应", "zh_hant": "存疑對應" },
+        "note": {
+          "ko": "정착된 등가어가 없어 이 저장소가 선택한 대응입니다. 인용하기 전에 반드시 원전을 확인하세요.",
+          "en": "No settled equivalent exists; this is a mapping chosen by this repository. Verify against primary sources before citing.",
+          "zh": "并无公认等价术语，此对应为本仓库的选择，引用前须核对原始文献。"
+        }
+      }
+    },
+    "terms": {
+      "hyeol": { "school": "xingshi", "correspondence": "direct", "zh_variants": ["穴场", "穴星"] },
+      "hyeoljang": {
+        "school": "xingshi",
+        "correspondence": "approximate",
+        "zh_variants": ["穴场", "穴晕"],
+        "note": {
+          "ko": "혈장 레이어는 이 플러그인이 계산한 폴리곤 외곽선입니다. 중국의 穴场은 답사로 판정하는 범위를 뜻하므로, 같은 이름이라도 측정 대상이 다릅니다.",
+          "en": "The hyeoljang layer is a polygon this plugin computes. Chinese xuechang denotes an extent judged in the field, so the shared name does not mean the same measured object.",
+          "zh": "穴场图层为本插件计算生成的多边形；中文「穴场」指现场踏勘判定的范围，名称相同但测量对象不同。"
+        }
+      },
+      "jangpung": {
+        "school": "xingshi",
+        "correspondence": "approximate",
+        "zh_variants": ["藏风", "藏风聚气"],
+        "note": {
+          "ko": "藏風은 고전 개념이지만 '장(場)'은 이 플러그인이 만든 연속 지표면입니다. 전통 문헌의 장풍 판정과 동일하지 않습니다.",
+          "en": "Zangfeng is a classical concept, but the field surface is a continuous index this plugin constructs. It is not equivalent to a textual zangfeng judgement.",
+          "zh": "「藏风」为古典概念，但此处的「场」是本插件构建的连续指数面，并不等同于文献中的藏风判定。"
+        }
+      },
+      "sashinsa": {
+        "school": "xingshi",
+        "correspondence": "approximate",
+        "zh_variants": ["四神砂", "四象", "四兽"],
+        "note": {
+          "ko": "사신사 자체는 四神砂로 직접 대응하지만, 이 레이어는 사방 위요도를 수치화한 연속 지표면이라 전통적 사신사 판정과 다릅니다.",
+          "en": "The four guardians map directly onto sishensha, but this layer is a continuous enclosure index rather than a traditional four-guardian judgement.",
+          "zh": "四神砂本身可直接对应，但本图层是四方围合度的连续指数面，与传统的四神砂判定不同。"
+        }
+      },
+      "myeongdang": { "school": "xingshi", "correspondence": "direct", "zh_variants": ["内明堂", "外明堂"] },
+      "jusan": { "school": "xingshi", "correspondence": "direct", "zh_variants": ["玄武", "坐山", "後龍"] },
+      "jojongsan": {
+        "school": "xingshi",
+        "correspondence": "approximate",
+        "zh_variants": ["太祖山", "少祖山"],
+        "note": {
+          "ko": "한국의 조종산은 상위 산줄기를 한 덩어리로 부르지만, 중국 형세파는 太祖山과 少祖山을 단계별로 나눕니다. 이 플러그인의 far-radius 노드는 그 구분을 하지 않습니다.",
+          "en": "Korean jojongsan names the upper trunk as one thing, whereas Chinese landform practice separates taizushan from shaozushan by stage. The far-radius node here does not make that distinction.",
+          "zh": "韩国的祖宗山将上位山脉统称一体，而中国形势派按层级区分太祖山与少祖山；本插件的远半径节点未作此区分。"
+        }
+      },
+      "dunoe": {
+        "school": "xingshi",
+        "correspondence": "approximate",
+        "zh_variants": ["父母山", "束气", "胎息"],
+        "note": {
+          "ko": "두뇌(頭腦)는 혈 바로 뒤의 마디를 가리킵니다. 중국 형세파에서는 父母山과 束氣處를 따로 두므로 1:1 대응이 아닙니다.",
+          "en": "Dunoe denotes the knuckle immediately behind the hyeol. Chinese landform practice separates the parent mountain from the qi-constriction point, so this is not a one-to-one mapping.",
+          "zh": "头脑指穴后紧邻的节段；中国形势派另分父母山与束气处，故非一一对应。"
+        }
+      },
+      "naecheongnyong": { "school": "xingshi", "correspondence": "direct", "zh_variants": [] },
+      "oecheongnyong": { "school": "xingshi", "correspondence": "direct", "zh_variants": [] },
+      "naebaekho": { "school": "xingshi", "correspondence": "direct", "zh_variants": [] },
+      "oebaekho": { "school": "xingshi", "correspondence": "direct", "zh_variants": [] },
+      "ansan": { "school": "xingshi", "correspondence": "direct", "zh_variants": ["近案"] },
+      "josan": { "school": "xingshi", "correspondence": "direct", "zh_variants": ["朝案"] },
+      "naesugu": { "school": "xingshi", "correspondence": "direct", "zh_variants": ["水口砂"] },
+      "oesugu": { "school": "xingshi", "correspondence": "direct", "zh_variants": ["罗星"] },
+      "ipsu": {
+        "school": "xingshi",
+        "correspondence": "approximate",
+        "zh_variants": ["入首", "到头"],
+        "note": {
+          "ko": "한국 풍수의 입수는 입수도두를 포함한 좁은 용법으로 쓰이는 경우가 많습니다. 중국의 入首는 용맥이 혈로 들어오는 구간 전체를 더 넓게 지칭합니다.",
+          "en": "Korean ipsu is often used narrowly, including the ipsu-dodu node. Chinese rushou refers more broadly to the whole stretch where the dragon vein enters the site.",
+          "zh": "韩国风水的入首常作狭义使用（含入首倒头），中文入首则更宽泛地指龙脉入穴的整段。"
+        }
+      },
+      "misa": {
+        "school": "xingshi",
+        "correspondence": "contested",
+        "zh_variants": ["毡唇", "余气", "唇毡"],
+        "note": {
+          "ko": "미사(眉砂)에 대응하는 정착된 중국 용어가 없습니다. 혈 앞 완경사 자락이라는 기능만 놓고 毡唇/余气를 임시 대응어로 두었습니다. 중국어 보고서에 인용하기 전 반드시 원전 확인이 필요합니다.",
+          "en": "No settled Chinese equivalent exists for misa. Zhanchun/yuqi is used here as a provisional mapping based only on the shared function of a gentle apron in front of the site. Verify against primary sources before citing in Chinese-language reporting.",
+          "zh": "眉砂并无公认的中文等价术语。此处仅依据穴前缓坡余脉的功能，暂以毡唇/余气对应；用于中文报告前须核对原始文献。"
+        }
+      }
+    }
   }
 }

@@ -248,12 +248,13 @@ python3 tools/setup_study_case.py \
 - [docs/research_matrix.md](docs/research_matrix.md)
 - [docs/reference_audit.md](docs/reference_audit.md)
 - [docs/regional_period_notes.md](docs/regional_period_notes.md)
+- [docs/chinese_terminology.md](docs/chinese_terminology.md)
 
 ### Operations and reporting
 
-- [docs/support_bundle_guide.md](docs/support_bundle_guide.md)
-- [docs/release_checklist.md](docs/release_checklist.md)
-- [docs/operations_playbook.md](docs/operations_playbook.md)
+- Support bundle guide — [docs/support_bundle_guide.md](docs/support_bundle_guide.md)
+- Release checklist — [docs/release_checklist.md](docs/release_checklist.md)
+- Operations playbook — [docs/operations_playbook.md](docs/operations_playbook.md)
 
 ---
 

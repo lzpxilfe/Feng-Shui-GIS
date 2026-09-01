@@ -237,7 +237,102 @@ def _validate_term_catalog(data):
 
     _require_dict(catalog.get("point_styles"), f"{_TERM_FILE}.point_styles", allow_empty=True)
     _require_dict(catalog.get("line_styles"), f"{_TERM_FILE}.line_styles", allow_empty=True)
+    _validate_label_languages(catalog, term_labels)
+    _validate_term_ontology(catalog, term_labels)
     return catalog
+
+
+def _validate_label_languages(catalog, term_labels):
+    rows = _require_list(
+        catalog.get("label_languages"),
+        f"{_TERM_FILE}.label_languages",
+    )
+    seen = set()
+    for index, row in enumerate(rows):
+        context = f"{_TERM_FILE}.label_languages[{index}]"
+        row = _require_dict(row, context)
+        code = _require_string(row, "code", context)
+        if code in seen:
+            raise RuntimeError(f"{context}.code duplicates '{code}'.")
+        seen.add(code)
+        _require_dict(row.get("label"), f"{context}.label")
+    for code in ("ko", "en"):
+        if code not in seen:
+            raise RuntimeError(
+                f"{_TERM_FILE}.label_languages must declare the '{code}' label language."
+            )
+    # A declared language that no term can render would put raw term ids on the
+    # map, so catch it at load time rather than in QGIS.
+    for code in sorted(seen):
+        if not any(labels.get(code) for labels in term_labels.values()):
+            raise RuntimeError(
+                f"{_TERM_FILE}.label_languages declares '{code}' but no term provides that label."
+            )
+
+
+def _validate_term_ontology(catalog, term_labels):
+    ontology = _require_dict(
+        catalog.get("term_ontology"),
+        f"{_TERM_FILE}.term_ontology",
+    )
+    schools = _require_dict(
+        ontology.get("schools"),
+        f"{_TERM_FILE}.term_ontology.schools",
+    )
+    levels = _require_dict(
+        ontology.get("correspondence_levels"),
+        f"{_TERM_FILE}.term_ontology.correspondence_levels",
+    )
+    scope = _require_dict(
+        ontology.get("scope"),
+        f"{_TERM_FILE}.term_ontology.scope",
+    )
+    in_scope = _require_list(
+        scope.get("in_scope_schools"),
+        f"{_TERM_FILE}.term_ontology.scope.in_scope_schools",
+    )
+    for school_key in in_scope:
+        if school_key not in schools:
+            raise RuntimeError(
+                f"{_TERM_FILE}.term_ontology.scope.in_scope_schools references "
+                f"unknown school '{school_key}'."
+            )
+
+    terms = _require_dict(
+        ontology.get("terms"),
+        f"{_TERM_FILE}.term_ontology.terms",
+    )
+    for term_id, entry in terms.items():
+        context = f"{_TERM_FILE}.term_ontology.terms.{term_id}"
+        entry = _require_dict(entry, context)
+        if term_id not in term_labels:
+            raise RuntimeError(f"{context} has no matching entry in term_labels.")
+        school = _require_string(entry, "school", context)
+        if school not in schools:
+            raise RuntimeError(f"{context}.school references unknown school '{school}'.")
+        if school not in in_scope:
+            raise RuntimeError(
+                f"{context}.school '{school}' is not an in-scope school; "
+                "out-of-scope concepts must not be scored."
+            )
+        correspondence = _require_string(entry, "correspondence", context)
+        if correspondence not in levels:
+            raise RuntimeError(
+                f"{context}.correspondence references unknown level '{correspondence}'."
+            )
+        # An unqualified cross-tradition mapping is a claim; anything weaker has
+        # to say in what way the two traditions differ.
+        if correspondence != "direct" and not entry.get("note"):
+            raise RuntimeError(
+                f"{context} is graded '{correspondence}' and must carry a note "
+                "explaining how the traditions differ."
+            )
+    for term_id in term_labels:
+        if term_id not in terms:
+            raise RuntimeError(
+                f"{_TERM_FILE}.term_ontology.terms is missing '{term_id}'."
+            )
+    return ontology
 
 
 def _validate_analysis_rules(data):
@@ -307,14 +402,111 @@ def term_labels():
     return term_catalog()["term_labels"]
 
 
+_LABEL_LANGUAGE_FALLBACKS = {
+    "ko": ("ko", "en"),
+    "en": ("en", "ko"),
+    "zh": ("zh", "zh_hant", "en"),
+    "zh_hant": ("zh_hant", "zh", "en"),
+    "pinyin": ("pinyin", "en"),
+}
+_DEFAULT_LABEL_LANGUAGE = "ko"
+
+
+def label_languages():
+    """Label languages declared by the term catalog, in display order."""
+    rows = term_catalog().get("label_languages", [])
+    if not isinstance(rows, list):
+        return []
+    normalized = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        code = str(row.get("code", "")).strip().lower()
+        if not code:
+            continue
+        labels = row.get("label", {})
+        normalized.append(
+            {"code": code, "label": labels if isinstance(labels, dict) else {}}
+        )
+    return normalized
+
+
+def label_language_codes():
+    codes = [row["code"] for row in label_languages()]
+    return codes or list(_LABEL_LANGUAGE_FALLBACKS)
+
+
+def normalize_label_language(language, default=_DEFAULT_LABEL_LANGUAGE):
+    """Map any incoming code onto a label language the catalog can render."""
+    code = str(language or "").strip().lower().replace("-", "_")
+    supported = label_language_codes()
+    if code in supported:
+        return code
+    # Regional variants such as zh_cn / zh_tw must not fall all the way back to
+    # the default, which would silently drop Chinese labels on a Chinese system.
+    if code.startswith("zh"):
+        variant = code.split("_", 1)[-1]
+        return "zh_hant" if variant in ("hant", "tw", "hk", "mo") else "zh"
+    base = code.split("_", 1)[0]
+    if base in supported:
+        return base
+    return default
+
+
 def term_label(term_id, language):
     labels = term_labels().get(term_id, {})
-    return labels.get(language) or labels.get("en") or term_id
+    fallbacks = _LABEL_LANGUAGE_FALLBACKS.get(
+        normalize_label_language(language), ("en",)
+    )
+    for code in fallbacks:
+        value = labels.get(code)
+        if value:
+            return value
+    return labels.get("en") or term_id
 
 
 def term_label_ko(term_id):
     labels = term_labels().get(term_id, {})
     return labels.get("ko") or labels.get("en") or term_id
+
+
+def term_ontology():
+    ontology = term_catalog().get("term_ontology", {})
+    return ontology if isinstance(ontology, dict) else {}
+
+
+def term_ontology_entry(term_id):
+    """School, correspondence grade, and caveats recorded for one term."""
+    terms = term_ontology().get("terms", {})
+    entry = terms.get(term_id) if isinstance(terms, dict) else None
+    return entry if isinstance(entry, dict) else {}
+
+
+def term_correspondence(term_id):
+    """How firmly the Korean term maps onto its Chinese counterpart."""
+    return str(term_ontology_entry(term_id).get("correspondence", "")).strip()
+
+
+def term_correspondence_note(term_id, language):
+    """Per-term caveat text; empty when the mapping needs no qualification."""
+    note = term_ontology_entry(term_id).get("note", {})
+    if not isinstance(note, dict):
+        return ""
+    for code in _LABEL_LANGUAGE_FALLBACKS.get(
+        normalize_label_language(language), ("en",)
+    ):
+        value = note.get(code)
+        if value:
+            return str(value)
+    return str(note.get("en", ""))
+
+
+def term_zh_variants(term_id):
+    """Alternative Chinese terms recorded for the same landform element."""
+    variants = term_ontology_entry(term_id).get("zh_variants", [])
+    if not isinstance(variants, list):
+        return []
+    return [str(item).strip() for item in variants if str(item).strip()]
 
 
 def term_specs():

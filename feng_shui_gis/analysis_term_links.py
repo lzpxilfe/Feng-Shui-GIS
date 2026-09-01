@@ -15,6 +15,7 @@ def term_link_fields():
     fields.append(QgsField("term_id", QVariant.String, "string", 28))
     fields.append(QgsField("term_ko", QVariant.String, "string", 28))
     fields.append(QgsField("term_en", QVariant.String, "string", 28))
+    fields.append(QgsField("term_lbl", QVariant.String, "string", 28))
     fields.append(QgsField("parent_id", QVariant.Int))
     fields.append(QgsField("rank", QVariant.Int))
     fields.append(QgsField("score", QVariant.Double, "double", 7, 3))
@@ -24,9 +25,11 @@ def term_link_fields():
     fields.append(QgsField("src_id", QVariant.String, "string", 28))
     fields.append(QgsField("src_ko", QVariant.String, "string", 28))
     fields.append(QgsField("src_en", QVariant.String, "string", 28))
+    fields.append(QgsField("src_lbl", QVariant.String, "string", 28))
     fields.append(QgsField("dst_id", QVariant.String, "string", 28))
     fields.append(QgsField("dst_ko", QVariant.String, "string", 28))
     fields.append(QgsField("dst_en", QVariant.String, "string", 28))
+    fields.append(QgsField("dst_lbl", QVariant.String, "string", 28))
     fields.append(QgsField("link_type", QVariant.String, "string", 20))
     fields.append(QgsField("len_m", QVariant.Double, "double", 12, 3))
     fields.append(QgsField("azimuth", QVariant.Double, "double", 7, 2))
@@ -84,6 +87,7 @@ def build_term_link_feature(
     azimuth_label,
     term_label,
     term_label_ko,
+    label_language="ko",
 ):
     source_id = source["term_id"]
     target_id = target["term_id"]
@@ -94,6 +98,7 @@ def build_term_link_feature(
     feature["term_id"] = style_term
     feature["term_ko"] = term_label_ko(style_term)
     feature["term_en"] = term_label(style_term, "en")
+    feature["term_lbl"] = term_label(style_term, label_language)
     feature["parent_id"] = parent_id
     feature["rank"] = rank_value
     feature["score"] = score
@@ -103,9 +108,11 @@ def build_term_link_feature(
     feature["src_id"] = source_id
     feature["src_ko"] = term_label_ko(source_id)
     feature["src_en"] = term_label(source_id, "en")
+    feature["src_lbl"] = term_label(source_id, label_language)
     feature["dst_id"] = target_id
     feature["dst_ko"] = term_label_ko(target_id)
     feature["dst_en"] = term_label(target_id, "en")
+    feature["dst_lbl"] = term_label(target_id, label_language)
     feature["link_type"] = spec["link_type"]
     feature["len_m"] = length_m
     feature["azimuth"] = azimuth

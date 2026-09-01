@@ -9,6 +9,26 @@ from .reference_catalog import reference_display_text
 from .ui_catalog import ui_text
 
 
+_LANGUAGE_NAME_KEYS = {
+    "ko": ("workflow_lang_ko", "Korean"),
+    "en": ("workflow_lang_en", "English"),
+    "zh": ("workflow_lang_zh", "Chinese (Simplified)"),
+    "zh_hant": ("workflow_lang_zh_hant", "Chinese (Traditional)"),
+    "pinyin": ("workflow_lang_pinyin", "Pinyin"),
+}
+
+
+def _label_language_name(label_language):
+    """Name of the label language as shown in the workflow summary line.
+
+    Kept free of the term catalog so this module stays a pure policy helper;
+    callers hand in a code already normalized by ``profile_catalog``.
+    """
+    code = str(label_language or "").strip().lower().replace("-", "_")
+    key, fallback = _LANGUAGE_NAME_KEYS.get(code, ("", code or "ko"))
+    return ui_text(key, default=fallback) if key else code
+
+
 def _to_profile_key(value):
     if value is None:
         return None
@@ -186,11 +206,7 @@ def workflow_presentation_state(
     completed = sum(1 for _, done in checks if done)
     total = max(1, len(checks))
     percent = int(round((completed / total) * 100.0))
-    lang_name = (
-        ui_text("workflow_lang_ko", default="Korean")
-        if label_language == "ko"
-        else ui_text("workflow_lang_en", default="English")
-    )
+    lang_name = _label_language_name(label_language)
     context_mode = (
         ui_text("context_mode_general_short", default="General")
         if not advanced_context_enabled

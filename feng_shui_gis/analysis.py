@@ -161,6 +161,7 @@ from .cultural_context import build_context
 from .profile_catalog import (
     analysis_rules,
     line_styles,
+    normalize_label_language,
     point_styles,
     profile_spec,
     special_term_specs,
@@ -2032,7 +2033,7 @@ class FengShuiAnalyzer:
         term_min_score = term_state["term_min_score"]
         radius_map = term_state["radius_map"]
         outer_radius = radius_map["outer"]
-        term_display_language = label_language if label_language in ("ko", "en") else "ko"
+        term_display_language = normalize_label_language(label_language)
 
         def add_term(
             term_id,
@@ -2324,8 +2325,8 @@ class FengShuiAnalyzer:
             elif term_id == "myeongdang":
                 grouped_terms[parent_id]["myeongdang"] = feature
 
-        display_language = label_language if label_language in ("ko", "en") else "ko"
-        field_name = "혈장" if display_language == "ko" else "Hyeol Field"
+        display_language = normalize_label_language(label_language)
+        field_name = term_label("hyeoljang", display_language)
         for parent_id in sorted(grouped_terms):
             terms = grouped_terms[parent_id]
             hyeol_feature = terms.get("hyeol")
@@ -2430,7 +2431,7 @@ class FengShuiAnalyzer:
             if term_id and parent_id is not None:
                 grouped_terms[parent_id][term_id] = feature
 
-        display_language = label_language if label_language in ("ko", "en") else "ko"
+        display_language = normalize_label_language(label_language)
         for parent_id in sorted(grouped_terms):
             terms = grouped_terms[parent_id]
             hyeol_feature = terms.get("hyeol")
@@ -2611,6 +2612,7 @@ class FengShuiAnalyzer:
         )
 
     def build_term_links(self, term_layer, label_language="ko"):
+        display_language = normalize_label_language(label_language)
         link_layer = QgsVectorLayer(
             f"LineString?crs={term_layer.crs().authid()}",
             f"{term_layer.name()}_links",
@@ -2676,6 +2678,7 @@ class FengShuiAnalyzer:
                     azimuth_label=self._azimuth_label,
                     term_label=term_label,
                     term_label_ko=term_label_ko,
+                    label_language=display_language,
                 )
                 link_features.append(line_feature)
 
@@ -2825,7 +2828,7 @@ class FengShuiAnalyzer:
     def style_term_points(self, term_layer, label_language="ko"):
         style_map = point_styles()
         categories = []
-        display_language = label_language if label_language in ("ko", "en") else "ko"
+        display_language = normalize_label_language(label_language)
         for term_id, style in style_map.items():
             symbol = self._build_stacked_marker_symbol(term_point_symbol_layers(term_id, style))
             categories.append(
@@ -2847,7 +2850,7 @@ class FengShuiAnalyzer:
 
     def style_support_fields(self, field_layer, label_language="ko"):
         categories = []
-        display_language = label_language if label_language in ("ko", "en") else "ko"
+        display_language = normalize_label_language(label_language)
         for term_id in ("sashinsa", "jangpung"):
             symbol = self._build_stacked_fill_symbol(support_field_symbol_layers(term_id))
             categories.append(
@@ -2863,7 +2866,7 @@ class FengShuiAnalyzer:
     def style_term_links(self, link_layer, label_language="ko"):
         style_map = line_styles()
         categories = []
-        display_language = label_language if label_language in ("ko", "en") else "ko"
+        display_language = normalize_label_language(label_language)
         for term_id, style in style_map.items():
             symbol = self._build_stacked_line_symbol(term_link_symbol_layers(term_id, style))
             categories.append(

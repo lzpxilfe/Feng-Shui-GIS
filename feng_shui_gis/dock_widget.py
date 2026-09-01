@@ -36,7 +36,9 @@ from .locale import set_language_code
 from .mountain_options import mountain_options
 from .profile_catalog import (
     available_profiles,
+    label_languages,
     line_styles,
+    normalize_label_language,
     point_styles,
     profile_label,
     term_label,
@@ -633,8 +635,14 @@ class FengShuiDockWidget(QWidget):
         )
 
         self.label_language_combo = QComboBox(self)
-        self.label_language_combo.addItem(ui_text("language_ko", default="Korean"), "ko")
-        self.label_language_combo.addItem(ui_text("language_en", default="English"), "en")
+        for language_row in label_languages():
+            language_labels = language_row["label"]
+            self.label_language_combo.addItem(
+                language_labels.get(current_ui_language)
+                or language_labels.get("en")
+                or language_row["code"],
+                language_row["code"],
+            )
         saved_label_language = QSettings().value("feng_shui_gis/label_language")
         if saved_label_language is None:
             saved_label_language = current_ui_language
@@ -645,7 +653,7 @@ class FengShuiDockWidget(QWidget):
                 else current_ui_language
             )
         label_language_index = self.label_language_combo.findData(
-            saved_label_language if saved_label_language in ("ko", "en") else "ko"
+            normalize_label_language(saved_label_language)
         )
         self.label_language_combo.setCurrentIndex(max(0, label_language_index))
         form.addRow(ui_text("label_language", default="Label Language"), self.label_language_combo)
@@ -1278,8 +1286,7 @@ class FengShuiDockWidget(QWidget):
     def label_language(self):
         if not hasattr(self, "label_language_combo"):
             return "ko"
-        code = self.label_language_combo.currentData()
-        return code if code in ("ko", "en") else "ko"
+        return normalize_label_language(self.label_language_combo.currentData())
 
     def _emit_run_requested(self):
         culture_key, period_key = self._effective_context_keys()

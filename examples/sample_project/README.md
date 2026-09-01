@@ -6,7 +6,7 @@ This folder is the starting point for repeatable regression-style walkthroughs.
 
 - `sample_project.qgs`: lightweight QGIS project shell for the sample workflow
 - relative layer placeholders that mirror the expected `DEM + water + sites` layout
-- matching fixture contracts under `/Users/hwangjinseo/Desktop/Coding/Feng-Shui-GIS-main/tests/fixtures`
+- matching fixture contracts under `tests/fixtures/`
 
 ## Intended workflow
 
