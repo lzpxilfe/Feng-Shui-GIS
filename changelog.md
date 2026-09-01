@@ -1,6 +1,15 @@
 # Changelog
 
 ## 2026-09-02
+- **[동작 변경] `fs_conf` → `fs_cover`** — 측정하지 않은 신뢰도 표기 제거
+  - 실제 계산은 `(값이 나온 지표의 가중치 합) / (전체 가중치 합)`, 즉 **입력 충족률**이었음
+  - 지표가 전부 계산되기만 하면 DEM 품질·검증 여부와 무관하게 1.0 표시
+  - 맵팁에서 점수와 동일한 `strong/good/moderate/weak` 밴드가 붙어 품질 등급처럼 보였음 → 밴드 제거
+  - 라벨을 `지표 충족률` / `Indicator coverage`로 정정, 사용 안내에서 점수와 분리해 설명
+  - `fs_missing` 필드 추가: 산출되지 않은 지표 목록
+  - 점수가 부분 지표로 재정규화된 경우 `fs_reason`에 명시
+  - `profile_confidence` → `profile_indicator_coverage`, `missing_indicator_keys` 추가
+  - 저장된 스타일·표현식에서 `fs_conf`를 쓰던 경우 `fs_cover`로 바꿔야 함
 - 조망(시선) 분석 추가 — 안산·조산이 실제로 보이는지 판정
   - `analysis_visibility.py` 신설: 지형 단면 기반 시선 판정 (QGIS 비의존, 순수 기하)
   - 지구 곡률·대기 굴절 반영(k=0.13), 관측자 눈높이 1.7m 기본

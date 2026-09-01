@@ -4,7 +4,8 @@ from feng_shui_gis.analysis_scoring import (
     explain_top_factors,
     indicator_contributions,
     paper_evidence_summary,
-    profile_confidence,
+    missing_indicator_keys,
+    profile_indicator_coverage,
     profile_weighted_score,
 )
 
@@ -17,8 +18,8 @@ class AnalysisScoringContractTests(unittest.TestCase):
         )
         self.assertAlmostEqual(score, 0.6)
 
-    def test_profile_confidence_tracks_available_weight_share(self):
-        confidence = profile_confidence(
+    def test_indicator_coverage_tracks_available_weight_share(self):
+        confidence = profile_indicator_coverage(
             {"slope": 0.8, "water": None, "aspect": 0.9},
             {"weights": {"slope": 0.5, "water": 0.25, "aspect": 0.25}},
         )
@@ -61,3 +62,63 @@ class AnalysisScoringContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class IndicatorCoverageContractTests(unittest.TestCase):
+    PROFILE = {"weights": {"slope": 0.4, "water": 0.4, "aspect": 0.2}}
+
+    def test_full_coverage_when_every_indicator_produced_a_value(self):
+        coverage = profile_indicator_coverage(
+            {"slope": 0.5, "water": 0.5, "aspect": 0.5}, self.PROFILE
+        )
+        self.assertAlmostEqual(coverage, 1.0)
+        self.assertEqual(
+            missing_indicator_keys({"slope": 0.5, "water": 0.5, "aspect": 0.5}, self.PROFILE),
+            [],
+        )
+
+    def test_coverage_is_weight_share_not_indicator_count(self):
+        # aspect carries 0.2 of 1.0, so losing it costs 20% of coverage even
+        # though it is one of three indicators.
+        indicators = {"slope": 0.5, "water": 0.5, "aspect": None}
+        self.assertAlmostEqual(
+            profile_indicator_coverage(indicators, self.PROFILE), 0.8
+        )
+        self.assertEqual(missing_indicator_keys(indicators, self.PROFILE), ["aspect"])
+
+    def test_missing_keys_are_sorted_for_stable_output(self):
+        indicators = {"slope": None, "water": None, "aspect": None}
+        self.assertEqual(
+            missing_indicator_keys(indicators, self.PROFILE),
+            ["aspect", "slope", "water"],
+        )
+
+    def test_coverage_is_none_without_usable_weights(self):
+        self.assertIsNone(profile_indicator_coverage({"slope": 0.5}, {"weights": {}}))
+        self.assertIsNone(profile_indicator_coverage({"slope": 0.5}, {}))
+        self.assertEqual(missing_indicator_keys({}, {"weights": {}}), [])
+
+    def test_coverage_says_nothing_about_the_score_itself(self):
+        # A weak site with every indicator present has full coverage; a strong
+        # site missing one does not. Coverage is completeness, not quality.
+        weak_but_complete = profile_indicator_coverage(
+            {"slope": 0.01, "water": 0.01, "aspect": 0.01}, self.PROFILE
+        )
+        strong_but_partial = profile_indicator_coverage(
+            {"slope": 0.99, "water": 0.99, "aspect": None}, self.PROFILE
+        )
+        self.assertGreater(weak_but_complete, strong_but_partial)
+
+    def test_partial_coverage_signals_a_renormalised_score(self):
+        # The score renormalises over available weight, so a partial score can
+        # match a full one numerically while resting on less of the model.
+        partial = {"slope": 0.8, "water": 0.8, "aspect": None}
+        full = {"slope": 0.8, "water": 0.8, "aspect": 0.8}
+        self.assertAlmostEqual(
+            profile_weighted_score(partial, self.PROFILE),
+            profile_weighted_score(full, self.PROFILE),
+        )
+        self.assertLess(
+            profile_indicator_coverage(partial, self.PROFILE),
+            profile_indicator_coverage(full, self.PROFILE),
+        )
+

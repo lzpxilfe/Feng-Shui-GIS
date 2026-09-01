@@ -46,7 +46,17 @@ def profile_weighted_score(indicators, profile):
     return numerator / denominator if denominator else None
 
 
-def profile_confidence(indicators, profile):
+def profile_indicator_coverage(indicators, profile):
+    """Share of the profile's weight whose indicator actually produced a value.
+
+    This is input completeness, not confidence in the score. A site where every
+    indicator computed returns 1.0 no matter how coarse the DEM is or how
+    little evidence stands behind the profile.
+
+    It matters because ``profile_weighted_score`` renormalises over whatever
+    ran: a site scored on part of the model is otherwise indistinguishable from
+    one scored on all of it.
+    """
     weights = profile.get("weights", {}) if isinstance(profile, dict) else {}
     total = sum(weights.values()) if isinstance(weights, dict) else 0.0
     if total <= 0:
@@ -56,6 +66,18 @@ def profile_confidence(indicators, profile):
         if indicators.get(key) is not None:
             available += weight
     return available / total
+
+
+def missing_indicator_keys(indicators, profile):
+    """Weighted indicators that produced no value, so the score omitted them."""
+    weights = profile.get("weights", {}) if isinstance(profile, dict) else {}
+    if not isinstance(weights, dict):
+        return []
+    return sorted(
+        key
+        for key, weight in weights.items()
+        if weight and indicators.get(key) is None
+    )
 
 
 def explain_top_factors(indicators, profile):

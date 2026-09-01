@@ -1576,7 +1576,12 @@ class FengShuiGisPlugin:
         hydro_alias_flow_acc = ui_text("hydro_alias_flow_acc", text_lang, default="Flow accumulation proxy")
         hydro_alias_len = ui_text("hydro_alias_len", text_lang, default="Stream length (map units)")
         site_alias_score = ui_text("site_alias_score", text_lang, default="Site score (0-1)")
-        site_alias_conf = ui_text("site_alias_conf", text_lang, default="Confidence (0-1)")
+        site_alias_conf = ui_text(
+            "site_alias_conf", text_lang, default="Indicator coverage (0-1)"
+        )
+        site_alias_missing = ui_text(
+            "site_alias_missing", text_lang, default="Indicators not computed"
+        )
         site_alias_slope = ui_text("site_alias_slope", text_lang, default="Slope fit (0-1)")
         site_alias_aspect = ui_text("site_alias_aspect", text_lang, default="Aspect fit (0-1)")
         site_alias_form = ui_text("site_alias_form", text_lang, default="Form fit (0-1)")
@@ -1625,7 +1630,12 @@ class FengShuiGisPlugin:
             text_lang,
             default="Model",
         )
-        maptip_confidence = ui_text("maptip_confidence_label", text_lang, default="confidence")
+        maptip_coverage = ui_text(
+            "maptip_coverage_label", text_lang, default="indicator coverage"
+        )
+        maptip_missing = ui_text(
+            "maptip_missing_label", text_lang, default="not computed"
+        )
         maptip_components = ui_text("maptip_components_label", text_lang, default="Component fits")
         maptip_terrain = ui_text("maptip_terrain_label", text_lang, default="Terrain metrics")
         maptip_dem_water = ui_text("maptip_dem_water_label", text_lang, default="dem_water")
@@ -1679,7 +1689,6 @@ class FengShuiGisPlugin:
         )
         reason_empty_lit = reason_empty.replace("'", "''")
         score_band_expr = self._score_band_expr("score")
-        fs_conf_band_expr = self._score_band_expr("fs_conf")
         mountain_tip = mountain_tip_html(
             field_names,
             maptip_mountain=maptip_mountain,
@@ -1851,7 +1860,7 @@ class FengShuiGisPlugin:
                 cal_f1_alias=cal_f1_alias,
                 cal_youden_alias=cal_youden_alias,
                 maptip_score=maptip_score,
-                maptip_confidence=maptip_confidence,
+                maptip_coverage=maptip_coverage,
                 maptip_components=maptip_components,
                 maptip_terrain=maptip_terrain,
                 maptip_dem_water=maptip_dem_water,
@@ -1861,7 +1870,8 @@ class FengShuiGisPlugin:
                 maptip_best_f1_th=maptip_best_f1_th,
                 maptip_best_youden_th=maptip_best_youden_th,
                 site_score_band_expr=site_score_band_expr,
-                fs_conf_band_expr=fs_conf_band_expr,
+                site_alias_missing=site_alias_missing,
+                maptip_missing=maptip_missing,
             )
         if config:
             self._set_field_aliases(layer, config["aliases"])

@@ -320,7 +320,7 @@ def site_layer_info_config(
     cal_f1_alias,
     cal_youden_alias,
     maptip_score,
-    maptip_confidence,
+    maptip_coverage,
     maptip_components,
     maptip_terrain,
     maptip_dem_water,
@@ -330,7 +330,8 @@ def site_layer_info_config(
     maptip_best_f1_th,
     maptip_best_youden_th,
     site_score_band_expr,
-    fs_conf_band_expr,
+    site_alias_missing,
+    maptip_missing,
 ):
     if "fs_reason" not in field_names:
         return None
@@ -352,10 +353,17 @@ def site_layer_info_config(
             )
             + "</p>"
         )
+    missing_tip = ""
+    if "fs_missing" in field_names:
+        missing_tip = (
+            f"<p>[% CASE WHEN coalesce(\"fs_missing\",'') = '' THEN '' "
+            f"ELSE '<b>{maptip_missing}</b>: ' || \"fs_missing\" END %]</p>"
+        )
     return {
         "aliases": {
             "fs_score": site_alias_score,
-            "fs_conf": site_alias_conf,
+            "fs_cover": site_alias_conf,
+            "fs_missing": site_alias_missing,
             "fs_slope": site_alias_slope,
             "fs_aspect": site_alias_aspect,
             "fs_form": site_alias_form,
@@ -372,7 +380,10 @@ def site_layer_info_config(
         "map_tip_template": (
             f"<h3>{score_title}</h3>"
             f"<p><b>{maptip_score}</b>: [% round(\"{score_field}\", 3) %] ([% {site_score_band_expr} %]), "
-            f"<b>{maptip_confidence}</b>: [% round(\"fs_conf\", 3) %] ([% {fs_conf_band_expr} %])</p>"
+            # Coverage is a completeness fraction, so it gets no strong/weak
+            # band - those bands belong to the score alone.
+            f"<b>{maptip_coverage}</b>: [% round(\"fs_cover\", 2) %]</p>"
+            f"{missing_tip}"
             f"{threshold_tip}"
             f"<p><b>{maptip_components}</b>: "
             "slope=[% round(\"fs_slope\", 3) %], "

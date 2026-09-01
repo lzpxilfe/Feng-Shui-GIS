@@ -111,7 +111,8 @@ from .analysis_scoring import (
     explain_top_factors,
     indicator_contributions,
     paper_evidence_summary,
-    profile_confidence,
+    missing_indicator_keys,
+    profile_indicator_coverage,
     profile_weighted_score,
 )
 from .analysis_sampling import negative_sampling_plan
@@ -581,8 +582,10 @@ class FengShuiAnalyzer:
             to_add.append(QgsField("fs_period", QVariant.String, "string", 20))
         if layer.fields().indexFromName("fs_model") < 0:
             to_add.append(QgsField("fs_model", QVariant.String, "string", 24))
-        if layer.fields().indexFromName("fs_conf") < 0:
-            to_add.append(QgsField("fs_conf", QVariant.Double, "double", 6, 3))
+        if layer.fields().indexFromName("fs_cover") < 0:
+            to_add.append(QgsField("fs_cover", QVariant.Double, "double", 6, 3))
+        if layer.fields().indexFromName("fs_missing") < 0:
+            to_add.append(QgsField("fs_missing", QVariant.String, "string", 120))
         if layer.fields().indexFromName("fs_note") < 0:
             to_add.append(QgsField("fs_note", QVariant.String, "string", 80))
         if layer.fields().indexFromName("fs_reason") < 0:
@@ -1170,7 +1173,8 @@ class FengShuiAnalyzer:
                 }
 
                 total_score = self._profile_weighted_score(indicators, profile)
-                confidence = self._profile_confidence(indicators, profile)
+                coverage = self._profile_indicator_coverage(indicators, profile)
+                missing_keys = missing_indicator_keys(indicators, profile)
                 principle_records = build_principle_records(
                     indicators=indicators,
                     dem_metrics=dem_metrics,
@@ -1192,11 +1196,19 @@ class FengShuiAnalyzer:
                     principle_summary=principle_summary,
                     weight_note=weight_note,
                 )
+                if missing_keys:
+                    # The weighted score renormalises over whatever ran, so a
+                    # partial score is not on the same footing as a full one.
+                    reason_ko = (
+                        f"{reason_ko} 지표충족={coverage:.2f}"
+                        f" (미산출 {','.join(missing_keys)} 제외 후 가중치 재정규화)."
+                    )
 
                 feature["fs_culture"] = context["culture_key"]
                 feature["fs_period"] = context["period_key"]
                 feature["fs_model"] = profile_key
-                feature["fs_conf"] = confidence
+                feature["fs_cover"] = coverage
+                feature["fs_missing"] = ",".join(missing_keys)
                 feature["fs_note"] = principle_note
                 feature["fs_reason"] = reason_ko
                 feature["fs_water_m"] = water_distance
@@ -4461,8 +4473,8 @@ class FengShuiAnalyzer:
         return profile_weighted_score(indicators, profile)
 
     @staticmethod
-    def _profile_confidence(indicators, profile):
-        return profile_confidence(indicators, profile)
+    def _profile_indicator_coverage(indicators, profile):
+        return profile_indicator_coverage(indicators, profile)
 
     @staticmethod
     def _indicator_label_ko(key):

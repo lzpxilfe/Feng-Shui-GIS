@@ -972,9 +972,15 @@
       "ko": "유량 누적",
       "en": "flow_acc"
     },
-    "maptip_confidence_label": {
-      "ko": "신뢰도",
-      "en": "confidence"
+    "maptip_coverage_label": {
+      "ko": "지표 충족률",
+      "en": "indicator coverage",
+      "zh": "指标完备率"
+    },
+    "maptip_missing_label": {
+      "ko": "미산출 지표",
+      "en": "not computed",
+      "zh": "未计算指标"
     },
     "maptip_components_label": {
       "ko": "구성 요소 적합",
@@ -1137,8 +1143,14 @@
       "en": "Site score (0-1)"
     },
     "site_alias_conf": {
-      "ko": "신뢰도(0-1)",
-      "en": "Confidence (0-1)"
+      "ko": "지표 충족률(0-1)",
+      "en": "Indicator coverage (0-1)",
+      "zh": "指标完备率(0-1)"
+    },
+    "site_alias_missing": {
+      "ko": "미산출 지표",
+      "en": "Indicators not computed",
+      "zh": "未计算指标"
     },
     "site_alias_slope": {
       "ko": "경사 적합도(0-1)",
@@ -1353,8 +1365,8 @@
       "en": "No profile-level paper evidence was applied."
     },
     "guide_quick_numbers_html": {
-      "ko": "<b>숫자 빠른 해석</b><br/>점수/신뢰도(0-1): 0.80 이상 강함, 0.65-0.79 좋음, 0.50-0.64 보통, 0.50 미만 약함.<br/>TPI: 0에 가까우면 평탄, 음수는 오목, 양수는 볼록.",
-      "en": "<b>Quick Number Read</b><br/>score/confidence (0-1): 0.80+ strong, 0.65-0.79 good, 0.50-0.64 moderate, below 0.50 weak.<br/>TPI: near 0 flat, negative concave, positive convex."
+      "ko": "<b>숫자 빠른 해석</b><br/>점수(0-1): 0.80 이상 강함, 0.65-0.79 좋음, 0.50-0.64 보통, 0.50 미만 약함.<br/>지표 충족률(0-1): 점수를 몇 %의 모델로 계산했는지입니다. 품질 등급이 아니며, 1.0 미만이면 미산출 지표를 뺀 채 가중치를 재정규화한 점수이므로 충족률이 다른 지점끼리는 직접 비교하지 마세요.<br/>TPI: 0에 가까우면 평탄, 음수는 오목, 양수는 볼록.",
+      "en": "<b>Quick Number Read</b><br/>score (0-1): 0.80+ strong, 0.65-0.79 good, 0.50-0.64 moderate, below 0.50 weak.<br/>Indicator coverage (0-1): how much of the model produced a value, not a quality grade. Below 1.0 the score was renormalised over the indicators that ran, so do not compare sites with different coverage directly.<br/>TPI: near 0 flat, negative concave, positive convex."
     },
     "guide_dem_diag_empty": {
       "ko": "<b>DEM 진단</b><br/>해상도, CRS 단위 신뢰도, 샘플 밀도를 확인하려면 DEM 레이어를 선택하세요.",

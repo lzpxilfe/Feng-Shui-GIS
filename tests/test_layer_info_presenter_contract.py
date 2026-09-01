@@ -80,7 +80,7 @@ class LayerInfoPresenterContractTests(unittest.TestCase):
             cal_f1_alias="F1 Threshold",
             cal_youden_alias="Youden Threshold",
             maptip_score="Score",
-            maptip_confidence="Confidence",
+            maptip_coverage="Indicator coverage",
             maptip_components="Components",
             maptip_terrain="Terrain",
             maptip_dem_water="DEM Water",
@@ -90,7 +90,8 @@ class LayerInfoPresenterContractTests(unittest.TestCase):
             maptip_best_f1_th="Best F1",
             maptip_best_youden_th="Best Youden",
             site_score_band_expr="'Moderate'",
-            fs_conf_band_expr="'High'",
+            site_alias_missing="Not computed",
+            maptip_missing="Not computed",
         )
         self.assertIn("cal_score", config["display_expression"])
         self.assertIn("Best F1", config["map_tip_template"])
