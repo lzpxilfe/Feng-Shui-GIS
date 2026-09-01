@@ -243,6 +243,7 @@ python3 tools/setup_study_case.py \
 
 ### Validation and evidence
 
+- [docs/archaeological_workflow.md](docs/archaeological_workflow.md)
 - [docs/validation_protocol.md](docs/validation_protocol.md)
 - [docs/validation_matrix.md](docs/validation_matrix.md)
 - [docs/research_matrix.md](docs/research_matrix.md)
