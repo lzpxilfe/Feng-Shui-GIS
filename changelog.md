@@ -1,6 +1,13 @@
 # Changelog
 
 ## 2026-09-02
+- 배경 비교 리포트 (`NullModelReportWriter`)
+  - JSON + Markdown 산출, 기존 리포트 라이터와 동일한 `interpretation`/`analytical`/`audit` 구조
+  - 배경 표집 기준을 `interpretation` 절에 배치 — 통계와 분리 불가
+  - 주장 한계를 결과보다 앞에 배치
+  - 효과크기 negligible 시 "p값은 표본 크기 반영, 발견 아님" 경고 자동 삽입
+  - 배경 표본 부족 시 shortfall 경고 삽입
+  - `write_null_model_report_files()`로 파일 출력
 - 귀무모형 플러그인 통합 — 배경 점 추출부터 비교까지
   - `sample_slope_aspect`: DEM에서 경사·향 직접 산출 (Horn 3x3). 결측 시 중심값 대체 없이 None
   - `_assess_position` 시임 추출: 관측 유적과 배경 점이 **동일 경로로 채점**됨

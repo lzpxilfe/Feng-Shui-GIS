@@ -111,6 +111,40 @@ print(comparison_summary(result["comparison"], "ko"))
 통계만 따로 쓰려면 `background_comparison()`을 직접 호출할 수도 있습니다. 이때는
 `background_policy` 인자에 실제 표집 기준을 직접 적어야 합니다.
 
+### 3.5 인용 가능한 산출물로 남긴다
+
+세션과 함께 사라지는 결과는 인용할 수 없습니다. 리포트를 파일로 남깁니다.
+
+```python
+from feng_shui_gis.reporting import write_null_model_report_files
+
+paths = write_null_model_report_files(
+    report_dir="reports",
+    stamp="20260902-1300",
+    site_layer_name="joseon_eupchi",
+    dem_layer_name="ngii_dem_5m",
+    comparison=result["comparison"],
+    sample=result["sample"],
+    profile_key="village_kr",
+    culture_key="korea",
+    period_key="early_modern",
+    scoring_note=result["scoring_note"],
+)
+```
+
+`feng_shui_background_<stamp>.json` 과 `.md` 두 개가 생깁니다.
+
+리포트 구조에서 의도한 부분:
+
+- **배경 표집 기준이 `interpretation` 절에 들어갑니다.** 통계 옆의 각주가 아닙니다.
+  정책을 떼어놓고 수치만 읽는 것이 재현 실패의 주된 경로라서, 구조적으로 붙여놨습니다.
+- **주장 한계가 결과보다 앞에 옵니다.** Markdown에서 "What this does not establish"가
+  `## Analytical` 위에 있습니다.
+- **효과크기가 negligible이면 인라인 경고가 붙습니다.** p값이 작아도 표본이 큰 것이지
+  발견이 아니라는 문구가 자동으로 들어갑니다.
+- **배경 표본이 모자라면 경고가 뜹니다.** 800개 요청에 120개가 뽑혔다면
+  "the background drawn is not the background requested"가 리포트에 남습니다.
+
 ### 3.5 결과를 읽는다
 
 산출물은 세 가지입니다.
@@ -188,6 +222,7 @@ delta가 `negligible`이면 p가 작아도 할 말이 없습니다.
 ## 8. 관련 파일
 
 - `feng_shui_gis/null_model.py` — 배경 대비 비교 통계
+- `feng_shui_gis/reporting/null_model_report_writer.py` — 인용 가능한 리포트
 - `tests/test_null_model_contract.py` — 통계와 주장 한계 검증
 - `benchmarks/` — 사례 정의 문서
 - [docs/validation_protocol.md](validation_protocol.md) — 검증 절차
