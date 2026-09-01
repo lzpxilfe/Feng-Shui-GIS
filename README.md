@@ -247,6 +247,7 @@ python3 tools/setup_study_case.py \
 - [docs/validation_matrix.md](docs/validation_matrix.md)
 - [docs/research_matrix.md](docs/research_matrix.md)
 - [docs/reference_audit.md](docs/reference_audit.md)
+- [docs/korean_ridge_system.md](docs/korean_ridge_system.md)
 - [docs/regional_period_notes.md](docs/regional_period_notes.md)
 - [docs/chinese_terminology.md](docs/chinese_terminology.md)
 - [docs/china_data_guide.md](docs/china_data_guide.md)

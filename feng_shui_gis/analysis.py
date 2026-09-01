@@ -146,6 +146,7 @@ from .analysis_term_links import (
     term_link_fields,
 )
 from .analysis_water import dem_step, nearest_water_distance
+from .korean_ridge_system import ridge_class_label
 from .calibration_helpers import (
     build_calibration_report_payload,
     calibration_profile_parameters,
@@ -180,10 +181,8 @@ from .visualization_specs import (
     term_point_symbol_layers,
 )
 
-RIDGE_CLASS_LABELS = {
-    "major": {"ko": "대간·정맥", "en": "Daegan+Jeongmaek"},
-    "minor": {"ko": "기맥·지맥", "en": "Gimaek+Jimaek"},
-}
+# Ridge class labels come from the ridge catalog, which keeps the computed
+# grades separate from the Sangyeongpyo names they used to borrow.
 
 HYDRO_CLASS_LABELS_KO = {
     "main": "주수계",
@@ -1763,10 +1762,7 @@ class FengShuiAnalyzer:
 
     @staticmethod
     def _ridge_label(class_id, language="ko"):
-        labels = RIDGE_CLASS_LABELS.get(class_id, {})
-        if language == "en":
-            return labels.get("en") or class_id
-        return labels.get("ko") or class_id
+        return ridge_class_label(class_id, language)
 
     def _compose_term_reason(
         self,
@@ -3446,7 +3442,8 @@ class FengShuiAnalyzer:
                 f"상위백분위={item['percentile']*100:.1f}%, "
                 f"분류={self._ridge_label(item['ridge_class'], 'ko')}, "
                 f"연결기준=거리<= {max_segment_distance:.1f}m · 고도차<= {max_segment_drop:.1f}m, "
-                f"보정연결={bridged_count}개."
+                f"보정연결={bridged_count}개. "
+                "등급은 이 분석범위 안에서의 상대순위이며, 산경표 대간·정맥 판정이 아님."
             )
             features.append(feature)
 

@@ -65,6 +65,13 @@ _CONFIG_SCHEMAS = {
             "references": list,
         },
     },
+    "ridge_classes.json": {
+        "required_schema_version": "1.0.0",
+        "required_fields": {
+            "computed_classes": list,
+            "named_system": dict,
+        },
+    },
     "ui_texts.json": {
         "required_schema_version": "1.0.0",
         "required_fields": {
@@ -79,6 +86,7 @@ _SCHEMA_MIGRATIONS = {
     "profiles.json": {},
     "terms.json": {},
     "references.json": {},
+    "ridge_classes.json": {},
     "ui_texts.json": {},
 }
 

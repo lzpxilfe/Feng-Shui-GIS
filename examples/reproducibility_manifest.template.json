@@ -36,6 +36,10 @@
       "sha256": "replace-me"
     },
     {
+      "path": "feng_shui_gis/config/ridge_classes.json",
+      "sha256": "replace-me"
+    },
+    {
       "path": "feng_shui_gis/config/terms.json",
       "sha256": "replace-me"
     },

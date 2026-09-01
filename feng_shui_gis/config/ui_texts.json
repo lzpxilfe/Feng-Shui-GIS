@@ -1573,8 +1573,8 @@
     {
       "id": "major",
       "label": {
-        "ko": "대간·정맥",
-        "en": "Major Ridge"
+        "ko": "주능선(분석범위 상위)",
+        "en": "Primary ridge (top in extent)"
       },
       "color": "#55645a",
       "width": 2.3,
@@ -1583,8 +1583,8 @@
     {
       "id": "minor",
       "label": {
-        "ko": "기맥·지맥",
-        "en": "Minor Ridge"
+        "ko": "가지능선",
+        "en": "Branch ridge"
       },
       "color": "#74847d",
       "width": 1.1,

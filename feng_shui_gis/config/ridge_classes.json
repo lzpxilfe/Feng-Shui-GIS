@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0.0",
+  "_comment": "Ridge classes produced by this plugin, and the named Korean ridge system they must not be confused with.",
+  "computed_classes": [
+    {
+      "id": "major",
+      "label": {
+        "ko": "주능선(분석범위 상위)",
+        "en": "Primary ridge (top in extent)",
+        "zh": "主山脊（范围内上位）",
+        "zh_hant": "主山脊（範圍內上位）"
+      },
+      "definition": {
+        "ko": "현재 분석 범위에서 추출된 능선 가운데 길이·연속성 점수 상위 구간입니다.",
+        "en": "The upper band of extracted ridges by length and continuity score within the current analysis extent.",
+        "zh": "当前分析范围内按长度与连续性评分处于上位的山脊段。"
+      },
+      "extent_relative": true
+    },
+    {
+      "id": "minor",
+      "label": {
+        "ko": "가지능선",
+        "en": "Branch ridge",
+        "zh": "支脊",
+        "zh_hant": "支脊"
+      },
+      "definition": {
+        "ko": "같은 분석 범위에서 상위 구간에 들지 않은 나머지 능선입니다.",
+        "en": "The remaining extracted ridges in the same extent.",
+        "zh": "同一范围内未进入上位区间的其余山脊。"
+      },
+      "extent_relative": true
+    }
+  ],
+  "named_system": {
+    "id": "sangyeongpyo",
+    "label": {
+      "ko": "산경표(山經表) 산줄기 체계",
+      "en": "Sangyeongpyo ridge system",
+      "zh": "山经表山脉体系"
+    },
+    "identified_by_this_plugin": false,
+    "ranks": [
+      {
+        "id": "daegan",
+        "label": { "ko": "대간", "en": "Daegan", "zh": "大干" },
+        "count": 1,
+        "note": {
+          "ko": "백두대간. 전국 단위로 이름과 경로가 확정된 단일 산줄기입니다.",
+          "en": "Baekdudaegan; a single nationally named and delimited ridgeline.",
+          "zh": "白头大干，全国范围内名称与走向已确定的单一山脉。"
+        }
+      },
+      {
+        "id": "jeonggan",
+        "label": { "ko": "정간", "en": "Jeonggan", "zh": "正干" },
+        "count": 1,
+        "note": {
+          "ko": "장백정간.",
+          "en": "Jangbaek Jeonggan.",
+          "zh": "长白正干。"
+        }
+      },
+      {
+        "id": "jeongmaek",
+        "label": { "ko": "정맥", "en": "Jeongmaek", "zh": "正脉" },
+        "count": 13,
+        "note": {
+          "ko": "13정맥. 각각 고유 명칭과 확정된 경로를 가집니다.",
+          "en": "The thirteen jeongmaek, each with its own name and delimited course.",
+          "zh": "十三正脉，各有专名与既定走向。"
+        }
+      },
+      {
+        "id": "gimaek_jimaek",
+        "label": { "ko": "기맥·지맥", "en": "Gimaek / Jimaek", "zh": "岐脉·支脉" },
+        "count": null,
+        "note": {
+          "ko": "정맥에서 갈라지는 하위 산줄기. 분류 기준과 목록은 문헌·단체마다 다릅니다.",
+          "en": "Lower branches off the jeongmaek; the criteria and inventories differ between sources.",
+          "zh": "自正脉分出的下位山脉，各文献与团体的分类标准不一。"
+        }
+      }
+    ],
+    "why_not_identified": {
+      "ko": "대간·정간·정맥은 전국 단위로 이름과 경로가 확정된 고유명사 체계입니다. 이 플러그인의 능선 등급은 사용자가 넣은 DEM 범위 안에서만 계산된 상대 순위이므로, 분석 범위가 달라지면 같은 능선의 등급도 달라집니다. 따라서 계산된 등급으로는 어떤 산줄기가 대간인지 정맥인지 판정할 수 없습니다.",
+      "en": "Daegan, jeonggan, and jeongmaek are proper names fixed at national scale. This plugin's ridge grade is a rank computed only within the DEM extent the user supplied, so the same ridge changes grade when the extent changes. A computed grade therefore cannot establish that a ridge is a daegan or a jeongmaek.",
+      "zh": "大干、正干、正脉是全国尺度上名称与走向既定的专名体系；本插件的山脊等级仅在用户提供的 DEM 范围内计算，范围一变，同一山脊的等级也随之改变，故计算等级无法判定某条山脊属于大干或正脉。"
+    },
+    "what_would_be_required": {
+      "ko": "권위 있는 산경표 기준 산줄기 참조 레이어(예: 산림청·국토지리정보원 공간정보)를 별도 입력으로 받아 공간적으로 대조해야 합니다. 현재 이 플러그인은 그 참조 레이어를 포함하지 않습니다.",
+      "en": "An authoritative Sangyeongpyo reference ridgeline layer would have to be supplied as a separate input and matched spatially. This plugin does not ship such a layer.",
+      "zh": "需另行输入权威的山经表山脉参考图层并进行空间比对；本插件不附带该图层。"
+    }
+  }
+}
