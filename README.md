@@ -249,6 +249,7 @@ python3 tools/setup_study_case.py \
 - [docs/reference_audit.md](docs/reference_audit.md)
 - [docs/regional_period_notes.md](docs/regional_period_notes.md)
 - [docs/chinese_terminology.md](docs/chinese_terminology.md)
+- [docs/china_data_guide.md](docs/china_data_guide.md)
 
 ### Operations and reporting
 

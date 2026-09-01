@@ -10,6 +10,8 @@ from qgis.PyQt.QtWidgets import QAction, QDialog, QVBoxLayout, QTextBrowser
 from qgis.core import (
     QgsApplication,
     QgsCategorizedSymbolRenderer,
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
     QgsFeature,
     QgsFeatureRequest,
     QgsField,
@@ -34,6 +36,7 @@ from .calibration_reporting import (
     build_calibration_popup_sections,
     write_calibration_report_files,
 )
+from .china_geodesy import datum_advisory, recommended_projected_crs
 from .compare_layer_export import (
     export_top_changed_features_layer,
     style_compare_change_layer,
@@ -1170,6 +1173,86 @@ class FengShuiGisPlugin:
         copied.setName(layer_name)
         return copied
 
+    @staticmethod
+    def _layer_center_wgs84(layer):
+        """Centre of a layer's extent as (lon, lat), or None if unobtainable."""
+        if layer is None:
+            return None
+        crs = layer.crs()
+        if crs is None or not crs.isValid():
+            return None
+        extent = layer.extent()
+        if extent is None or extent.isEmpty():
+            return None
+        center = extent.center()
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        if crs == wgs84:
+            return center.x(), center.y()
+        try:
+            transform = QgsCoordinateTransform(crs, wgs84, QgsProject.instance())
+            projected = transform.transform(center)
+        except Exception:  # noqa: BLE001 - a failed transform is not fatal here
+            return None
+        return projected.x(), projected.y()
+
+    def _dem_cell_size_meters(self, layer):
+        """DEM cell size in metres, or None when it cannot be established."""
+        if layer is None:
+            return None
+        crs = layer.crs()
+        if crs is None or not crs.isValid() or crs.isGeographic():
+            return None
+        try:
+            return abs(float(layer.rasterUnitsPerPixelX()))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _chinese_datum_advisory(self, dem_layer):
+        center = self._layer_center_wgs84(dem_layer)
+        if center is None:
+            return None
+        return datum_advisory(
+            center_lon=center[0],
+            center_lat=center[1],
+            dem_cell_size_m=self._dem_cell_size_meters(dem_layer),
+        )
+
+    def _warn_if_chinese_datum_hazard(self, dem_layer):
+        """Flag the GCJ-02 / BD-09 trap for analyses inside China.
+
+        The datum cannot be read off the data - a layer digitised from a
+        Chinese basemap declares EPSG:4326 exactly like a WGS84 one - so this
+        reports how far a mix-up would move the analysis and leaves the call
+        to the user.
+        """
+        advisory = self._chinese_datum_advisory(dem_layer)
+        if advisory is None:
+            return
+
+        text_lang = self._label_language()
+        message = ui_text(
+            "warn_chinese_datum_template",
+            text_lang,
+            default=(
+                "Analysis extent is inside China. If any input was digitised from "
+                "a Chinese basemap (Amap/Baidu/Tencent), it is in GCJ-02 or BD-09, "
+                "not WGS84, and would be offset by about {gcj:.0f} m (BD-09 "
+                "{bd:.0f} m). Verify the source datum before reading the result."
+            ),
+        ).format(
+            gcj=advisory["gcj02_offset_m"],
+            bd=advisory["bd09_offset_m"],
+        )
+        cells = advisory.get("cells_shifted")
+        if cells:
+            message += " " + ui_text(
+                "warn_chinese_datum_cells",
+                text_lang,
+                default="That is about {cells:.0f} DEM cells.",
+            ).format(cells=cells)
+        severity = "warning" if advisory["severity"] != "info" else "info"
+        self._push_messagebar(severity, tr("plugin_title"), message)
+
     def _require_projected_dem_crs(self, layer):
         if layer is None:
             return True
@@ -1190,6 +1273,20 @@ class FengShuiGisPlugin:
             text_lang,
             default=default_message,
         )
+        # A generic "use a projected CRS" is not actionable in China, where the
+        # right answer is a specific Gauss-Kruger belt.
+        center = self._layer_center_wgs84(layer)
+        if center is not None:
+            suggestion = recommended_projected_crs(center[0], center[1])
+            if suggestion:
+                message += " " + ui_text(
+                    "projected_crs_suggestion",
+                    text_lang,
+                    default="Suggested for this extent: {label} ({authid}).",
+                ).format(
+                    label=suggestion["label"],
+                    authid=suggestion.get("authid") or suggestion.get("proj4", ""),
+                )
         self._push_messagebar("critical", tr("plugin_title"), message)
         self._set_status(message)
         return False
@@ -1226,9 +1323,7 @@ class FengShuiGisPlugin:
 
     def _label_language(self):
         if self.dock and hasattr(self.dock, "label_language"):
-            code = self.dock.label_language()
-            if code in ("ko", "en"):
-                return code
+            return normalize_label_language(self.dock.label_language())
         return "ko"
 
     def _mountain_name_options(self):
@@ -2006,6 +2101,7 @@ class FengShuiGisPlugin:
         if not self._require_projected_dem_crs(dem_layer):
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
+        self._warn_if_chinese_datum_hazard(dem_layer)
 
         def _worker(task):
             return self._run_analysis_worker(
@@ -2119,6 +2215,7 @@ class FengShuiGisPlugin:
         if not self._require_projected_dem_crs(dem_layer):
             return
         self._warn_if_crs_mismatch(dem_layer, water_layer)
+        self._warn_if_chinese_datum_hazard(dem_layer)
 
         def _worker(task):
             return self._run_term_extraction_worker(
@@ -2239,6 +2336,7 @@ class FengShuiGisPlugin:
         if not self._require_projected_dem_crs(dem_layer):
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
+        self._warn_if_chinese_datum_hazard(dem_layer)
 
         def _worker(task):
             return self._run_profile_compare_worker(
@@ -2377,6 +2475,7 @@ class FengShuiGisPlugin:
         if not self._require_projected_dem_crs(dem_layer):
             return
         self._warn_if_crs_mismatch(dem_layer, site_layer, water_layer)
+        self._warn_if_chinese_datum_hazard(dem_layer)
 
         def _worker(task):
             return self._run_calibration_worker(

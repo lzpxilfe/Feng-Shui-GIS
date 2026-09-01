@@ -317,6 +317,21 @@
       "ko": "DEM 좌표계가 경위도(도 단위)입니다. 이 플러그인의 거리·반경 계산은 투영 좌표계가 필요합니다. 미터 기반 CRS로 재투영한 뒤 다시 실행하세요.",
       "en": "DEM CRS is geographic (degrees). This plugin's distance and radius calculations require a projected CRS. Reproject the DEM to a meter-based CRS and run again."
     },
+    "projected_crs_suggestion": {
+      "ko": "이 범위에 권장되는 좌표계: {label} ({authid}).",
+      "en": "Suggested for this extent: {label} ({authid}).",
+      "zh": "此范围建议使用的坐标系：{label}（{authid}）。"
+    },
+    "warn_chinese_datum_template": {
+      "ko": "분석 범위가 중국 경내입니다. 입력 자료 중 중국 웹지도(高德·百度·腾讯)에서 디지타이징한 것이 있다면 WGS84가 아니라 GCJ-02 또는 BD-09이며, 약 {gcj:.0f}m(BD-09는 {bd:.0f}m) 어긋납니다. 결과를 읽기 전에 원자료의 좌표계를 확인하세요.",
+      "en": "Analysis extent is inside China. If any input was digitised from a Chinese basemap (Amap/Baidu/Tencent), it is in GCJ-02 or BD-09, not WGS84, and would be offset by about {gcj:.0f} m (BD-09 {bd:.0f} m). Verify the source datum before reading the result.",
+      "zh": "分析范围位于中国境内。若任一输入图层来自中国网络地图（高德/百度/腾讯），其坐标为 GCJ-02 或 BD-09 而非 WGS84，偏移约 {gcj:.0f} 米（BD-09 约 {bd:.0f} 米）。请先确认原始数据的坐标系再解读结果。"
+    },
+    "warn_chinese_datum_cells": {
+      "ko": "DEM 셀 기준 약 {cells:.0f}칸에 해당합니다.",
+      "en": "That is about {cells:.0f} DEM cells.",
+      "zh": "约相当于 {cells:.0f} 个 DEM 栅格单元。"
+    },
     "language_ko": {
       "ko": "한국어",
       "en": "Korean"
