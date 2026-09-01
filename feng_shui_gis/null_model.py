@@ -240,3 +240,100 @@ def comparison_summary(result, language="ko"):
         f"순열검정 p={p_value:.4f}. "
         f"배경 표집 기준: {result['background_policy']}."
     )
+
+DEFAULT_BACKGROUND_COUNT = 800
+DEFAULT_MAX_ATTEMPT_FACTOR = 40
+
+
+def background_policy(
+    *,
+    count=DEFAULT_BACKGROUND_COUNT,
+    max_slope_deg=25.0,
+    min_separation_m=None,
+    exclude_within_m=None,
+    seed=42,
+):
+    """Rules for drawing background positions, and the text that describes them.
+
+    Defaults exclude ground steeper than 25 degrees, because comparing sites
+    against cliffs makes any pattern look significant. Narrowing the policy
+    makes the eventual claim stronger and harder to pass, which is the point.
+
+    ``exclude_within_m`` keeps background positions away from the observed
+    sites themselves, so the background does not resample the very terrain
+    under test.
+    """
+    policy = {
+        "count": max(2, int(count)),
+        "max_slope_deg": None if max_slope_deg is None else float(max_slope_deg),
+        "min_separation_m": (
+            None if min_separation_m is None else float(min_separation_m)
+        ),
+        "exclude_within_m": (
+            None if exclude_within_m is None else float(exclude_within_m)
+        ),
+        "seed": int(seed),
+    }
+    policy["description"] = describe_policy(policy)
+    return policy
+
+
+def describe_policy(policy):
+    """Human-readable statement of how background positions were drawn."""
+    if not isinstance(policy, dict):
+        return ""
+    parts = [f"random DEM positions n={policy.get('count', 0)}"]
+    max_slope = policy.get("max_slope_deg")
+    if max_slope is not None:
+        parts.append(f"slope <= {max_slope:g} deg")
+    exclude_within = policy.get("exclude_within_m")
+    if exclude_within:
+        parts.append(f"at least {exclude_within:g} m from observed sites")
+    min_separation = policy.get("min_separation_m")
+    if min_separation:
+        parts.append(f"at least {min_separation:g} m apart")
+    parts.append("nodata excluded")
+    parts.append(f"seed={policy.get('seed')}")
+    return ", ".join(parts)
+
+
+def candidate_accepted(
+    policy,
+    *,
+    slope_deg,
+    distance_to_observed_m=None,
+    distance_to_accepted_m=None,
+):
+    """Whether one drawn position satisfies the background policy."""
+    if not isinstance(policy, dict):
+        return False
+    if slope_deg is None:
+        # Slope could not be derived, so this position cannot be scored the
+        # same way the observed sites are.
+        return False
+    max_slope = policy.get("max_slope_deg")
+    if max_slope is not None and float(slope_deg) > max_slope:
+        return False
+    exclude_within = policy.get("exclude_within_m")
+    if (
+        exclude_within
+        and distance_to_observed_m is not None
+        and float(distance_to_observed_m) < exclude_within
+    ):
+        return False
+    min_separation = policy.get("min_separation_m")
+    if (
+        min_separation
+        and distance_to_accepted_m is not None
+        and float(distance_to_accepted_m) < min_separation
+    ):
+        return False
+    return True
+
+
+def max_attempts(policy, factor=DEFAULT_MAX_ATTEMPT_FACTOR):
+    """Attempt cap so an unsatisfiable policy terminates instead of hanging."""
+    if not isinstance(policy, dict):
+        return 0
+    return int(policy.get("count", 0)) * max(1, int(factor))
+

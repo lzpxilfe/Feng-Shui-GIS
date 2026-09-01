@@ -62,6 +62,7 @@ from .analysis_dem_utils import (
     sample_dem,
     sample_ring,
     sample_sight_profile,
+    sample_slope_aspect,
     stddev,
 )
 from .analysis_dem_metrics import (
@@ -149,6 +150,13 @@ from .analysis_term_links import (
 )
 from .analysis_visibility import line_of_sight, visibility_summary
 from .analysis_water import dem_step, nearest_water_distance
+from .null_model import (
+    background_comparison,
+    background_policy,
+    candidate_accepted,
+    describe_policy,
+    max_attempts,
+)
 from .korean_ridge_system import ridge_class_label
 from .calibration_helpers import (
     build_calibration_report_payload,
@@ -1135,46 +1143,25 @@ class FengShuiAnalyzer:
                 site_geom_dem = self._transform_geometry(feature_geom, site_to_dem)
                 site_point = self._geometry_point(site_geom_dem)
 
-                dem_metrics = self._compute_dem_metrics(
-                    provider=dem_provider,
+                assessment = self._assess_position(
+                    dem_provider=dem_provider,
                     site_point=site_point,
-                    slope_deg=slope_value,
+                    site_geom=site_geom_dem,
+                    slope_value=slope_value,
+                    aspect_value=aspect_value,
                     hemisphere=hemisphere,
                     dem_step=dem_step,
                     context=context,
-                )
-
-                water_distance = self._nearest_water_distance(
-                    site_geom=site_geom_dem,
-                    site_point=site_point,
+                    profile=profile,
                     water_index=water_index,
                     water_geoms=water_geoms,
                 )
-
-                distance_water_score = self._score_water_distance(
-                    water_distance,
-                    context=context,
-                )
-                water_score = self._combine_hydro_scores(
-                    distance_score=distance_water_score,
-                    dem_score=dem_metrics["dem_water_score"],
-                )
-
-                indicators = {
-                    "slope":     self._score_profile_slope(slope_value, profile),
-                    "aspect":    self._score_aspect(aspect_value, hemisphere, context=context),
-                    "form":      dem_metrics["form_score"],
-                    "long":      dem_metrics["long_score"],
-                    "water":     water_score,
-                    "conv":      dem_metrics["convergence"],
-                    "tpi":       self._score_profile_tpi(dem_metrics["tpi_norm"], profile),
-                    "sashinsa":  dem_metrics.get("sashinsa_score"),
-                    "enclosure": dem_metrics.get("enclosure_index"),
-                }
-
-                total_score = self._profile_weighted_score(indicators, profile)
-                coverage = self._profile_indicator_coverage(indicators, profile)
-                missing_keys = missing_indicator_keys(indicators, profile)
+                dem_metrics = assessment["dem_metrics"]
+                water_distance = assessment["water_distance"]
+                indicators = assessment["indicators"]
+                total_score = assessment["total_score"]
+                coverage = assessment["coverage"]
+                missing_keys = assessment["missing_keys"]
                 principle_records = build_principle_records(
                     indicators=indicators,
                     dem_metrics=dem_metrics,
@@ -1773,6 +1760,304 @@ class FengShuiAnalyzer:
     @staticmethod
     def _azimuth_label(azimuth):
         return azimuth_label(azimuth)
+
+    def build_background_scores(
+        self,
+        dem_layer,
+        water_layer,
+        hemisphere,
+        profile_key,
+        context,
+        policy,
+        observed_points=(),
+        profile=None,
+        feedback=None,
+    ):
+        """Draw background positions and score them like the observed sites.
+
+        Slope and aspect are derived from the DEM here rather than read from
+        site fields, because background draws have no fields. Observed sites
+        must be re-scored the same way for the comparison to hold; see
+        ``score_observed_positions``.
+
+        Returns the scores plus a record of how the sample was actually drawn,
+        which is what makes the resulting comparison reproducible.
+        """
+        provider = dem_layer.dataProvider()
+        dem_step = self._dem_step(dem_layer)
+        extent = dem_layer.extent()
+        if profile is None:
+            profile = self._contextualize_profile(
+                self._profile_spec(profile_key), context, profile_key
+            )
+        water_index, water_geoms = self._prepare_water_reference(
+            dem_layer=dem_layer,
+            water_layer=water_layer,
+        )
+
+        rng = random.Random(int(policy.get("seed", 42)))
+        wanted = int(policy.get("count", 0))
+        attempt_cap = max_attempts(policy)
+        observed = [QgsPointXY(point) for point in observed_points if point is not None]
+
+        scores = []
+        accepted_points = []
+        attempts = 0
+        rejected = {"nodata_or_slope": 0, "near_observed": 0, "too_close": 0, "unscored": 0}
+
+        while len(scores) < wanted and attempts < attempt_cap:
+            attempts += 1
+            if feedback is not None and getattr(feedback, "isCanceled", None) and feedback.isCanceled():
+                break
+            candidate = QgsPointXY(
+                rng.uniform(extent.xMinimum(), extent.xMaximum()),
+                rng.uniform(extent.yMinimum(), extent.yMaximum()),
+            )
+            slope_deg, aspect_deg = sample_slope_aspect(provider, candidate, dem_step)
+            distance_to_observed = self._nearest_point_distance(candidate, observed)
+            distance_to_accepted = self._nearest_point_distance(candidate, accepted_points)
+            if not candidate_accepted(
+                policy,
+                slope_deg=slope_deg,
+                distance_to_observed_m=distance_to_observed,
+                distance_to_accepted_m=distance_to_accepted,
+            ):
+                if slope_deg is None or (
+                    policy.get("max_slope_deg") is not None
+                    and slope_deg > policy["max_slope_deg"]
+                ):
+                    rejected["nodata_or_slope"] += 1
+                elif (
+                    policy.get("exclude_within_m")
+                    and distance_to_observed is not None
+                    and distance_to_observed < policy["exclude_within_m"]
+                ):
+                    rejected["near_observed"] += 1
+                else:
+                    rejected["too_close"] += 1
+                continue
+
+            assessment = self._assess_position(
+                dem_provider=provider,
+                site_point=candidate,
+                site_geom=QgsGeometry.fromPointXY(candidate),
+                slope_value=slope_deg,
+                aspect_value=aspect_deg,
+                hemisphere=hemisphere,
+                dem_step=dem_step,
+                context=context,
+                profile=profile,
+                water_index=water_index,
+                water_geoms=water_geoms,
+            )
+            if assessment["total_score"] is None:
+                rejected["unscored"] += 1
+                continue
+            scores.append(assessment["total_score"])
+            accepted_points.append(candidate)
+
+        return {
+            "scores": scores,
+            "points": accepted_points,
+            "policy": dict(policy),
+            "requested": wanted,
+            "attempts": attempts,
+            "attempt_cap": attempt_cap,
+            "rejected": rejected,
+            # A sample that fell short of the request is still usable, but the
+            # shortfall has to travel with it.
+            "complete": len(scores) >= wanted,
+        }
+
+    def compare_sites_to_background(
+        self,
+        dem_layer,
+        water_layer,
+        hemisphere,
+        profile_key,
+        context,
+        observed_points,
+        policy=None,
+        iterations=10000,
+        feedback=None,
+    ):
+        """Run the whole null-model comparison in one call.
+
+        Both sides are scored through the same path, and the policy text handed
+        to the statistics is the one this sampler actually applied - a mismatch
+        between the two is precisely what makes published comparisons
+        unreproducible.
+        """
+        if policy is None:
+            policy = background_policy()
+        points = [point for point in observed_points if point is not None]
+        observed_scores = self.score_observed_positions(
+            dem_layer,
+            water_layer,
+            hemisphere,
+            profile_key,
+            context,
+            points,
+        )
+        sample = self.build_background_scores(
+            dem_layer,
+            water_layer,
+            hemisphere,
+            profile_key,
+            context,
+            policy,
+            observed_points=points,
+            feedback=feedback,
+        )
+        policy_text = describe_policy(sample["policy"])
+        if not sample["complete"]:
+            # The shortfall changes what the background represents, so it goes
+            # into the policy statement rather than a footnote.
+            policy_text += (
+                f" (requested {sample['requested']}, drew {len(sample['scores'])}"
+                f" in {sample['attempts']} attempts)"
+            )
+        comparison = background_comparison(
+            observed_scores,
+            sample["scores"],
+            background_policy=policy_text,
+            iterations=iterations,
+            seed=int(policy.get("seed", 42)),
+        )
+        return {
+            "comparison": comparison,
+            "sample": sample,
+            "observed_scores": observed_scores,
+            "profile": profile_key,
+            "culture": context.get("culture_key"),
+            "period": context.get("period_key"),
+            "scoring_note": (
+                "Observed and background positions were both scored with slope "
+                "and aspect derived from the DEM, not from site layer fields."
+            ),
+        }
+
+    def score_observed_positions(
+        self,
+        dem_layer,
+        water_layer,
+        hemisphere,
+        profile_key,
+        context,
+        points,
+        profile=None,
+    ):
+        """Re-score observed sites with DEM-derived slope and aspect.
+
+        The scored layer's fs_score may rest on slope and aspect fields
+        computed elsewhere. Comparing those against background draws measured
+        from the DEM would confound the two, so the comparison uses this.
+        """
+        provider = dem_layer.dataProvider()
+        dem_step = self._dem_step(dem_layer)
+        if profile is None:
+            profile = self._contextualize_profile(
+                self._profile_spec(profile_key), context, profile_key
+            )
+        water_index, water_geoms = self._prepare_water_reference(
+            dem_layer=dem_layer,
+            water_layer=water_layer,
+        )
+
+        scores = []
+        for point in points:
+            if point is None:
+                continue
+            slope_deg, aspect_deg = sample_slope_aspect(provider, point, dem_step)
+            assessment = self._assess_position(
+                dem_provider=provider,
+                site_point=point,
+                site_geom=QgsGeometry.fromPointXY(point),
+                slope_value=slope_deg,
+                aspect_value=aspect_deg,
+                hemisphere=hemisphere,
+                dem_step=dem_step,
+                context=context,
+                profile=profile,
+                water_index=water_index,
+                water_geoms=water_geoms,
+            )
+            if assessment["total_score"] is not None:
+                scores.append(assessment["total_score"])
+        return scores
+
+    @staticmethod
+    def _nearest_point_distance(point, others):
+        if not others:
+            return None
+        nearest = None
+        for other in others:
+            distance = math.hypot(point.x() - other.x(), point.y() - other.y())
+            if nearest is None or distance < nearest:
+                nearest = distance
+        return nearest
+
+    def _assess_position(
+        self,
+        *,
+        dem_provider,
+        site_point,
+        site_geom,
+        slope_value,
+        aspect_value,
+        hemisphere,
+        dem_step,
+        context,
+        profile,
+        water_index,
+        water_geoms,
+    ):
+        """Score one position. Shared by observed sites and background draws.
+
+        A null-model comparison is only valid if both sides are measured by the
+        same procedure, so this is the single path both take.
+        """
+        dem_metrics = self._compute_dem_metrics(
+            provider=dem_provider,
+            site_point=site_point,
+            slope_deg=slope_value,
+            hemisphere=hemisphere,
+            dem_step=dem_step,
+            context=context,
+        )
+        water_distance = self._nearest_water_distance(
+            site_geom=site_geom,
+            site_point=site_point,
+            water_index=water_index,
+            water_geoms=water_geoms,
+        )
+        distance_water_score = self._score_water_distance(
+            water_distance,
+            context=context,
+        )
+        water_score = self._combine_hydro_scores(
+            distance_score=distance_water_score,
+            dem_score=dem_metrics["dem_water_score"],
+        )
+        indicators = {
+            "slope":     self._score_profile_slope(slope_value, profile),
+            "aspect":    self._score_aspect(aspect_value, hemisphere, context=context),
+            "form":      dem_metrics["form_score"],
+            "long":      dem_metrics["long_score"],
+            "water":     water_score,
+            "conv":      dem_metrics["convergence"],
+            "tpi":       self._score_profile_tpi(dem_metrics["tpi_norm"], profile),
+            "sashinsa":  dem_metrics.get("sashinsa_score"),
+            "enclosure": dem_metrics.get("enclosure_index"),
+        }
+        return {
+            "dem_metrics": dem_metrics,
+            "water_distance": water_distance,
+            "indicators": indicators,
+            "total_score": self._profile_weighted_score(indicators, profile),
+            "coverage": self._profile_indicator_coverage(indicators, profile),
+            "missing_keys": missing_indicator_keys(indicators, profile),
+        }
 
     @staticmethod
     def _ridge_label(class_id, language="ko"):

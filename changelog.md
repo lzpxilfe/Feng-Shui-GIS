@@ -1,6 +1,13 @@
 # Changelog
 
 ## 2026-09-02
+- 귀무모형 플러그인 통합 — 배경 점 추출부터 비교까지
+  - `sample_slope_aspect`: DEM에서 경사·향 직접 산출 (Horn 3x3). 결측 시 중심값 대체 없이 None
+  - `_assess_position` 시임 추출: 관측 유적과 배경 점이 **동일 경로로 채점**됨
+  - `build_background_scores` / `score_observed_positions` / `compare_sites_to_background`
+  - `background_policy`: 기본 경사 상한 25도, 관측지 이격, 배경 간 이격, 시드 고정
+  - 표본 부족 시 그 사실이 `background_policy` 문구에 자동 기록
+  - 시도 횟수 상한으로 만족 불가능한 정책도 종료 보장
 - 귀무모형(배경 대비 검증) 추가 — 서술에서 주장으로
   - `null_model.py`: Cliff's delta 효과크기, 순열검정, 평균 백분위 (QGIS 비의존)
   - `background_policy` 인자 **필수** — 배경 표집 기준 없이는 계산 자체를 거부

@@ -10,6 +10,10 @@ import unittest
 
 from feng_shui_gis.null_model import (
     background_comparison,
+    background_policy,
+    candidate_accepted,
+    describe_policy,
+    max_attempts,
     cliffs_delta,
     comparison_summary,
     effect_magnitude,
@@ -208,3 +212,94 @@ class ComparisonSummaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class BackgroundPolicyTests(unittest.TestCase):
+    def test_default_policy_excludes_steep_ground(self):
+        # Comparing sites against cliffs makes any pattern look significant.
+        policy = background_policy()
+        self.assertEqual(policy["max_slope_deg"], 25.0)
+        self.assertIn("slope <= 25 deg", policy["description"])
+
+    def test_description_records_every_active_constraint(self):
+        policy = background_policy(
+            count=500,
+            max_slope_deg=20.0,
+            exclude_within_m=300.0,
+            min_separation_m=100.0,
+            seed=7,
+        )
+        description = policy["description"]
+        for fragment in (
+            "n=500",
+            "slope <= 20 deg",
+            "300 m from observed sites",
+            "100 m apart",
+            "seed=7",
+        ):
+            self.assertIn(fragment, description)
+
+    def test_inactive_constraints_are_not_claimed(self):
+        policy = background_policy(max_slope_deg=None, exclude_within_m=None)
+        self.assertNotIn("slope", policy["description"])
+        self.assertNotIn("observed sites", policy["description"])
+
+    def test_count_cannot_drop_below_a_comparable_sample(self):
+        self.assertEqual(background_policy(count=0)["count"], 2)
+
+    def test_description_of_a_non_policy_is_empty(self):
+        self.assertEqual(describe_policy(None), "")
+
+
+class CandidateAcceptanceTests(unittest.TestCase):
+    POLICY = background_policy(
+        count=10, max_slope_deg=25.0, exclude_within_m=300.0, min_separation_m=100.0
+    )
+
+    def test_unmeasurable_slope_is_rejected(self):
+        # Without slope the position cannot be scored the way sites are.
+        self.assertFalse(candidate_accepted(self.POLICY, slope_deg=None))
+
+    def test_steep_ground_is_rejected(self):
+        self.assertFalse(candidate_accepted(self.POLICY, slope_deg=40.0))
+
+    def test_ground_too_near_an_observed_site_is_rejected(self):
+        self.assertFalse(
+            candidate_accepted(
+                self.POLICY, slope_deg=10.0, distance_to_observed_m=250.0
+            )
+        )
+
+    def test_ground_too_near_another_draw_is_rejected(self):
+        self.assertFalse(
+            candidate_accepted(
+                self.POLICY, slope_deg=10.0, distance_to_accepted_m=50.0
+            )
+        )
+
+    def test_a_position_meeting_every_constraint_is_accepted(self):
+        self.assertTrue(
+            candidate_accepted(
+                self.POLICY,
+                slope_deg=10.0,
+                distance_to_observed_m=900.0,
+                distance_to_accepted_m=250.0,
+            )
+        )
+
+    def test_absent_distances_do_not_reject(self):
+        # The first draw has nothing to measure against.
+        self.assertTrue(candidate_accepted(self.POLICY, slope_deg=10.0))
+
+    def test_a_non_policy_accepts_nothing(self):
+        self.assertFalse(candidate_accepted(None, slope_deg=5.0))
+
+
+class AttemptCapTests(unittest.TestCase):
+    def test_cap_scales_with_the_requested_count(self):
+        self.assertGreater(max_attempts(background_policy(count=100)), 100)
+
+    def test_cap_exists_so_an_unsatisfiable_policy_terminates(self):
+        # A policy no position can satisfy must stop, not spin.
+        self.assertGreater(max_attempts(background_policy(count=1)), 0)
+        self.assertEqual(max_attempts(None), 0)
+

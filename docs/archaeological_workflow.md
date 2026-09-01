@@ -79,17 +79,37 @@
 
 ### 3.4 실행
 
-```python
-from feng_shui_gis.null_model import background_comparison, comparison_summary
+플러그인이 배경 점 추출부터 비교까지 한 번에 처리합니다.
 
-result = background_comparison(
-    observed_scores,      # 대상 유적들의 fs_score
-    background_scores,    # 3.2 기준으로 뽑은 무작위 점들의 fs_score
-    background_policy="경사 25도 미만 육지, 수면 제외, n=1000",
+```python
+from feng_shui_gis.null_model import background_policy, comparison_summary
+
+policy = background_policy(
+    count=800,
+    max_slope_deg=25.0,        # 절벽과 비교하지 않기
+    exclude_within_m=300.0,    # 대상 유적 주변은 배경에서 제외
+    min_separation_m=100.0,    # 배경 점끼리도 이격
     seed=42,
 )
-print(comparison_summary(result, "ko"))
+
+result = analyzer.compare_sites_to_background(
+    dem_layer, water_layer, "north", "tomb", context,
+    observed_points=site_points,
+    policy=policy,
+)
+print(comparison_summary(result["comparison"], "ko"))
 ```
+
+**중요:** 관측 유적과 배경 점은 **같은 경로로 채점**됩니다. 경사·향을 사이트
+레이어 필드가 아니라 **DEM에서 직접 산출**해 양쪽에 동일하게 적용합니다.
+한쪽만 필드값을 쓰면 두 추정량이 섞여 비교가 성립하지 않습니다.
+
+배경 표본이 요청 개수에 못 미치면 그 사실이 `background_policy` 문구에 자동으로
+들어갑니다. 제약이 너무 빡빡해 800개 중 120개만 뽑혔다면, 그 배경은 요청한 배경이
+아니므로 결과에 함께 기록되어야 합니다.
+
+통계만 따로 쓰려면 `background_comparison()`을 직접 호출할 수도 있습니다. 이때는
+`background_policy` 인자에 실제 표집 기준을 직접 적어야 합니다.
 
 ### 3.5 결과를 읽는다
 

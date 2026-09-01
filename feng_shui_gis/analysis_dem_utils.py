@@ -28,6 +28,60 @@ def offset_point(point, distance, azimuth_deg):
     )
 
 
+def sample_slope_aspect(provider, point, step):
+    """Slope in degrees and downhill aspect in compass degrees, from the DEM.
+
+    Horn's 3x3 finite-difference method, the same estimator QGIS and ArcGIS use
+    for their slope and aspect rasters.
+
+    Site layers carry pre-computed ``sl_``/``as_`` fields, but background
+    positions drawn for a null model have no such fields. Both sides of that
+    comparison have to be measured the same way, so this derives them directly.
+
+    Returns ``(slope_deg, aspect_deg)``. Aspect is ``None`` on flat ground,
+    where downhill direction is undefined. Both are ``None`` when any cell of
+    the window is nodata: substituting the centre value would quietly flatten
+    the estimate, and a missing indicator is more honest than a biased one.
+    """
+    try:
+        step = float(step)
+    except (TypeError, ValueError):
+        return None, None
+    if step <= 0.0:
+        return None, None
+
+    window = {}
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            sample_point = QgsPointXY(
+                point.x() + (dx * step),
+                point.y() + (dy * step),
+            )
+            value = sample_dem(provider, sample_point)
+            if value is None:
+                return None, None
+            window[(dx, dy)] = value
+
+    # x runs east, y runs north.
+    west = window[(-1, 1)] + (2.0 * window[(-1, 0)]) + window[(-1, -1)]
+    east = window[(1, 1)] + (2.0 * window[(1, 0)]) + window[(1, -1)]
+    north = window[(-1, 1)] + (2.0 * window[(0, 1)]) + window[(1, 1)]
+    south = window[(-1, -1)] + (2.0 * window[(0, -1)]) + window[(1, -1)]
+
+    dz_dx = (east - west) / (8.0 * step)
+    dz_dy = (north - south) / (8.0 * step)
+
+    gradient = math.hypot(dz_dx, dz_dy)
+    slope_deg = math.degrees(math.atan(gradient))
+    if gradient == 0.0:
+        return slope_deg, None
+
+    # The gradient points uphill; aspect is the compass bearing of the
+    # downhill direction, measured clockwise from north.
+    aspect_deg = math.degrees(math.atan2(-dz_dx, -dz_dy)) % 360.0
+    return slope_deg, aspect_deg
+
+
 def sample_sight_profile(provider, start_point, end_point, step, max_samples=64):
     """Elevation samples along the ray from start to end, endpoints excluded.
 
