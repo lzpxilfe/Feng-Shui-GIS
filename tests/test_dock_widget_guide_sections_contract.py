@@ -9,6 +9,12 @@ from feng_shui_gis.dock_widget_guide_sections import (
 )
 
 
+# These build real widgets and assert on objectName()/count(), so the shared
+# qgis stub cannot stand in for them; skip unless a genuine PyQt is importable.
+HAS_QT = hasattr(QApplication, "instance")
+
+
+@unittest.skipUnless(HAS_QT, "PyQt runtime required to build guide-section widgets")
 class DockWidgetGuideSectionsContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -81,18 +81,32 @@ def _validate_profiles(data, context_name=_PROFILE_FILE, allow_empty=False):
     for profile_key, spec in profiles.items():
         context = f"{context_name}:{profile_key}"
         spec = _require_dict(spec, context)
-        _require_dict(spec.get("label"), f"{context}.label")
+        labels = _require_dict(spec.get("label"), f"{context}.label")
+        for language, text in labels.items():
+            if not str(text or "").strip():
+                raise RuntimeError(
+                    f"Missing text value for '{language}' in {context}.label."
+                )
         _normalize_profile_visibility_tier(spec.get("visibility_tier"))
         weights = _require_dict(spec.get("weights"), f"{context}.weights")
+        weight_total = 0.0
         for weight_key, value in weights.items():
             try:
-                float(value)
+                weight_total += float(value)
             except (TypeError, ValueError) as exc:
                 raise RuntimeError(
                     f"Invalid weight '{weight_key}' in {context}.weights."
                 ) from exc
+        # A zero-sum weight map does not raise downstream: normalized_weight_map
+        # returns {} and scoring silently drops every weighted contribution.
+        if weight_total <= 0:
+            raise RuntimeError(f"{context}.weights must sum to a positive value.")
         for field_name in ("slope_target", "slope_sigma", "tpi_target", "tpi_sigma"):
-            _require_number(spec, field_name, context)
+            value = _require_number(spec, field_name, context)
+            # score_gaussian clamps sigma to 1e-9, so a non-positive sigma
+            # collapses the curve to a spike instead of failing loudly.
+            if field_name.endswith("_sigma") and value <= 0:
+                raise RuntimeError(f"{context}.{field_name} must be greater than 0.")
     return profiles
 
 

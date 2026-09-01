@@ -1372,6 +1372,10 @@
       "ko": "<b>DEM 진단</b><br/>해상도, CRS 단위 신뢰도, 샘플 밀도를 확인하려면 DEM 레이어를 선택하세요.",
       "en": "<b>DEM Diagnostics</b><br/>Select a DEM layer to inspect resolution, CRS unit reliability, and sampling density."
     },
+    "guide_dem_diag_error": {
+      "ko": "<b>DEM 진단</b><br/>설정 오류: {message}",
+      "en": "<b>DEM Diagnostics</b><br/>Configuration error: {message}"
+    },
     "guide_dem_diag_template": {
       "ko": "<b>DEM 진단</b><br/>레이어={layer}<br/>픽셀 스텝={step:.4f}, 범위={width:.1f} x {height:.1f}, 적응 간격={spacing:.2f}, 추정 샘플 노드={nodes}<br/>CRS 모드={crs_mode}: {crs_note}",
       "en": "<b>DEM Diagnostics</b><br/>layer={layer}<br/>pixel_step={step:.4f}, extent={width:.1f} x {height:.1f}, adaptive_spacing={spacing:.2f}, approx_sampling_nodes={nodes}<br/>CRS mode={crs_mode}: {crs_note}"

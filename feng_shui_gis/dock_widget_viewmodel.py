@@ -279,7 +279,7 @@ def dem_diagnostics_state(
     if error_text:
         return {
             "html": ui_text(
-                "guide_dem_diag_empty",
+                "guide_dem_diag_error",
                 default="<b>DEM Diagnostics</b><br/>Configuration error: {message}",
             ).format(message=escape(str(error_text))),
         }

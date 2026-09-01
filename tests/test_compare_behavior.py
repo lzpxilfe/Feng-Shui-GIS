@@ -1,4 +1,5 @@
 import json
+import pathlib
 import tempfile
 import unittest
 import importlib
@@ -114,12 +115,15 @@ class CompareBehaviorTests(unittest.TestCase):
                 top_changes=[],
                 change_layer_name="change_layer",
             )
-            payload_obj = json.loads(json_path.read_text(encoding="utf-8"))
+            # write_compare_report returns str paths, not pathlib.Path.
+            json_file = pathlib.Path(json_path)
+            md_file = pathlib.Path(md_path)
+            payload_obj = json.loads(json_file.read_text(encoding="utf-8"))
 
             self.assertEqual(payload_obj["site_layer_name"], payload["site_layer_name"])
             self.assertIn("site_layer_name", payload)
-            self.assertIn("feng_shui_compare_", json_path.name)
-            self.assertTrue((report_dir / md_path).exists() or md_path.startswith("/"))
+            self.assertIn("feng_shui_compare_", json_file.name)
+            self.assertTrue(md_file.is_file())
 
 
 if __name__ == "__main__":

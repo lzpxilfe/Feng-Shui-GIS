@@ -49,17 +49,27 @@ class AnalysisHyeolContractTests(unittest.TestCase):
         self.assertLessEqual(diagnostics["approx_nodes"], 500)
 
     def test_recommended_hyeol_count_uses_threshold_bands(self):
-        count = recommended_hyeol_count(
-            width=1200.0,
-            height=800.0,
-            spacing=40.0,
-            thresholds=[
-                {"min_nodes": 600, "count": 9},
-                {"min_nodes": 300, "count": 7},
-            ],
-            default_count=5,
-        )
-        self.assertEqual(count, 7)
+        thresholds = [
+            {"min_nodes": 600, "count": 9},
+            {"min_nodes": 300, "count": 7},
+        ]
+
+        def count_for(spacing):
+            return recommended_hyeol_count(
+                width=1200.0,
+                height=800.0,
+                spacing=spacing,
+                thresholds=thresholds,
+                default_count=5,
+            )
+
+        # spacing 40 lands on exactly 30 x 20 = 600 nodes; min_nodes is
+        # inclusive, so the boundary belongs to the band it names.
+        self.assertEqual(count_for(40.0), 9)
+        # spacing 50 -> 24 x 16 = 384 nodes, inside the middle band.
+        self.assertEqual(count_for(50.0), 7)
+        # spacing 80 -> 15 x 10 = 150 nodes, below every band.
+        self.assertEqual(count_for(80.0), 5)
 
     def test_grid_points_offsets_half_spacing_from_extent_origin(self):
         points = list(grid_points(_DummyExtent(0.0, 100.0, 0.0, 100.0), 50.0))

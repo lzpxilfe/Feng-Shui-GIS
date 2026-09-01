@@ -96,6 +96,44 @@ class LocalProfileContractTests(unittest.TestCase):
             )
             self.assertEqual(payload["profiles"]["written_test"]["label"]["en"], "Test")
 
+    def _assert_write_rejects(self, mutate, expected_pattern):
+        record = _profile_record()
+        mutate(record)
+        with tempfile.TemporaryDirectory(prefix="feng-shui-local-profile-") as plugin_dir:
+            os.makedirs(os.path.join(plugin_dir, "config"), exist_ok=True)
+            with self.assertRaisesRegex(RuntimeError, expected_pattern):
+                write_local_profiles_registry(
+                    {"demo_profile": record},
+                    base_dir=plugin_dir,
+                )
+
+    def test_write_local_profiles_registry_rejects_zero_sum_weights(self):
+        # normalized_weight_map() returns {} for a zero-sum map, so without this
+        # check the profile writes cleanly and then contributes nothing to any
+        # score -- a silent result rather than a reported error.
+        self._assert_write_rejects(
+            lambda record: record.update(
+                {"weights": dict.fromkeys(record["weights"], 0.0)}
+            ),
+            r"local_profiles\.json:demo_profile\.weights must sum to a positive value\.",
+        )
+
+    def test_write_local_profiles_registry_rejects_non_positive_sigma(self):
+        # score_gaussian() clamps sigma to 1e-9, which collapses the curve to a
+        # spike that scores ~0 everywhere except an exact target match.
+        for field_name in ("slope_sigma", "tpi_sigma"):
+            with self.subTest(field=field_name):
+                self._assert_write_rejects(
+                    lambda record, field=field_name: record.update({field: 0.0}),
+                    rf"local_profiles\.json:demo_profile\.{field_name} must be greater than 0\.",
+                )
+
+    def test_write_local_profiles_registry_rejects_empty_localized_label(self):
+        self._assert_write_rejects(
+            lambda record: record["label"].update({"ko": "   "}),
+            r"Missing text value for 'ko' in local_profiles\.json:demo_profile\.label\.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

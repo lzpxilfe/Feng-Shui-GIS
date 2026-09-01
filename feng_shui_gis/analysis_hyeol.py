@@ -16,6 +16,9 @@ def combine_hydro_scores(distance_score, dem_score):
     return dem_score
 
 
+_MAX_SPACING_PASSES = 8
+
+
 def adaptive_spacing_diagnostics(
     dem_step,
     width,
@@ -33,7 +36,12 @@ def adaptive_spacing_diagnostics(
     cols = max(1, int(width / spacing) + 1)
     rows = max(1, int(height / spacing) + 1)
     total = cols * rows
-    if total > max_points:
+    # One sqrt pass solves (w/s)(h/s) == max_points, but each axis carries a
+    # trailing +1 node, so the rescaled grid still overshoots the cap.  Repeat
+    # until the cap actually holds; spacing grows every pass, so this settles.
+    for _ in range(_MAX_SPACING_PASSES):
+        if total <= max_points:
+            break
         spacing *= math.sqrt(total / max_points)
         cols = max(1, int(width / spacing) + 1)
         rows = max(1, int(height / spacing) + 1)

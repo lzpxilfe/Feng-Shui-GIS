@@ -134,8 +134,14 @@ def write_compare_report(
             default="No top-changed features were recorded.",
         )
 
+    report_title = ui_text(
+        "compare_report_title_template",
+        label_language,
+        default="Feng Shui Comparison Report ({stamp})",
+    ).format(base=base_profile_key, calibrated=compare_profile_key, stamp=stamp)
+
     markdown = (
-        f"# {ui_text('compare_report_title_template', label_language, default='Feng Shui Comparison Report ({stamp})').format(stamp=stamp)}\n\n"
+        f"# {report_title}\n\n"
         f"- {ui_text('compare_report_site_layer_label', label_language, default='Site layer')}: {site_layer_name}\n"
         f"- {ui_text('compare_report_base_profile_label', label_language, default='Base profile')}: {base_profile_key}\n"
         f"- {ui_text('compare_report_calibrated_profile_label', label_language, default='Calibrated profile')}: {compare_profile_key}\n"
