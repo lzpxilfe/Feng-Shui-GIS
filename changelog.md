@@ -1,6 +1,13 @@
 # Changelog
 
 ## 2026-09-02
+- 국가유산청 shapefile 수용 도구 (`tools/ingest_heritage_shp.py`)
+  - CP949 인코딩 판정: `.cpg` 선언 우선, 없으면 한글 비율 - 치환문자 비율로 추론
+  - DBF는 이진 헤더 때문에 strict 디코딩이 전부 실패하므로 lenient 스코어링 사용
+  - EUC-KR은 후보에서 제외 — CP949가 상위집합이라 동점만 발생
+  - GDAL `SHAPE_ENCODING` 지정 + QGIS 번들 GDAL의 `PROJ_DATA`/`GDAL_DATA` 자동 설정
+  - UTF-8 GeoPackage 출력, `--t-srs`로 재투영 (예: EPSG:5186)
+  - `ingest_manifest.json`에 원본 경로·선언 인코딩·판정 근거·필드·좌표계 기록
 - 배경 비교 리포트 (`NullModelReportWriter`)
   - JSON + Markdown 산출, 기존 리포트 라이터와 동일한 `interpretation`/`analytical`/`audit` 구조
   - 배경 표집 기준을 `interpretation` 절에 배치 — 통계와 분리 불가
