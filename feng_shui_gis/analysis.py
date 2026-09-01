@@ -61,6 +61,7 @@ from .analysis_dem_utils import (
     offset_point,
     sample_dem,
     sample_ring,
+    sample_sight_profile,
     stddev,
 )
 from .analysis_dem_metrics import (
@@ -145,6 +146,7 @@ from .analysis_term_links import (
     smooth_polyline,
     term_link_fields,
 )
+from .analysis_visibility import line_of_sight, visibility_summary
 from .analysis_water import dem_step, nearest_water_distance
 from .korean_ridge_system import ridge_class_label
 from .calibration_helpers import (
@@ -1764,6 +1766,38 @@ class FengShuiAnalyzer:
     def _ridge_label(class_id, language="ko"):
         return ridge_class_label(class_id, language)
 
+    def _sight_line(
+        self, provider, observer_point, observer_elev, target_point, target_elev, step
+    ):
+        """Whether a named landform is actually visible from the hyeol.
+
+        Ansan and josan are defined as hills looked at from the site, but the
+        term is assigned on elevation and bearing alone, so an intervening
+        ridge can leave the label on a hill nobody at the site can see. This
+        records the geometry; it does not change the score.
+        """
+        if observer_elev is None or target_elev is None:
+            return None
+        if observer_point is None or target_point is None:
+            return None
+        try:
+            profile, distance = sample_sight_profile(
+                provider,
+                observer_point,
+                target_point,
+                step,
+            )
+            if distance <= 0.0:
+                return None
+            return line_of_sight(
+                observer_elev=observer_elev,
+                target_elev=target_elev,
+                target_distance_m=distance,
+                profile=profile,
+            )
+        except Exception:  # noqa: BLE001 - visibility is evidence, never fatal
+            return None
+
     def _compose_term_reason(
         self,
         term_id,
@@ -2050,6 +2084,7 @@ class FengShuiAnalyzer:
             mode=None,
             relief_m=None,
             reason_text=None,
+            sight=None,
         ):
             adjusted_score = adjusted_term_score(
                 score,
@@ -2074,6 +2109,8 @@ class FengShuiAnalyzer:
                 mode=mode,
                 note=note,
             )
+            if sight is not None:
+                reason_ko = f"{reason_ko} 조망={visibility_summary(sight, 'ko')}."
             append_term_feature(
                 layer=term_layer,
                 term_id=term_id,
@@ -2096,6 +2133,8 @@ class FengShuiAnalyzer:
                 azimuth=azimuth,
                 mode=mode,
                 relief_m=relief_m,
+                visible=None if sight is None else sight.get("visible"),
+                los_clear=None if sight is None else sight.get("clearance_m"),
                 reason_ko=reason_ko,
             )
 
@@ -2208,7 +2247,11 @@ class FengShuiAnalyzer:
                 delta = (elev - center_elev) / relief
                 target_rel = target + term_target_shift
                 fit_score = self._score_gaussian(delta, target_rel, sigma)
+                sight = self._sight_line(
+                    provider, center_point, center_elev, point, elev, dem_step
+                )
                 add_term(
+                    sight=sight,
                     **generic_term_payload(
                         term_id=term_id,
                         term_name=term_name,

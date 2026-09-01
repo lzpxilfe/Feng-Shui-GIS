@@ -28,6 +28,41 @@ def offset_point(point, distance, azimuth_deg):
     )
 
 
+def sample_sight_profile(provider, start_point, end_point, step, max_samples=64):
+    """Elevation samples along the ray from start to end, endpoints excluded.
+
+    Returns ``(profile, distance)`` where profile is a list of
+    ``(distance_m, elevation_m)`` for use with ``analysis_visibility``. Step is
+    widened when the span would otherwise need more than ``max_samples``, so a
+    distant josan costs the same as a nearby ansan.
+    """
+    dx = end_point.x() - start_point.x()
+    dy = end_point.y() - start_point.y()
+    distance = math.hypot(dx, dy)
+    if distance <= 0.0:
+        return [], 0.0
+
+    try:
+        step = float(step)
+    except (TypeError, ValueError):
+        step = 0.0
+    if step <= 0.0:
+        step = distance / float(max_samples)
+    step = max(step, distance / float(max_samples))
+
+    profile = []
+    offset = step
+    while offset < distance:
+        fraction = offset / distance
+        sample_point = QgsPointXY(
+            start_point.x() + (dx * fraction),
+            start_point.y() + (dy * fraction),
+        )
+        profile.append((offset, sample_dem(provider, sample_point)))
+        offset += step
+    return profile, distance
+
+
 def sample_ring(provider, center_point, radius, azimuths):
     values = []
     for azimuth in azimuths:

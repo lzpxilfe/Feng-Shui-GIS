@@ -27,6 +27,8 @@ def term_layer_fields():
     fields.append(QgsField("azimuth", QVariant.Double, "double", 7, 2))
     fields.append(QgsField("mode", QVariant.String, "string", 8))
     fields.append(QgsField("relief_m", QVariant.Double, "double", 12, 3))
+    fields.append(QgsField("visible", QVariant.Int))
+    fields.append(QgsField("los_clear", QVariant.Double, "double", 10, 2))
     fields.append(QgsField("note", QVariant.String, "string", 80))
     fields.append(QgsField("reason_ko", QVariant.String, "string", 1024))
     return fields
@@ -102,6 +104,8 @@ def _populate_term_feature(
     mode=None,
     relief_m=None,
     term_ko=None,
+    visible=None,
+    los_clear=None,
     culture=None,
     period=None,
     profile=None,
@@ -125,6 +129,8 @@ def _populate_term_feature(
     feature["azimuth"] = azimuth
     feature["mode"] = mode if mode else ""
     feature["relief_m"] = relief_m
+    feature["visible"] = None if visible is None else int(bool(visible))
+    feature["los_clear"] = los_clear
     feature["note"] = note
     feature["reason_ko"] = reason_ko if reason_ko else ""
 
